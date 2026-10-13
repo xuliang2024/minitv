@@ -11,4 +11,5 @@ from app.modules.account import models as _account_models  # noqa: F401
 from app.modules.billing import models as _billing_models  # noqa: F401
 from app.modules.common import models as _common_models  # noqa: F401
 from app.modules.content import models as _content_models  # noqa: F401
+from app.modules.ops import models as _ops_models  # noqa: F401
 from app.modules.wallet import models as _wallet_models  # noqa: F401

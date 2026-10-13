@@ -41,3 +41,22 @@ def make_engine(url: str | None = None):
 
 def make_session_factory(engine) -> sessionmaker:
     return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+_engine = None
+
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        _engine = make_engine()
+    return _engine
+
+
+def get_db():
+    factory = make_session_factory(get_engine())
+    db = factory()
+    try:
+        yield db
+    finally:
+        db.close()

@@ -73,6 +73,17 @@ def list_published_dramas(session: Session) -> list[Drama]:
     )
 
 
+def search_published_dramas(session: Session, q: str, limit: int = 20) -> list[Drama]:
+    return list(
+        session.scalars(
+            select(Drama)
+            .where(Drama.status == "published", Drama.title.ilike(f"%{q}%"))
+            .order_by(Drama.updated_at.desc())
+            .limit(limit)
+        )
+    )
+
+
 def get_published_drama(session: Session, drama_id: int) -> Drama | None:
     drama = session.get(Drama, drama_id)
     if drama is None or drama.status != "published":

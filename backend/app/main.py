@@ -8,6 +8,7 @@ from pathlib import Path
 import psycopg
 import redis
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -27,6 +28,17 @@ def load_env() -> None:
 load_env()
 app = FastAPI(title="MiniTV Local", version="0.0.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/health")
 def health() -> dict:
@@ -42,3 +54,14 @@ def health() -> dict:
         "postgres": pg_version,
         "redis": client.info("server").get("redis_version"),
     }
+
+
+def _register_routers() -> None:
+    from app.modules.content.public_router import router as public_router
+    from app.modules.ops.router import router as admin_router
+
+    app.include_router(admin_router)
+    app.include_router(public_router)
+
+
+_register_routers()
