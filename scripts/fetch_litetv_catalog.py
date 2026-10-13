@@ -251,12 +251,19 @@ class LiteTVClient:
         fp = self.cache_dir / f"{key}.json"
         if fp.exists() and fp.stat().st_size > 20:
             try:
-                return json.loads(fp.read_text())
+                cached = json.loads(fp.read_text())
             except json.JSONDecodeError:
-                pass
+                cached = None
+            # 只复用成功响应；历史缓存里混进过参数错误 / 鉴权失败，不能当成数据
+            if cached is not None and cached.get("code") == 10000:
+                return cached
         resp = self.call(method, path, data=data, params=params)
-        fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(json.dumps(resp, ensure_ascii=False))
+        if resp.get("code") == 10000:
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(json.dumps(resp, ensure_ascii=False))
+        else:
+            print(f"    [warn] {path} 返回 {resp.get('code')} {str(resp.get('error'))[:60]}",
+                  file=sys.stderr)
         return resp
 
     def media_info(self, mid: int) -> dict:
@@ -264,8 +271,9 @@ class LiteTVClient:
                            params={"media_id": mid})
 
     def episode_list(self, mid: int) -> dict:
+        # 分集接口对 page_size 有上限校验，200 是站点前端使用的值
         return self.cached(f"episodes/{mid}", "GET", "/v1/media_episode/list",
-                           params={"media_id": mid, "page_size": 300})
+                           params={"media_id": mid, "page_size": 200})
 
     def play(self, mid: int, ep: int) -> dict:
         return self.cached(f"play/{mid}_{ep}", "GET", "/v1/media_episode/play",
@@ -331,6 +339,12 @@ def category_names(drama: dict, label_type: int | None = None) -> list[str]:
         if name and name not in out:
             out.append(name)
     return out
+
+
+def image_ext(url: str) -> str:
+    """按 URL 后缀决定封面扩展名；站点有的缩略图是 PNG 却带 .jpg 名。"""
+    suffix = Path(urllib.parse.urlparse(url).path).suffix.lower()
+    return suffix if suffix in (".jpg", ".jpeg", ".png", ".webp") else ".jpg"
 
 
 def slug(text: str, limit: int = 48) -> str:
@@ -434,6 +448,9 @@ def stage_select(client: LiteTVClient, ctx: dict, target: int, min_episodes: int
         if not (drama.get("evaluate") or "").strip():
             continue
         if not is_english(drama):
+            continue
+        if not category_names(drama):
+            # 没有分类就无法归入任何类目，不进入选片池
             continue
         pool.append(drama)
 
@@ -551,31 +568,169 @@ def stage_details(client: LiteTVClient, ctx: dict, workers: int) -> dict:
     with futures.ThreadPoolExecutor(max_workers=workers) as pool:
         list(pool.map(run, jobs))
 
-    # 用 play 结果补齐每一集的时长：play(N) 同时返回第 N-1 和 N+1 集
-    episode_jobs = []
-    for drama in ctx["selected"]:
-        mid = int(drama["id"])
-        total = int(drama.get("total_episodes") or 0)
-        for ep in range(2, total + 1, 2):
+    # 免费集范围：访客能拿到的播放信息只有第 0..free_num 集（含），
+    # 锁定集请求会返回 {"code": 50003, "error": "Please unlock in order"}，
+    # 这是站点的付费墙，不去绕过，锁定集只保留分集列表里的解锁类型字段。
+    play_jobs = []
+    for mid in ids:
+        payload = (client.play(mid, 0).get("data") or {})
+        free_num = int(payload.get("free_num") or 0)
+        for ep in range(1, free_num + 2):
             path = client.cache_dir / f"play/{mid}_{ep}.json"
             if not (path.exists() and path.stat().st_size > 20):
-                episode_jobs.append((mid, ep))
-    print(f"  需要补齐时长的分集请求 {len(episode_jobs)} 个")
+                play_jobs.append((mid, ep))
+    print(f"  免费集播放请求 {len(play_jobs)} 个（锁定集不请求）")
 
     def run_play(job):
         mid, ep = job
         try:
-            return client.play(mid, ep)
+            resp = client.play(mid, ep)
+            if resp.get("code") == 50003:
+                # 到达付费墙，落一个标记文件避免重复请求
+                marker = client.cache_dir / f"play_locked/{mid}_{ep}.json"
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(json.dumps({"locked": True, "media_id": mid, "episode_number": ep}))
+            return resp
         except Exception as exc:  # noqa: BLE001
             return {"code": -1, "error": str(exc)}
 
     with futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        list(pool.map(run_play, episode_jobs))
+        list(pool.map(run_play, play_jobs))
     return ctx
 
 
 # --------------------------------------------------------------------------- #
-# 阶段 5a：导出全站目录索引（能访问到的都留档）
+# 阶段 5b：运营数据（会员套餐、金币商品、热搜、首页榜单）
+# --------------------------------------------------------------------------- #
+def stage_operations(client: LiteTVClient, ctx: dict) -> dict:
+    ctx["operations"] = {
+        "subscription": client.cached("ops/subscription", "GET", "/v1/subscription/product/list"),
+        "coins": client.cached("ops/coins", "GET", "/v1/google/product/list"),
+        "trending": client.cached("ops/trending", "GET", "/v1/search/top/trending"),
+        "popular": client.cached("lists/popular", "GET", "/v1/media/popular_list",
+                                 params={"page": 1, "page_size": 50, "req_type": 0}),
+        "new_list": client.cached("lists/new", "GET", "/v1/media/new_list",
+                                  params={"page": 1, "page_size": 50, "req_type": 0}),
+        "recommend": client.cached("lists/recommend", "GET", "/v1/media_recommend/list"),
+    }
+    print("  运营数据：会员套餐 / 金币商品 / 热搜 / 首页榜单")
+    return ctx
+
+
+def write_operations(ctx: dict, out_dir: Path, fetched_at: str) -> dict:
+    ops = ctx.get("operations") or {}
+    if not ops:
+        return {}
+
+    sub_raw = (ops.get("subscription", {}).get("data") or {})
+    plans = []
+    for plan in sub_raw.get("subscription") or []:
+        title = plan.get("title") or {}
+        plans.append({
+            "name": plan.get("name"),
+            "plan_code": plan.get("google_base_plan_id"),
+            "price_usd": plan.get("price"),
+            "original_price_usd": plan.get("original_price"),
+            "play_resolution": plan.get("play_resolution"),
+            "points_multiplier": plan.get("growth_factor"),
+            "benefit_text": title.get("free_days"),
+            "icon_url": plan.get("icon"),
+            "vip_type": plan.get("vip_type"),
+            "store_product_ids": {
+                "google": plan.get("google_key"),
+                "apple": plan.get("apple_key"),
+            },
+        })
+    (out_dir / "subscription_plans.json").write_text(json.dumps({
+        "source": f"{API_ROOT}/v1/subscription/product/list",
+        "fetched_at": fetched_at,
+        "note": "会员套餐价格与权益，对应架构文档 ADR-004（价格只在订阅服务维护）；paypal_key 等支付密钥未导出",
+        "items": plans,
+    }, ensure_ascii=False, indent=2))
+
+    coins_raw = (ops.get("coins", {}).get("data") or {})
+    products = [{
+        "sku": p.get("google_key"),
+        "price_usd": p.get("price"),
+        "coins": p.get("coin_amount"),
+        "bonus_coins": p.get("bonus_amount"),
+        "bonus_rate_percent": p.get("bonus_rate"),
+        "store_product_ids": {"google": p.get("google_key"), "apple": p.get("apple_key")},
+    } for p in coins_raw.get("products") or []]
+    (out_dir / "coin_products.json").write_text(json.dumps({
+        "source": f"{API_ROOT}/v1/google/product/list",
+        "fetched_at": fetched_at,
+        "note": "金币充值商品，对应架构文档的资产服务",
+        "items": products,
+    }, ensure_ascii=False, indent=2))
+
+    trending_raw = (ops.get("trending", {}).get("data") or {})
+    hot = [{
+        "media_id": item.get("mid"),
+        "title": item.get("title"),
+        "hot_value": item.get("hot_val"),
+        "tag_list": item.get("tag_list"),
+        "cover_url": item.get("cover"),
+        "introduce": item.get("introduce"),
+    } for item in trending_raw.get("data_list") or []]
+    (out_dir / "trending_searches.json").write_text(json.dumps({
+        "source": f"{API_ROOT}/v1/search/top/trending",
+        "fetched_at": fetched_at,
+        "note": "热搜榜，对应运营配置服务的热搜位",
+        "items": hot,
+    }, ensure_ascii=False, indent=2))
+
+    def category_label(value):
+        if isinstance(value, dict):
+            return value.get("category_name") or value.get("name")
+        return value if isinstance(value, str) else None
+
+    def flatten(payload, key):
+        data = payload.get("data")
+        rows = data.get("list") if isinstance(data, dict) else data
+        out = []
+        for item in rows or []:
+            if not isinstance(item, dict):
+                continue
+            covers = item.get("media_cover") or item.get("covers") or []
+            cover = item.get("cover")
+            if isinstance(covers, list) and covers and isinstance(covers[0], dict):
+                cover = covers[0].get("cover")
+            elif isinstance(covers, list) and covers and isinstance(covers[0], str):
+                cover = covers[0]
+            cats = [category_label(c) for c in item.get("categories") or []]
+            out.append({
+                "media_id": item.get("media_id") or item.get("mid"),
+                "title": item.get("title"),
+                "cover_url": cover,
+                "heat_value": item.get("heat_value") or item.get("hot_val"),
+                "cur_episodes": item.get("cur_episodes"),
+                "total_episodes": item.get("total_episodes"),
+                "categories": [c for c in cats if c],
+                "evaluate": (item.get("evaluate") or item.get("introduce") or "")[:400],
+            })
+        return out
+
+    (out_dir / "home_lists.json").write_text(json.dumps({
+        "source": f"{API_ROOT}/v1/media/popular_list / new_list / media_recommend/list",
+        "fetched_at": fetched_at,
+        "note": "站点首页榜单与新剧、Banner 数据，对应首页分组（Discover / Ranking / New）",
+        "lists": {
+            "most_popular": flatten(ops.get("popular", {}), "popular"),
+            "new_releases": flatten(ops.get("new_list", {}), "new"),
+            "banner_recommend": flatten(ops.get("recommend", {}), "recommend"),
+        },
+    }, ensure_ascii=False, indent=2))
+
+    return {
+        "subscription_plans": plans,
+        "coin_products": products,
+        "trending_searches": hot,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# 阶段 5c：导出全站目录索引（能访问到的都留档）
 # --------------------------------------------------------------------------- #
 def build_catalog_index(client: LiteTVClient) -> list[dict]:
     rows = []
@@ -650,7 +805,7 @@ def stage_media(client: LiteTVClient, ctx: dict, out_dir: Path, workers: int) ->
         slide = ctx["slides"].get(mid, {})
         for kind, url in slide.get("images", {}).items():
             if url:
-                jobs.append(("image", url, covers_dir / f"{mid}_{kind}.jpg"))
+                jobs.append(("image", url, covers_dir / f"{mid}_{kind}{image_ext(url)}"))
         for name, url in slide.get("subtitles", {}).items():
             if url:
                 jobs.append(("subtitle", url, subs_dir / f"{mid}_{name}.srt"))
@@ -677,7 +832,6 @@ def build_slide(client: LiteTVClient, drama: dict) -> dict:
     episodes_raw = (client.episode_list(mid).get("data") or [])
     play0 = (client.play(mid, 0).get("data") or {})
     ocu = (client.ocu(mid).get("data") or {})
-    subs0 = (client.subtitles(mid, 0).get("data") or {})
 
     ep_by_number: dict[int, dict] = {}
     for raw in episodes_raw:
@@ -685,8 +839,10 @@ def build_slide(client: LiteTVClient, drama: dict) -> dict:
             continue
         ep_by_number[int(raw["episode_number"])] = dict(raw)
 
-    # play 响应里的单集信息最全：时长、HLS、封面；相邻两集都能拿到
-    for ep in range(0, int(info.get("total_episodes") or 0) + 1, 2):
+    # play 响应里的单集信息最全：时长、HLS、封面、字幕轨。
+    # 访客只能拿到第 0..free_num 集，锁定集由站点付费墙拦截（50003），不再请求。
+    free_num = int(play0.get("free_num") or 0)
+    for ep in range(0, free_num + 2):
         payload = client.play(mid, ep).get("data") or {}
         for slot in ("prev_episode", "cur_episode", "next_episode"):
             item = payload.get(slot)
@@ -697,39 +853,60 @@ def build_slide(client: LiteTVClient, drama: dict) -> dict:
                     if value not in (None, "", [], {}):
                         merged[key] = value
 
-    domain = play0.get("cover", {}).get("cover", "")
     media_domain = "https://es-w1.lite.tv"
-    if play0.get("next_episode"):
-        media_domain = play0["next_episode"].get("main_domain") or media_domain
+    for slot in ("cur_episode", "next_episode", "prev_episode"):
+        item = play0.get(slot)
+        if isinstance(item, dict) and item.get("main_domain"):
+            media_domain = item["main_domain"]
+            break
 
+    # 字幕：第 0 集不一定带字幕，依次尝试前几集，取到第一份可用的语言表
     subtitle_map: dict[str, str] = {}
-    for item in subs0.get("list") or []:
-        lang = item.get("lang")
-        if lang:
-            subtitle_map[lang] = media_domain + item["url"]
+    subtitle_episode = None
+    for candidate in range(0, min(3, free_num + 2)):
+        payload = (client.subtitles(mid, candidate).get("data") or {})
+        entries = payload.get("list") or []
+        if entries:
+            subtitle_map = {
+                item["lang"]: media_domain + item["url"]
+                for item in entries if item.get("lang") and item.get("url")
+            }
+            subtitle_episode = candidate
+            break
 
     episodes = []
     for number in sorted(ep_by_number):
         raw = ep_by_number[number]
         hls480 = raw.get("p480") or ""
         hls720 = raw.get("p720") or ""
+        duration = raw.get("duration") or 0
+        # 站点字段名与含义相反：is_free=0 表示免费集，is_free=1 表示需要金币解锁，
+        # 前端也是用 `filter(t => t.is_free === 1)[0]` 找付费墙的第一集。
+        raw_is_free = int(raw.get("is_free") or 0)
+        is_free = raw_is_free == 0
         episodes.append({
             "episode_number": number,
             "title": raw.get("title") or f"ep.{number}",
-            "duration_sec": raw.get("duration") or 0,
-            "is_free": bool(int(raw.get("is_free") or 0)),
-            "fee": raw.get("fee") or 0,
-            "unlock": raw.get("unlock") or 0,
-            "is_sub": raw.get("is_sub") or 0,
+            "duration_sec": duration,
+            "duration_source": "site-play-api" if duration else None,
+            "is_free": is_free,
+            "is_locked": not is_free,
+            "raw_is_free": raw_is_free,
+            "fee_coins": raw.get("fee") or 0,
+            "unlock_state": raw.get("unlock") or 0,
+            "web_restricted": bool(raw.get("web_restricted")),
+            "has_subtitle": bool(raw.get("is_sub")),
             "video_url_hls_480": media_domain + hls480 if hls480 else "",
             "video_url_hls_720": media_domain + hls720 if hls720 else "",
             "cover_url": media_domain + raw["cover"] if raw.get("cover") else "",
         })
 
+    paywall_first = next((e["episode_number"] for e in episodes if e["is_locked"]), None)
+
     free_numbers = [e["episode_number"] for e in episodes if e["is_free"]]
-    free_num = play0.get("free_num")
     if not free_numbers and free_num:
-        free_numbers = list(range(0, int(free_num)))
+        free_numbers = list(range(0, int(free_num) + 1))
+    playable_numbers = [e["episode_number"] for e in episodes if e["duration_sec"]]
 
     covers = info.get("covers") or []
     poster_url = next((c["cover"] for c in covers if c.get("cover_type") == 1), "")
@@ -780,8 +957,13 @@ def build_slide(client: LiteTVClient, drama: dict) -> dict:
             "age_rating_note": "站点未下发年龄分级；项目内按 17+ 样例配置",
             "region": None,
             "region_note": "站点未下发地区；项目内按美国 / 加拿大样例配置",
-            "free_episode_count": int(free_num or len(free_numbers)),
+            # 站点 free_num=7 表示第 0~7 集免费（含 0），共 8 集；以逐集标记为准
+            "free_episode_count": len(free_numbers) or (int(free_num) + 1 if free_num else 0),
+            "free_num_raw": free_num,
             "free_episode_numbers": free_numbers[:20],
+            "paywall_starts_at_episode": paywall_first,
+            "playable_without_login": playable_numbers,
+            "playable_note": "访客可播第 0 到 free_episode_count 集；更靠后的集被站点付费墙拦住（50003），时长与 HLS 只好留空",
             "coin_price_per_episode": ocu.get("price"),
             "coin_unlock_options": unlock_options,
         },
@@ -802,6 +984,7 @@ def build_slide(client: LiteTVClient, drama: dict) -> dict:
         "state": {
             "raw_state": info.get("state"),
             "status": state_label(info.get("state")),
+            "status_note": "站点未公开 state 语义，也未在前端按它分支；此处按公开可访问推断",
             "publish_time": info.get("publish_time"),
             "release_time": ts_to_iso(play0.get("release_stamp")),
             "updated_time": ts_to_iso(play0.get("updated_ts")),
@@ -809,25 +992,44 @@ def build_slide(client: LiteTVClient, drama: dict) -> dict:
         "covers": {
             "poster_source_url": poster_url,
             "thumbnail_source_url": thumb_url,
-            "poster_file": f"covers/{mid}_poster.jpg" if poster_url else None,
-            "thumbnail_file": f"covers/{mid}_thumb.jpg" if thumb_url else None,
+            "poster_file": f"covers/{mid}_poster{image_ext(poster_url)}" if poster_url else None,
+            "thumbnail_file": f"covers/{mid}_thumb{image_ext(thumb_url)}" if thumb_url else None,
         },
         "assets": {
             "subtitle_sample_urls": subtitle_map,
+            "subtitle_episode": subtitle_episode,
         },
     }, {
         "images": {"poster": poster_url, "thumb": thumb_url},
-        "subtitles": {"ep0_en": subtitle_map.get("en", "")},
+        "subtitles": _pick_subtitle(subtitle_map, subtitle_episode),
     }
 
 
+def _pick_subtitle(subtitle_map: dict, episode) -> dict:
+    """挑一份字幕样例下载：优先英文，没有英文就取第一个可用语言。"""
+    if episode is None or not subtitle_map:
+        return {}
+    lang = "en" if "en" in subtitle_map else sorted(subtitle_map)[0]
+    return {f"ep{episode}_{lang}": subtitle_map[lang]}
+
+
 def state_label(state) -> str:
-    return {0: "已上架", 1: "已上架", 2: "草稿", 3: "已下架"}.get(state, f"未知({state})")
+    """站点没有公开 state 的含义，前端也不按它分支。
+
+    本数据里的 100 部都能从站点公开内容接口正常取到，且出现在首页 / 榜单 / 分类页，
+    因此按「已上架」处理，并在字段里标明这是推断值。
+    """
+    return "已上架（按公开可访问推断）" if state in (0, 1) else f"未知(state={state})"
 
 
 def stage_export(client: LiteTVClient, ctx: dict, out_dir: Path) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "raw").mkdir(exist_ok=True)
+    # 选片可能变化，先清掉上一轮不在本次结果里的原始响应
+    keep = {f"{mid}.json" for mid in ctx["selected_ids"]}
+    for stale in (out_dir / "raw").glob("*.json"):
+        if stale.name not in keep:
+            stale.unlink()
     print("  整理结构化记录 ...")
     slides, slide_assets = [], {}
     for drama in ctx["selected"]:
@@ -951,14 +1153,15 @@ def write_outputs(client: LiteTVClient, ctx: dict, out_dir: Path, target: int) -
         writer = csv.writer(fh)
         writer.writerow([
             "media_id", "title", "episode_number", "episode_title", "duration_sec",
-            "is_free", "fee", "unlock_type", "hls_480", "hls_720", "cover_url",
+            "is_free", "fee_coins", "unlock_type", "web_restricted", "hls_480", "hls_720", "cover_url",
         ])
         for r in slides:
             for ep in r["episodes"]["items"]:
                 writer.writerow([
                     r["media_id"], r["title"], ep["episode_number"], ep["title"],
-                    ep["duration_sec"], int(ep["is_free"]), ep["fee"],
+                    ep["duration_sec"], int(ep["is_free"]), ep["fee_coins"],
                     "free" if ep["is_free"] else "coin_or_vip",
+                    int(ep["web_restricted"]),
                     ep["video_url_hls_480"], ep["video_url_hls_720"], ep["cover_url"],
                 ])
 
@@ -969,6 +1172,7 @@ def write_outputs(client: LiteTVClient, ctx: dict, out_dir: Path, target: int) -
             cat_cov[name] += 1
     index_rows = build_catalog_index(client)
     write_catalog_index(index_rows, out_dir)
+    ops_summary = write_operations(ctx, out_dir, fetched_at)
     files = sorted(
         str(p.relative_to(out_dir))
         for p in out_dir.rglob("*") if p.is_file() and p.name != "manifest.json"
@@ -999,11 +1203,16 @@ def write_outputs(client: LiteTVClient, ctx: dict, out_dir: Path, target: int) -
         "category_coverage": dict(sorted(cat_cov.items(), key=lambda kv: -kv[1])),
         "genre_page_tag_coverage": {t: cat_cov.get(t, 0) for t in GENRE_PAGE_TAGS},
         "media_ids": [r["media_id"] for r in slides],
+        "operations": ops_summary,
         "fields": {
             "dramas.json": "剧集主记录：标题/简介/分类/封面/统计/解锁规则/分集/字幕语言",
             "dramas.csv": "剧集主表，便于导入表格或数据库",
             "episodes.csv": "分集表：集号/时长/免费标记/解锁类型/HLS 地址/单集封面",
             "catalog_index.csv": "站点可访问的全部 media_id 目录（含未入选的剧与非正片）",
+            "subscription_plans.json": "会员套餐：价格、清晰度、权益",
+            "coin_products.json": "金币充值商品与赠送比例",
+            "trending_searches.json": "热搜榜",
+            "home_lists.json": "首页榜单 / 新剧 / Banner 推荐",
             "categories.json": "站点分类字典（英文名 + 中文名）",
             "tags.json": "标签字典与 media_tag 值域",
             "covers/": "竖版封面与横版缩略图",
@@ -1031,15 +1240,26 @@ MiniTV 的开发、联调和演示需要真实形态的剧集数据：竖版封�
 分类标签、总集数与已发布集数、免费集与金币解锁规则、单集时长、字幕语言。
 本目录一次性备齐这些字段，后端可以直接导入作为种子数据，前端可以直接渲染列表和详情页。
 
+> 定位说明：这批数据是**内容种子数据**（真实剧名、简介、封面、集数、解锁规则）。
+> 开发计划里做像素级对比的构建仍然用设计稿那套 `assets/titled` 图，不换成这里的封面。
+>
+> 正片视频**可以下载**（2026-10-13 修正早前结论）：CDN 校验的签名不只在 query string，
+> 还必须作为同名请求头发送 `signature:` / `expires:`，缺这两个头才会一律 401。
+> 抓取脚本 `scripts/fetch_litetv_videos.py`，真片落在 [../litetv-videos-real](../litetv-videos-real)，
+> 完整说明见 `docs/litetv-video-download.md`。
+> `data/litetv-videos-local` 里由 `scripts/build_local_video_library.py` 合成的占位视频
+> 只用于兜底联调，不代表站点真实内容。
+
 共 {manifest['counts']['dramas']} 部剧、{manifest['counts']['episodes']} 集分集记录，
 其中 {manifest['counts']['episodes_with_duration']} 集带时长，
 {manifest['counts']['covers']} 张封面、{manifest['counts']['subtitles']} 个字幕文件。
 
-> 说明：`/genre` 页面每次直接展示的只有 7 部，但站点接口的 media_id 空间里
-> 可访问 {manifest['catalog_index_count']} 条内容，其中正片 {manifest['catalog_index_full_dramas']} 部、
-> 英文正片 {manifest['catalog_index_english_dramas']} 部。因此这里交付
-> {manifest['counts']['dramas']} 部完整明细，另外把全部 {manifest['catalog_index_count']} 条
-> 目录索引一并留档（`catalog_index.csv` / `catalog_index.json`），能拿到的都没有丢。
+> 说明：`/genre` 页面每次直接展示的只有 7 部，站点首页与榜单合计也就 7~14 部，
+> 但站点接口的 media_id 空间里可访问 {manifest['catalog_index_count']} 条内容，
+> 其中正片（≥20 集且有简介）{manifest['catalog_index_full_dramas']} 部、英文正片
+> {manifest['catalog_index_english_dramas']} 部。因此这里交付 {manifest['counts']['dramas']} 部完整明细，
+> 另外把全部 {manifest['catalog_index_count']} 条目录索引一并留档
+> （`catalog_index.csv` / `catalog_index.json`），能拿到的都没有丢。
 
 ## 2. 目录结构
 
@@ -1053,8 +1273,12 @@ MiniTV 的开发、联调和演示需要真实形态的剧集数据：竖版封�
 ├── dramas.csv         剧集主表，可直接用 Excel / 数据库导入工具打开
 ├── episodes.csv       分集表（集号、时长、免费标记、解锁类型、HLS 地址）
 ├── catalog_index.csv  全站 {manifest['catalog_index_count']} 条可访问内容目录（含未入选的剧）
-├── covers/            封面：<media_id>_poster.jpg（竖版）、<media_id>_thumb.jpg（横版）
-├── subtitles/         第一集英文字幕样例（SRT）
+├── subscription_plans.json  会员套餐：价格、清晰度、权益
+├── coin_products.json       金币充值商品与赠送比例
+├── trending_searches.json   热搜榜
+├── home_lists.json          首页榜单 / 新剧 / Banner 推荐
+├── covers/            封面：<media_id>_poster.jpg（竖版）、<media_id>_thumb.jpg（横版，个别为 .png）
+├── subtitles/         字幕样例（SRT，优先英文）
 └── raw/               每部剧的原始接口响应，字段有疑问时回查
 ```
 
@@ -1087,11 +1311,13 @@ MiniTV 的开发、联调和演示需要真实形态的剧集数据：竖版封�
 | `classification.category_rankings` | 该剧在每个分类里的排名（榜单页的排名来源） |
 | `classification.media_tag_values` | 站点 `media_tag` 原始值（语义未在前端暴露，待运营确认） |
 | `classification.free_episode_count` | 免费集数，对应「前 N 集免费」的解锁规则 |
+| `classification.paywall_starts_at_episode` | 第一集需要解锁的集号（付费墙位置） |
 | `classification.coin_price_per_episode` | 单集金币价；`coin_unlock_options` 是整剧打包解锁阶梯 |
 | `classification.age_rating` / `region` | 站点未下发，留空；项目按设计稿示例（17+、美国 / 加拿大）自行配置 |
 | `episodes.total_episodes` / `published_episodes` | 总集数 / 已发布集数 |
-| `episodes.items[]` | 分集：集号、时长、是否免费、解锁类型、HLS 480/720、单集封面 |
-| `episodes.subtitle_languages` | 该剧第一集可用的字幕语言 |
+| `episodes.items[]` | 分集：集号、时长、`is_free` / `is_locked`、`fee_coins` 单集金币价、HLS 480/720、单集封面 |
+| `episodes.items[].raw_is_free` | 站点原始值。注意站点字段名与含义相反：`raw_is_free=0` 才是免费集，`1` 表示需解锁，本数据已换算成直觉正确的 `is_free` |
+| `episodes.subtitle_languages` | 该剧可用的字幕语言（取第一集带字幕的分集） |
 | `stats.*` | 播放量、点赞、收藏；站点 `rating` 字段未启用（全 0），热度用这些字段与分类排名代替 |
 | `state.*` | 上架状态、发布时间、更新时间 |
 | `covers.*` | 封面在本目录内的相对路径与原始 URL |
@@ -1099,17 +1325,25 @@ MiniTV 的开发、联调和演示需要真实形态的剧集数据：竖版封�
 
 ### episodes.csv
 
-一行一集，含 `is_free`、`fee`、`unlock_type`、`duration_sec`、`hls_480/720`，
+一行一集，含 `is_free`（已校正含义）、`fee_coins`、`unlock_type`、`web_restricted`、`duration_sec`、`hls_480/720`，
 可以直接作为「分集表」的导入源。HLS 地址带站点签名（短时有效），
 正式环境需要替换为自家 Bunny Stream 地址。
 
 ## 5. 数据质量与边界
 
-- 封面为站点原图，竖版约 1125×1878（3:5），横版缩略图用于播放页背景。
+- 封面为站点原图：竖版集中在 1125×1878 / 1179×1968（约 3:5），少数 572×820、1920×2560；
+  横版缩略图多为 441×588 与 444×600（正好 3:4，可直接用于设计稿的海报位）。
 - 站点 `rating` 全为 0，没有真实评分；本数据用播放量 / 点赞 / 收藏 / 分类排名表达热度。
 - 年龄分级与地区站点没有下发，字段保留为空并在 `*_note` 里写明，避免把编造值混进真实数据。
+- 付费墙：访客只能播到第 `free_episode_count` 集，更靠后的集请求返回
+  `{{"code":50003,"error":"Please unlock in order"}}`，本脚本不去绕过。
+  因此**免费集的时长与 HLS 地址是真实值，锁定集这两列为空**，
+  但每一集的集号、是否免费、解锁类型、单集封面编号都完整。
 - 视频正片未下载（体积大且带短时签名），只保留 HLS 路径结构用于对接 Bunny Stream。
+- 分集时长只覆盖免费集（约 15%），是站点付费墙的客观限制，不是抓取失败。
 - 抓取为公开接口的常规读取，频率已限制在每秒数条，脚本可重复执行。
+- 交付 100 部之外，`catalog_index.csv` 的 816 条记录里还有另外约 150 部英文正片、
+  213 部其他语言正片，保留了标题、分类、集数与封面 URL，需要时按 media_id 继续补抓即可。
 
 ## 6. 分类覆盖
 
@@ -1131,8 +1365,11 @@ cd {out_dir.parents[1] if len(out_dir.parents) > 1 else '.'}
 # --------------------------------------------------------------------------- #
 # 阶段 8：产物自检
 # --------------------------------------------------------------------------- #
-def jpeg_size(path: Path):
+def image_size(path: Path):
+    """解析 JPEG / PNG 尺寸，用来校验封面确实下载完整。"""
     data = path.read_bytes()[:65536]
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) > 24:
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
     if not data.startswith(b"\xff\xd8"):
         return None
     i = 2
@@ -1184,7 +1421,7 @@ def verify_outputs(out_dir: Path) -> int:
     cover_problems, dims = [], Counter()
     for r in items:
         for kind in ("poster", "thumb"):
-            rel = r["covers"][f"{kind}_file"]
+            rel = r["covers"]["poster_file" if kind == "poster" else "thumbnail_file"]
             if not rel:
                 cover_problems.append(f"{r['media_id']} 缺 {kind}")
                 continue
@@ -1192,9 +1429,9 @@ def verify_outputs(out_dir: Path) -> int:
             if not fp.exists():
                 cover_problems.append(f"{rel} 不存在")
                 continue
-            size = jpeg_size(fp)
+            size = image_size(fp)
             if not size:
-                cover_problems.append(f"{rel} 不是有效 JPEG")
+                cover_problems.append(f"{rel} 不是有效图片")
             else:
                 dims[f"{kind} {size[0]}x{size[1]}"] += 1
     if cover_problems:
@@ -1284,6 +1521,11 @@ def main() -> int:
         if args.stage in ("all", "enumerate"):
             print("[2/7] 枚举 media_id 空间")
             stage_enumerate(client, ctx, args.max_id, args.workers)
+
+        if args.stage in ("all", "export", "taxonomy"):
+            stage_operations(client, ctx)
+            if not ctx.get("taxonomy"):
+                stage_taxonomy(client, ctx)
 
         if args.stage in ("all", "select"):
             print("[3/7] 挑选剧集并保证分类覆盖")
