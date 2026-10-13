@@ -3,3 +3,6 @@ uvicorn[standard]>=0.32
 pydantic>=2
 psycopg[binary]>=3.2
 redis>=5
+sqlalchemy>=2.0.30
+alembic>=1.13
+pytest>=8
