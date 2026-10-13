@@ -1,0 +1,13 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# local runtimes
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# local data cache (derived, regenerable)
+data/.cache/

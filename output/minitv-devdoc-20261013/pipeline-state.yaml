@@ -1,0 +1,58 @@
+schema_version: 1
+request_id: minitv-devdoc-20261013
+created_at: "2026-10-13T20:08:00+08:00"
+updated_at: "2026-10-13T20:24:00+08:00"
+
+entry_type: full_pipeline
+stage_chain: [1, 2, 3]
+
+output_docx_path: "/Users/m007/codes/lite_tv/output/minitv-devdoc-20261013/stage3/MiniTV 前后端开发文档.docx"
+output_docx_user_specified: false
+
+current_stage: completed
+
+stages:
+  stage_0:
+    status: completed
+    completed_at: "2026-10-13T20:08:00+08:00"
+    decision: full_pipeline
+
+  stage_1:
+    status: completed
+    started_at: "2026-10-13T20:08:00+08:00"
+    completed_at: "2026-10-13T20:16:00+08:00"
+    output_path: "stage1/final_draft.md"
+    genre: tech-blog
+    expert_used: tech-blog-expert
+    route_tag: expert_tech_blog
+
+  stage_2:
+    status: completed
+    started_at: "2026-10-13T20:16:00+08:00"
+    completed_at: "2026-10-13T20:24:00+08:00"
+    route: html
+    html_sub: template
+    output_path: "stage2/formatted-minitv-devdoc.html"
+    output_format: html
+    skills_invoked: [design-token, doc-typeset, html-review]
+    design_tokens_path: null
+    fallback: false
+    fallback_reason: null
+
+  stage_3:
+    status: completed
+    started_at: "2026-10-13T20:24:00+08:00"
+    completed_at: "2026-10-13T20:27:00+08:00"
+    executor: doc-converter
+    input_format: html
+    output_path: "/Users/m007/codes/lite_tv/output/minitv-devdoc-20261013/stage3/MiniTV 前后端开发文档.docx"
+    skill_used: ["html-to-doc"]
+    present_files_opened: true
+    fallback: false
+    fallback_reason: null
+
+consistency_check:
+  output_files_exist: pass
+  stage_chain_complete: pass
+  last_checked_at: "2026-10-13T20:27:00+08:00"
+  errors: []

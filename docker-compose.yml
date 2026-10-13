@@ -1,0 +1,54 @@
+name: minitv-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: minitv-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: minitv
+      POSTGRES_PASSWORD: minitv_local
+      POSTGRES_DB: minitv
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - minitv_pg:/var/lib/postgresql/data
+    networks:
+      - minitv
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U minitv -d minitv"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: minitv-redis
+    restart: unless-stopped
+    environment:
+      REDISCLI_AUTH: minitv_local
+    command: ["redis-server", "--requirepass", "minitv_local", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - minitv_redis:/data
+    networks:
+      - minitv
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+networks:
+  minitv:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.88.20.0/24
+
+volumes:
+  minitv_pg:
+  minitv_redis:
