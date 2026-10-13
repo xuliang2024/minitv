@@ -11,3 +11,6 @@ __pycache__/
 
 # local data cache (derived, regenerable)
 data/.cache/
+
+# macOS
+.DS_Store
