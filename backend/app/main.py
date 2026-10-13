@@ -33,6 +33,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -58,10 +60,14 @@ def health() -> dict:
 
 def _register_routers() -> None:
     from app.modules.content.public_router import router as public_router
+    from app.modules.ops.flow_router import router as admin_flow_router
     from app.modules.ops.router import router as admin_router
+    from app.modules.public_flow import router as public_flow_router
 
     app.include_router(admin_router)
+    app.include_router(admin_flow_router)
     app.include_router(public_router)
+    app.include_router(public_flow_router)
 
 
 _register_routers()

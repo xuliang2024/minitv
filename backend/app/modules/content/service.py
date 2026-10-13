@@ -24,7 +24,7 @@ EPISODE_TRANSITIONS: dict[str, frozenset[str]] = {
     "transcoding": frozenset({"in_review", "transcode_failed"}),
     "transcode_failed": frozenset({"transcoding"}),  # retry
     "in_review": frozenset({"published", "not_uploaded"}),  # publish / reset for video replacement
-    "published": frozenset(),
+    "published": frozenset({"not_uploaded"}),  # replace an already published video
 }
 
 

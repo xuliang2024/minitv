@@ -12,6 +12,7 @@ import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -51,6 +52,8 @@ class Drama(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     published_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scheduled_publish_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    play_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 
     __table_args__ = (
         Index("ix_dramas_status", "status"),
@@ -67,6 +70,11 @@ class Episode(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     bunny_video_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")  # filled in stage 3
+    subtitle_url: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    width: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    height: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    mime: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="not_uploaded")
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -132,6 +140,44 @@ class DramaHomeGroup(Base):
     group_id: Mapped[int] = mapped_column(ForeignKey("home_groups.id"), primary_key=True)
     drama_id: Mapped[int] = mapped_column(ForeignKey("dramas.id"), primary_key=True)
     position_in_group: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class MediaUpload(Base):
+    """One Bunny (or fake-Bunny) video object per upload attempt.
+
+    Replacing a video creates a new row only when a new video id is issued.
+    Replaying the transcode callback must not insert a second row for the same video id.
+    """
+
+    __tablename__ = "media_uploads"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    episode_id: Mapped[int] = mapped_column(ForeignKey("episodes.id"), nullable=False)
+    video_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    vertical: Mapped[bool] = mapped_column(nullable=False, default=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="created")
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_media_uploads_episode", "episode_id"),)
+
+
+class CdnPurge(Base):
+    """Record of a cache invalidation. Local fake CDN writes a row; production also calls Bunny Purge."""
+
+    __tablename__ = "cdn_purges"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    episode_id: Mapped[int | None] = mapped_column(ForeignKey("episodes.id"), nullable=True)
+    drama_id: Mapped[int | None] = mapped_column(ForeignKey("dramas.id"), nullable=True)
+    reason: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
