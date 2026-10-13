@@ -1,0 +1,39 @@
+## 阶段4 公开首页只看到已上架
+HTTP 200
+{"items": [{"id": 1, "title": "I Became the Mob Boss's Wife", "synopsis": "A swapped identity, a mob empire, and 64 episodes.", "cover_url": "", "status": "published", "free_episode_count": 12, "coin_price_per_episode": 50, "updated_at": "2026-10-13T23:53:55.650246+00:00"}]}
+
+## 阶段4 详情
+HTTP 200
+{"id": 1, "title": "I Became the Mob Boss's Wife", "synopsis": "A swapped identity, a mob empire, and 64 episodes.", "cover_url": "", "status": "published", "free_episode_count": 12, "coin_price_per_episode": 50, "updated_at": "2026-10-13T23:53:55.650246+00:00"}
+
+## 阶段3 分集列表
+HTTP 200
+{"total": 13, "numbers": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], "statuses": ["published"]}
+
+## 阶段4 免费集授权
+HTTP 200
+{"allowed": true, "expires_at": 1791936036, "url": "https://cdn.local/videos/demo-1/?token=38b38b25b7153b653b3a70a97bd48dbb94eb39f96d1ac95672e36af51c81df29&expires=1791936036&gen=0", "renditions": ["360P", "720P", "1080P"], "subtitle": null, "episode_id": 1, "episode_number": 1, "title": "Episode 1", "duration_seconds": 0}
+
+## 阶段4 锁定集没有播放地址
+HTTP 200
+{"allowed": false, "reason": "locked", "unlock": {"coin_price": 50, "membership_available": true}}
+
+## 阶段7/12 套餐
+HTTP 200
+{"items": [{"code": "weekly", "name_en": "Weekly", "name_zh": "周卡", "price_cents": 999, "currency": "USD", "version": 1, "version_id": 1, "benefits": {"best": false, "items": ["Unlock all", "No ads", "1080p"]}}, {"code": "monthly", "name_en": "Monthly", "name_zh": "月卡", "price_cents": 1999, "currency": "USD", "version": 1, "version_id": 2, "benefits": {"best": true, "items": ["Weekly benefits", "Download"]}}, {"code": "yearly", "name_en": "Yearly", "name_zh": "年卡", "price_cents": 7999, "currency...
+
+## 阶段9 官网数据
+HTTP 200
+{"stats": [{"label": "Downloads", "value": "5M+"}, {"label": "Dramas", "value": "1,200+"}, {"label": "Episodes watched", "value": "50M+"}, {"label": "Rating", "value": "4.9"}], "trending": ["I Became the Mob Boss's Wife"], "plan_codes": ["weekly", "monthly", "yearly"]}
+
+## 阶段14 看板
+HTTP 200
+{"timezone": "America/Los_Angeles", "day": "2026-10-13", "active_users": 0, "new_users": 0, "revenue_cents": 0}
+
+## 阶段3 登记第64集
+HTTP 200
+{"id": 14, "episode_number": 64, "status": "not_uploaded"}
+
+## 阶段3 超过200MB被拒绝
+HTTP 422
+{"detail": "file exceeds 200MB"}
