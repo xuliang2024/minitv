@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, Card, Form, Image, Input, InputNumber, Select, Space, Tag, Typography, message } from "antd";
+import { Button, Card, Form, Image, Input, InputNumber, Select, Space, Tabs, Tag, Typography, message } from "antd";
 import { api } from "../api";
+import { EpisodesPanel, GroupsPanel, PublishPanel } from "./StagePages";
 
 type Drama = {
   id: number;
@@ -84,6 +85,9 @@ export default function DramaEdit() {
           <Button onClick={() => navigate("/dramas")}>← 返回列表</Button>
         </Space>
       </Card>
+      <Tabs
+        items={[
+          { key: "info", label: "基本信息", children: (
       <Card title="基本信息">
         <Form form={form} layout="vertical" onFinish={onSave} style={{ maxWidth: 720 }}>
           <Form.Item label="封面（3:4，URL 登记）" name="cover_url" style={{ maxWidth: 360 }}>
@@ -133,6 +137,12 @@ export default function DramaEdit() {
           </Button>
         </Form>
       </Card>
+          ) },
+          { key: "episodes", label: "分集", children: <EpisodesPanel dramaId={id!} /> },
+          { key: "groups", label: "首页分组", children: <GroupsPanel dramaId={id!} /> },
+          { key: "publish", label: "发布与下架", children: <PublishPanel dramaId={id!} status={drama.status} /> },
+        ]}
+      />
     </Space>
   );
 }
