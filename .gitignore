@@ -15,6 +15,14 @@ data/.cache/
 # frontend build artifacts
 admin/node_modules/
 admin/dist/
+web/node_modules/
+web/dist/
+
+# local media library (large, regenerable via scripts/)
+data/litetv-videos-local/
+data/litetv-videos-real/
+data/litetv-videos-synth/
+data/litetv-catalog-20261013/
 
 # macOS
 .DS_Store
