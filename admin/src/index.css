@@ -1,0 +1,260 @@
+/* Minimal global reset: antd v5 ships no page-level reset, so the browser's
+   default body margin used to leave a stray 8px ring around the admin shell. */
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f5f6f8;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Wide tables scroll horizontally on small screens instead of crushing cells. */
+.ant-table-wrapper .ant-table-content,
+.ant-table-wrapper .ant-table-body {
+  overscroll-behavior-x: contain;
+}
+
+/* Header labels ("免费集数", "最近更新", ...) must stay on one line: when a table
+   is squeezed they used to stack one character per row. Cells still wrap. */
+.ant-table-wrapper .ant-table-thead > tr > th {
+  white-space: nowrap;
+}
+
+/* Episode editor: metadata first, video replace is an explicit second step. */
+.ep-editor-root .ep-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-editor-root .ant-modal-title .ant-tag {
+  margin-inline-end: 0;
+  font-weight: 500;
+}
+
+.ep-editor-root .ant-modal-footer {
+  padding-top: 4px;
+}
+
+.ep-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ep-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+}
+
+.ep-kicker {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 22px;
+  color: #1f1f1f;
+}
+
+.ep-req {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #e53b3e;
+}
+
+.ep-text-btn.ant-btn {
+  height: auto;
+  padding: 0;
+  color: #595959;
+}
+
+.ep-text-btn.ant-btn:not(:disabled):hover {
+  color: #e53b3e;
+}
+
+.ep-fields {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: start;
+}
+
+.ep-fields .ant-form-item-label {
+  padding-bottom: 4px;
+}
+
+.ep-video-card,
+.ep-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #ececec;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.ep-file {
+  align-items: flex-start;
+  background: #fff;
+}
+
+.ep-video-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #e53b3e;
+  font-size: 16px;
+}
+
+.ep-video-copy,
+.ep-file-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.ep-video-title,
+.ep-file-name {
+  color: #1f1f1f;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ep-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-video-sub,
+.ep-file-sub {
+  margin-top: 2px;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ep-video-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ep-file-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-top: -2px;
+}
+
+.ep-file-actions > .ant-btn.ant-btn-text {
+  color: #8c8c8c;
+}
+
+.ep-note,
+.ep-warn,
+.ep-error {
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ep-note {
+  padding: 10px 12px;
+  background: #f5f7fa;
+  color: #595959;
+}
+
+.ep-warn {
+  padding: 10px 12px;
+  background: #fff8f0;
+  color: #8a5a12;
+}
+
+.ep-error {
+  color: #cf1322;
+  font-size: 12px;
+}
+
+.ep-drop.ant-upload-wrapper .ant-upload-drag {
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.ep-drop.ant-upload-wrapper .ant-upload-drag .ant-upload-btn {
+  padding: 18px 16px;
+}
+
+.ep-drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ep-drop-icon {
+  color: #e53b3e;
+  font-size: 22px;
+}
+
+.ep-drop-title {
+  color: #1f1f1f;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ep-drop-hint {
+  max-width: 420px;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ep-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ep-editor-root .ep-footer .ant-btn {
+  margin-inline-start: 0;
+}
+
+@media (max-width: 560px) {
+  .ep-fields {
+    grid-template-columns: 1fr;
+    row-gap: 12px;
+  }
+
+  .ep-video-card {
+    flex-wrap: wrap;
+  }
+
+  .ep-video-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}

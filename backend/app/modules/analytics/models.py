@@ -1,4 +1,10 @@
-"""Read models for the admin dashboard. Playback never writes these rows."""
+"""Read models for the admin dashboard.
+
+Rows are a *snapshot cache* recomputed from product tables (playback events,
+orders, coin ledger, entitlements) whenever the dashboard is read; nothing in
+the product writes them directly. Playback authorization never touches this
+module.
+"""
 
 from __future__ import annotations
 
@@ -18,11 +24,18 @@ class DailyMetric(Base):
     timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="America/Los_Angeles")
     active_users: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     new_users: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    plays: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    paid_orders: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     revenue_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     coin_spend: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unlock_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completion_rate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # basis points
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     __table_args__ = (UniqueConstraint("business_day", name="uq_daily_metrics_day"),)

@@ -129,6 +129,28 @@ def test_basic_info_roundtrip(make, session, client):
     assert [t["id"] for t in got["tags"]] == [tag["id"]]
 
 
+# ---- regression: duplicate tag ids in PATCH must be tolerated, not 500 ----
+
+
+def test_update_drama_tolerates_duplicate_tag_ids(make, session, client):
+    headers = _ops_headers(make, client)
+    tag = client.post(
+        "/admin/v1/tags",
+        json={"name_en": "Duplicate Safe", "category": "genre"},
+        headers=headers,
+    ).json()
+    drama_id = client.post("/admin/v1/dramas", json={"title": "Dup Tag Drama"}, headers=headers).json()["id"]
+
+    r = client.patch(
+        f"/admin/v1/dramas/{drama_id}",
+        json={"tag_ids": [tag["id"], tag["id"]]},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    got = client.get(f"/admin/v1/dramas/{drama_id}", headers=headers).json()
+    assert [t["id"] for t in got["tags"]] == [tag["id"]]
+
+
 # ---- acceptance 4: a tag without an English name cannot be saved ----
 
 
@@ -222,3 +244,172 @@ def test_logout_invalidates_session(make, session, client):
     assert client.get("/admin/v1/auth/me", headers=headers).status_code == 200
     client.post("/admin/v1/auth/logout", headers=headers)
     assert client.get("/admin/v1/auth/me", headers=headers).status_code == 401
+
+
+# ---- cover upload / replace / delete ----
+
+
+JPEG = b"\xff\xd8\xff" + b"\x00" * 16
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+WEBP = b"RIFF" + b"\x18\x00\x00\x00" + b"WEBP" + b"\x00" * 8
+
+
+def _stub_bunny_storage(monkeypatch):
+    """Real mode without touching the network or the dev storage zone."""
+    from app.modules.common import bunny
+
+    monkeypatch.setenv("BUNNY_MODE", "real")
+    stored: dict[str, dict] = {}
+    deleted: list[str] = []
+    purged: list[str] = []
+
+    def fake_upload(remote_path, data, content_type="application/octet-stream"):
+        stored[remote_path] = {"data": data, "content_type": content_type}
+
+    def fake_delete(remote_path):
+        deleted.append(remote_path)
+        stored.pop(remote_path, None)
+
+    monkeypatch.setattr(bunny, "storage_upload", fake_upload)
+    monkeypatch.setattr(bunny, "storage_delete", fake_delete)
+    monkeypatch.setattr(bunny, "purge_url", purged.append)
+    monkeypatch.setattr(bunny, "image_url", lambda remote_path: f"https://img.test/{remote_path}")
+    return stored, deleted, purged
+
+
+def test_cover_upload_requires_login_and_writer(make, session, client):
+    assert client.post("/admin/v1/dramas/1/cover", files={"file": ("a.jpg", JPEG, "image/jpeg")}).status_code == 401
+    assert client.delete("/admin/v1/dramas/1/cover").status_code == 401
+
+    finance = make.admin(role="finance")
+    headers = _login(client, finance.username)
+    assert client.post(
+        "/admin/v1/dramas/1/cover",
+        files={"file": ("a.jpg", JPEG, "image/jpeg")},
+        headers=headers,
+    ).status_code == 403
+    assert client.delete("/admin/v1/dramas/1/cover", headers=headers).status_code == 403
+
+
+def test_cover_upload_rejected_without_storage(make, session, client, monkeypatch):
+    monkeypatch.setenv("BUNNY_MODE", "fake")
+    headers = _ops_headers(make, client)
+    drama_id = client.post("/admin/v1/dramas", json={"title": "No Storage"}, headers=headers).json()["id"]
+    r = client.post(
+        f"/admin/v1/dramas/{drama_id}/cover",
+        files={"file": ("a.jpg", JPEG, "image/jpeg")},
+        headers=headers,
+    )
+    assert r.status_code == 503
+    assert "链接" in r.json()["detail"]
+
+
+def test_cover_upload_replace_and_delete(make, session, client, monkeypatch):
+    stored, deleted, purged = _stub_bunny_storage(monkeypatch)
+    headers = _ops_headers(make, client)
+    drama_id = client.post("/admin/v1/dramas", json={"title": "Cover"}, headers=headers).json()["id"]
+
+    r = client.post(
+        f"/admin/v1/dramas/{drama_id}/cover",
+        files={"file": ("poster.png", PNG, "image/png")},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    first = r.json()["cover_url"]
+    assert first.startswith(f"https://img.test/covers/{drama_id}/cover.png?v=")
+    assert stored[f"covers/{drama_id}/cover.png"]["content_type"] == "image/png"
+    assert client.get(f"/admin/v1/dramas/{drama_id}", headers=headers).json()["cover_url"] == first
+
+    # Bytes win over a lying Content-Type. The previous png object is removed.
+    r = client.post(
+        f"/admin/v1/dramas/{drama_id}/cover",
+        files={"file": ("poster.gif", JPEG, "image/gif")},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    second = r.json()["cover_url"]
+    assert second.startswith(f"https://img.test/covers/{drama_id}/cover.jpg?v=")
+    assert f"covers/{drama_id}/cover.png" not in stored
+    assert f"covers/{drama_id}/cover.png" in deleted
+    assert stored[f"covers/{drama_id}/cover.jpg"]["content_type"] == "image/jpeg"
+    assert any(url.startswith(f"https://img.test/covers/{drama_id}/cover.jpg") for url in purged)
+
+    r = client.post(
+        f"/admin/v1/dramas/{drama_id}/cover",
+        files={"file": ("poster.webp", WEBP, "application/octet-stream")},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["cover_url"].startswith(f"https://img.test/covers/{drama_id}/cover.webp?v=")
+
+    r = client.post(
+        f"/admin/v1/dramas/{drama_id}/cover",
+        files={"file": ("nope.gif", b"GIF89a" + b"\x00" * 8, "image/gif")},
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert "JPG" in r.json()["detail"]
+
+    r = client.post(
+        f"/admin/v1/dramas/{drama_id}/cover",
+        files={"file": ("empty.jpg", b"", "image/jpeg")},
+        headers=headers,
+    )
+    assert r.status_code == 422
+
+    import app.modules.ops.flow_router as flow
+
+    monkeypatch.setattr(flow, "COVER_MAX_BYTES", 8)
+    r = client.post(
+        f"/admin/v1/dramas/{drama_id}/cover",
+        files={"file": ("big.jpg", JPEG + b"x" * 32, "image/jpeg")},
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert "5MB" in r.json()["detail"]
+
+    from app.modules.common import bunny
+
+    # The size-limit override above must not leak into the upstream-failure case.
+    monkeypatch.setattr(flow, "COVER_MAX_BYTES", 5 * 1024 * 1024)
+
+    def boom(*_a, **_k):
+        raise bunny.BunnyError("upstream down")
+
+    monkeypatch.setattr(bunny, "storage_upload", boom)
+    before = client.get(f"/admin/v1/dramas/{drama_id}", headers=headers).json()["cover_url"]
+    r = client.post(
+        f"/admin/v1/dramas/{drama_id}/cover",
+        files={"file": ("again.png", PNG, "image/png")},
+        headers=headers,
+    )
+    assert r.status_code == 502
+    assert client.get(f"/admin/v1/dramas/{drama_id}", headers=headers).json()["cover_url"] == before
+
+    r = client.delete(f"/admin/v1/dramas/{drama_id}/cover", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["cover_url"] == ""
+    assert client.get(f"/admin/v1/dramas/{drama_id}", headers=headers).json()["cover_url"] == ""
+    assert client.delete("/admin/v1/dramas/999999/cover", headers=headers).status_code == 404
+
+
+def test_cover_delete_in_fake_mode_clears_url_only(make, session, client, monkeypatch):
+    from app.modules.common import bunny
+
+    monkeypatch.setenv("BUNNY_MODE", "fake")
+
+    def explode(*_a, **_k):
+        raise AssertionError("fake mode must not touch storage")
+
+    monkeypatch.setattr(bunny, "storage_delete", explode)
+    monkeypatch.setattr(bunny, "purge_url", explode)
+    headers = _ops_headers(make, client)
+    drama_id = client.post("/admin/v1/dramas", json={"title": "Linked"}, headers=headers).json()["id"]
+    client.patch(
+        f"/admin/v1/dramas/{drama_id}",
+        json={"cover_url": "https://cdn.example/cover.jpg"},
+        headers=headers,
+    )
+    r = client.delete(f"/admin/v1/dramas/{drama_id}/cover", headers=headers)
+    assert r.status_code == 200
+    assert client.get(f"/admin/v1/dramas/{drama_id}", headers=headers).json()["cover_url"] == ""

@@ -30,10 +30,11 @@ export default function Login() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        padding: 16,
         background: "#0C0A0B",
       }}
     >
-      <Card title="MiniTV 管理后台登录" style={{ width: 360 }}>
+      <Card title="MiniTV 管理后台登录" style={{ width: "100%", maxWidth: 360 }}>
         <Form layout="vertical" onFinish={onFinish} initialValues={{ username: "", password: "" }}>
           <Form.Item name="username" label="账号" rules={[{ required: true, message: "请输入账号" }]}>
             <Input placeholder="如 ops / admin" autoComplete="username" />

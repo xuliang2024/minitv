@@ -100,6 +100,7 @@ export default function Tags() {
         rowKey="id"
         loading={loading}
         dataSource={rows}
+        scroll={{ x: 760 }}
         pagination={{ pageSize: 20, showSizeChanger: true }}
         columns={[
           { title: "英文名（必填）", dataIndex: "name_en", render: (v: string) => <Typography.Text code>{v}</Typography.Text> },

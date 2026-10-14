@@ -25,8 +25,21 @@ def _bearer_token(request: Request) -> str:
     return auth[len("Bearer "):]
 
 
+SESSION_STORE_503_DETAIL = (
+    "会话存储不可用（Redis 未连接）。请先启动 minitv-redis："
+    "在仓库根目录执行 docker compose up -d，然后重试。"
+)
+
+
+def _session_store_503() -> HTTPException:
+    return HTTPException(status_code=503, detail=SESSION_STORE_503_DETAIL)
+
+
 def require_admin(request: Request, db: Session = Depends(get_db)) -> AdminUser:
-    user = ops_service.resolve_session_token(db, _bearer_token(request))
+    try:
+        user = ops_service.resolve_session_token(db, _bearer_token(request))
+    except ops_service.SessionStoreUnavailable as exc:
+        raise _session_store_503() from exc
     if user is None:
         raise HTTPException(status_code=401, detail="invalid or expired session")
     return user
@@ -116,7 +129,8 @@ def _drama_out(db: Session, drama: Drama) -> dict:
         "coin_price_per_episode": drama.coin_price_per_episode,
         "tags": [{"id": t.id, "name_en": t.name_en, "name_zh": t.name_zh} for t in tag_rows],
         "episode_count": episode_count,
-        "play_count": 0,  # placeholder until the analytics stage
+        # Lifetime starts reported by the player; see playback.record_event.
+        "play_count": drama.play_count,
         "updated_at": drama.updated_at.isoformat() if drama.updated_at else None,
     }
 
@@ -133,7 +147,10 @@ def _get_drama_or_404(db: Session, drama_id: int) -> Drama:
 
 @router.post("/auth/login")
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    result = ops_service.login(db, username=body.username, password=body.password)
+    try:
+        result = ops_service.login(db, username=body.username, password=body.password)
+    except ops_service.SessionStoreUnavailable as exc:
+        raise _session_store_503() from exc
     if result is None:
         raise HTTPException(status_code=401, detail="invalid credentials")
     user, token = result
@@ -147,7 +164,10 @@ def me(user: AdminUser = Depends(require_admin)):
 
 @router.post("/auth/logout")
 def logout(request: Request, user: AdminUser = Depends(require_admin)):
-    ops_service.logout(_bearer_token(request))
+    try:
+        ops_service.logout(_bearer_token(request))
+    except ops_service.SessionStoreUnavailable as exc:
+        raise _session_store_503() from exc
     return {"ok": True}
 
 
@@ -229,7 +249,7 @@ def update_drama(
             db.rollback()
             raise HTTPException(status_code=422, detail="unknown tag id in tag_ids")
         db.query(DramaTag).filter(DramaTag.drama_id == drama.id).delete()
-        for tid in tag_ids:
+        for tid in dict.fromkeys(tag_ids):  # tolerate duplicate ids from clients
             db.add(DramaTag(drama_id=drama.id, tag_id=tid))
     db.commit()
     db.refresh(drama)

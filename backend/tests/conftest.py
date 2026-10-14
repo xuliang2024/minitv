@@ -21,10 +21,19 @@ BACKEND = pathlib.Path(__file__).resolve().parents[1]
 ROOT = BACKEND.parent
 sys.path.insert(0, str(BACKEND))
 
+# Tests never talk to the real Bunny APIs, regardless of what the local .env
+# contains. Set before any app module import so load_env()'s setdefault cannot
+# turn real mode on.
+os.environ["BUNNY_MODE"] = "fake"
+# Tests must not send real email. The sender is also unset, so a missed mock
+# fails closed instead of calling Resend.
+os.environ["RESEND_API_KEY"] = ""
+os.environ["RESEND_FROM"] = ""
+
 from app import modules  # noqa: E402,F401  registers every ORM model
 from app.db import Base, load_env  # noqa: E402
 
-TEST_DB_NAME = "minitv_test"
+TEST_DB_NAME = os.environ.get("MINITV_TEST_DB", "minitv_test")
 
 
 def _admin_url() -> str:
@@ -56,7 +65,8 @@ def engine():
     os.environ["ALEMBIC_DATABASE_URL"] = url
     os.environ["DATABASE_URL"] = url
     base_redis = os.environ.get("REDIS_URL", "redis://:minitv_local@127.0.0.1:16379/0")
-    os.environ["REDIS_URL"] = base_redis.rsplit("/", 1)[0] + "/15"  # dedicated test db
+    redis_db = os.environ.get("MINITV_TEST_REDIS_DB", "15")
+    os.environ["REDIS_URL"] = base_redis.rsplit("/", 1)[0] + f"/{redis_db}"  # dedicated test db
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "alembic"))
     cfg.set_main_option("sqlalchemy.url", url)

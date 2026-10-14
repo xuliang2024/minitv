@@ -26,6 +26,15 @@ SESSION_TTL = timedelta(hours=8)
 _redis_client = None
 
 
+class SessionStoreUnavailable(Exception):
+    """Redis (the admin session store) is unreachable.
+
+    The ops router maps this to HTTP 503 with an actionable message; a bare
+    500 would hide the real cause (usually the local ``minitv-redis``
+    container being down).
+    """
+
+
 def get_redis():
     global _redis_client
     if _redis_client is None:
@@ -71,14 +80,20 @@ def login(session: Session, *, username: str, password: str) -> tuple[AdminUser,
     if not verify_password(password, user.password_hash):
         return None
     token = secrets.token_urlsafe(32)
-    client = get_redis()
-    client.set(SESSION_PREFIX + token, str(user.id), ex=int(SESSION_TTL.total_seconds()))
+    try:
+        get_redis().set(
+            SESSION_PREFIX + token, str(user.id), ex=int(SESSION_TTL.total_seconds())
+        )
+    except redis_lib.RedisError as exc:
+        raise SessionStoreUnavailable("redis session store is unavailable") from exc
     return user, token
 
 
 def resolve_session_token(session: Session, token: str) -> AdminUser | None:
-    client = get_redis()
-    user_id = client.get(SESSION_PREFIX + token)
+    try:
+        user_id = get_redis().get(SESSION_PREFIX + token)
+    except redis_lib.RedisError as exc:
+        raise SessionStoreUnavailable("redis session store is unavailable") from exc
     if user_id is None:
         return None
     user = session.get(AdminUser, int(user_id))
@@ -88,4 +103,7 @@ def resolve_session_token(session: Session, token: str) -> AdminUser | None:
 
 
 def logout(token: str) -> None:
-    get_redis().delete(SESSION_PREFIX + token)
+    try:
+        get_redis().delete(SESSION_PREFIX + token)
+    except redis_lib.RedisError as exc:
+        raise SessionStoreUnavailable("redis session store is unavailable") from exc

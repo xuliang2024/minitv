@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
+from app.modules.common import bunny
 from app.modules.common.models import AuditLog
 from app.modules.content.models import (
     CdnPurge,
@@ -44,7 +45,13 @@ def _impact(session: Session, drama_id: int) -> dict:
     )
     banners = session.scalar(select(func.count()).select_from(Banner).where(Banner.drama_id == drama_id)) or 0
     pushes = session.scalar(select(func.count()).select_from(PushRecord).where(PushRecord.drama_id == drama_id)) or 0
-    return {"groups": groups, "banner_count": banners, "push_count": pushes}
+    episodes = session.scalar(select(func.count()).select_from(Episode).where(Episode.drama_id == drama_id)) or 0
+    return {
+        "groups": groups,
+        "banner_count": banners,
+        "push_count": pushes,
+        "episode_count": episodes,
+    }
 
 
 def invalidate_drama(session: Session, drama: Drama, reason: str) -> None:
@@ -52,6 +59,13 @@ def invalidate_drama(session: Session, drama: Drama, reason: str) -> None:
     for episode in episodes:
         bump_generation(episode.id)
         session.add(CdnPurge(episode_id=episode.id, drama_id=drama.id, reason=reason))
+        if bunny.live() and episode.bunny_video_id:
+            try:
+                bunny.purge_url(f"https://{bunny.stream_cdn_host()}/{episode.bunny_video_id}/*")
+            except bunny.BunnyError:
+                # A takedown must not be blocked by a purge failure; already
+                # signed URLs expire within TOKEN_TTL_SECONDS anyway.
+                pass
 
 
 def change_drama_status(session: Session, drama: Drama, to_status: str, *, actor_id: int) -> Drama:
@@ -121,6 +135,16 @@ def publish_episode(session: Session, episode: Episode) -> Episode:
         raise PublishError(409, str(exc)) from exc
     session.commit()
     return episode
+
+
+def remove_from_group(session: Session, group_id: int, drama_id: int) -> bool:
+    """Drop one membership. Returns False when the drama was not in the group."""
+    link = session.get(DramaHomeGroup, (group_id, drama_id))
+    if link is None:
+        return False
+    session.delete(link)
+    session.commit()
+    return True
 
 
 def add_to_group(session: Session, group: HomeGroup, drama_id: int, *, confirm: bool) -> dict:

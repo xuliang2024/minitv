@@ -8,18 +8,18 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.main import app
 from app.modules.account import service as accounts
-from app.modules.account.models import VerificationCode
+from app.modules.account.models import User, VerificationCode
 from app.modules.billing.service import ensure_default_plans, sign_webhook
 from app.modules.common.models import AuditLog
-from app.modules.content.models import MediaUpload
+from app.modules.content.models import Episode, MediaUpload
 from app.modules.content.upload_service import sign_callback
 from app.modules.playback.service import image_secret, sign_path, verify_token, video_secret
-from app.modules.wallet.models import CoinLedgerEntry
+from app.modules.wallet.models import CoinLedgerEntry, WalletAccount
 from app.modules.wallet.service import InsufficientCoinsError, unlock_episode
 
 
@@ -96,6 +96,27 @@ def test_upload_rejects_oversize_and_wrong_mime(make, client):
     assert bad_mime.status_code == 422
 
 
+def test_upload_accepts_landscape_video(make, client, session):
+    """Ops uploads landscape episodes too: orientation must never gate an upload."""
+    headers = _ops(make, client)
+    drama = make.drama()
+    episode = make.episode(drama, number=1)
+    created = client.post(
+        f"/admin/v1/episodes/{episode.id}/upload-session",
+        json={"filename": "landscape.mp4", "mime": "video/mp4", "size_bytes": 1000, "width": 1920, "height": 1080},
+        headers=headers,
+    )
+    assert created.status_code == 200, created.text
+
+    session.expire_all()
+    row = session.get(Episode, episode.id)
+    assert (row.width, row.height) == (1920, 1080)
+    upload = session.scalars(
+        select(MediaUpload).where(MediaUpload.video_id == created.json()["video_id"])
+    ).one()
+    assert upload.vertical is False
+
+
 def test_callback_signature_and_replay(make, client, session):
     headers = _ops(make, client)
     drama = make.drama()
@@ -139,6 +160,8 @@ def test_guest_free_playback_and_locked_episode_hides_url(make, client):
     assert payload["allowed"] is True
     assert "token=" in payload["url"]
     assert payload["expires_at"] - int(datetime.now(timezone.utc).timestamp()) <= 300
+    # Rendition hint follows the uploaded source (720x1280 -> ladder up to 720P).
+    assert payload["renditions"] == ["240P", "360P", "480P", "720P"]
 
     denied = client.post("/v1/playback", json={"drama_id": drama.id, "episode_id": locked.id})
     text = denied.text.lower()
@@ -242,6 +265,40 @@ def test_groups_sort_independently_and_cap_at_20(make, client):
     client.patch(f"/admin/v1/groups/{second}", json={"position": 9}, headers=headers)
     still = client.get("/admin/v1/groups", headers=headers).json()["items"]
     assert next(item for item in still if item["id"] == second)["position"] == 9
+    assert next(item for item in still if item["id"] == first)["drama_count"] == 20
+
+
+def test_group_editor_rename_membership_and_drama_side(make, client):
+    headers = _ops(make, client)
+    drama = make.drama(title="Editor Drama")
+    other = make.drama(title="Other Drama")
+    created = client.post("/admin/v1/groups", json={"name": "Weekly", "position": 0}, headers=headers)
+    assert created.status_code == 200, created.text
+    group_id = created.json()["id"]
+
+    renamed = client.patch(f"/admin/v1/groups/{group_id}", json={"name": "本周推荐", "status": "inactive"}, headers=headers)
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "本周推荐"
+    assert renamed.json()["status"] == "inactive"
+
+    added = client.post(f"/admin/v1/groups/{group_id}/dramas", json={"drama_id": drama.id, "confirm": True}, headers=headers)
+    assert added.status_code == 200, added.text
+    client.post(f"/admin/v1/groups/{group_id}/dramas", json={"drama_id": other.id, "confirm": True}, headers=headers)
+
+    members = client.get(f"/admin/v1/groups/{group_id}/dramas", headers=headers).json()["items"]
+    assert [item["id"] for item in members] == [drama.id, other.id]
+
+    removed = client.delete(f"/admin/v1/groups/{group_id}/dramas/{other.id}", headers=headers)
+    assert removed.status_code == 200, removed.text
+    left = client.get(f"/admin/v1/groups/{group_id}/dramas", headers=headers).json()["items"]
+    assert [item["id"] for item in left] == [drama.id]
+
+    mine = client.get(f"/admin/v1/dramas/{drama.id}/groups", headers=headers).json()["items"]
+    row = next(item for item in mine if item["id"] == group_id)
+    assert row["joined"] is True
+    assert row["status"] == "inactive"
+    public = client.get("/v1/home/groups").json()["groups"]
+    assert all(item["id"] != group_id for item in public)
 
 
 def test_unpublish_hides_and_delete_needs_confirm(make, client):
@@ -293,8 +350,21 @@ def test_copy_requires_english_and_price_versions_stay_pinned(make, client, sess
     assert sub.plan_version_id == version_id
 
 
+def test_verification_code_is_not_kept_when_email_fails(client, session, monkeypatch):
+    from app.modules.account.mail import MailError
+
+    def fail(**_):
+        raise MailError("down")
+
+    monkeypatch.setattr(accounts, "send_verification_code", fail)
+    response = client.post("/v1/auth/email/code", json={"email": "down@example.com", "purpose": "register"})
+    assert response.status_code == 503
+    assert session.scalar(select(VerificationCode).where(VerificationCode.email == "down@example.com")) is None
+
+
 def test_register_has_no_password_and_rewards_follow_rules(make, session, client, monkeypatch):
     monkeypatch.setattr(accounts, "generate_code", lambda: "123456")
+    monkeypatch.setattr(accounts, "send_verification_code", lambda **_: "test-message")
     client.post("/v1/auth/email/code", json={"email": "new@example.com", "purpose": "register"})
     rejected = client.post("/v1/auth/email/register", json={"email": "new@example.com", "code": "123456", "password": "secret"})
     assert rejected.status_code == 422
@@ -339,6 +409,69 @@ def test_pending_comments_stay_hidden_and_dashboard_uses_los_angeles(make, clien
     assert board.json()["new_users"] == 1
     other = client.get("/admin/v1/dashboard", params={"day": "2026-10-14"}, headers=headers)
     assert other.json()["new_users"] == 0
+
+
+def test_admin_user_list_exposes_profile_fields_and_edit_is_audited(make, session, client):
+    admin = make.admin(role="admin")
+    headers = _login(client, admin.username)
+    user = make.user(email="edit-me@example.com", coins=120)
+
+    listed = client.get("/admin/v1/users", params={"q": "edit-me@example.com"}, headers=headers)
+    assert listed.status_code == 200, listed.text
+    row = next(item for item in listed.json()["items"] if item["id"] == user.id)
+    assert row["coins"] == 120
+    assert {"email", "avatar_url", "gender", "bio", "region", "locale", "member", "member_until"} <= set(row)
+
+    updated = client.patch(
+        f"/admin/v1/users/{user.id}",
+        json={"display_name": "Renamed User", "gender": "other", "bio": "hello", "region": "US"},
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["updated"] is True
+    session.expire_all()  # the request ran through its own session
+    assert session.get(User, user.id).display_name == "Renamed User"
+    actions = session.scalars(select(AuditLog.action).where(AuditLog.target_id == user.id)).all()
+    assert "user_update" in actions
+
+    make.user(email="taken@example.com")
+    taken = client.patch(f"/admin/v1/users/{user.id}", json={"email": "taken@example.com"}, headers=headers)
+    assert taken.status_code == 409
+    assert client.patch(f"/admin/v1/users/{user.id}", json={"gender": "martian"}, headers=headers).status_code == 422
+    assert client.patch(f"/admin/v1/users/{user.id}", json={"display_name": "   "}, headers=headers).status_code == 422
+    assert client.patch("/admin/v1/users/999999", json={"display_name": "ghost"}, headers=headers).status_code == 404
+
+    finance = make.admin(role="finance")
+    finance_headers = _login(client, finance.username)
+    denied = client.patch(f"/admin/v1/users/{user.id}", json={"display_name": "Nope"}, headers=finance_headers)
+    assert denied.status_code == 403
+
+
+def test_adjust_bootstraps_missing_wallet_and_blocks_negative(make, session, client):
+    admin = make.admin(role="admin")
+    headers = _login(client, admin.username)
+    user = make.user(email="no-wallet@example.com", coins=0)
+    session.execute(delete(WalletAccount).where(WalletAccount.user_id == user.id))
+    session.commit()
+
+    granted = client.post(
+        f"/admin/v1/users/{user.id}/coins", json={"delta": 30, "reason": "bootstrap"}, headers=headers
+    )
+    assert granted.status_code == 200, granted.text
+    assert granted.json() == {"before": 0, "delta": 30, "after": 30}
+    assert session.get(WalletAccount, user.id).balance == 30
+
+    overdraw = client.post(
+        f"/admin/v1/users/{user.id}/coins", json={"delta": -100, "reason": "too much"}, headers=headers
+    )
+    assert overdraw.status_code == 409
+    assert session.get(WalletAccount, user.id).balance == 30
+
+    missing = client.post("/admin/v1/users/999999/coins", json={"delta": 1, "reason": "ghost"}, headers=headers)
+    assert missing.status_code == 404
+
+    zero = client.post(f"/admin/v1/users/{user.id}/coins", json={"delta": 0, "reason": "noop"}, headers=headers)
+    assert zero.status_code == 422
 
 
 def test_finance_cannot_adjust_and_playback_ignores_analytics(make, client):

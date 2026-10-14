@@ -28,7 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
 DRAMA_STATUSES = ("draft", "in_review", "published", "unpublished")
-EPISODE_STATUSES = ("not_uploaded", "transcoding", "transcode_failed", "in_review", "published")
+EPISODE_STATUSES = ("not_uploaded", "transcoding", "transcode_failed", "in_review", "published", "unpublished")
 
 
 class Drama(Base):

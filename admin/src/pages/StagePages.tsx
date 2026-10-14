@@ -1,62 +1,651 @@
-import { useEffect, useState } from "react";
-import { Button, Card, Form, Input, InputNumber, Select, Space, Table, Tag, Typography, message } from "antd";
-import { api } from "../api";
+import { useEffect, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
+import { Alert, Avatar, Button, Card, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography, message } from "antd";
+import { ApiError, api, errorText } from "../api";
+import { useConfirm } from "../confirm";
+import { useIsAdmin } from "../me";
 
 function useLoad<T>(path: string, fallback: T) {
   const [data, setData] = useState<T>(fallback);
-  const reload = () => api<T>(path).then(setData).catch((e) => message.error(String(e?.detail ?? e?.message ?? e)));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const reload = () => {
+    setLoading(true);
+    return api<T>(path)
+      .then((value) => {
+        setData(value);
+        setError(null);
+      })
+      .catch((e) => {
+        const text = errorText(e);
+        setError(text);
+        message.error(text);
+      })
+      .finally(() => setLoading(false));
+  };
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
-  return { data, reload };
+  return { data, reload, loading, error };
+}
+
+/** ISO-8601 from the API -> local "YYYY-MM-DD HH:mm" for table cells. */
+function formatTime(value?: string | null) {
+  if (!value) return "-";
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) return value;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${moment.getFullYear()}-${pad(moment.getMonth() + 1)}-${pad(moment.getDate())} ${pad(moment.getHours())}:${pad(moment.getMinutes())}`;
+}
+
+type DashboardMetric = {
+  day: string;
+  active_users: number;
+  new_users: number;
+  plays: number;
+  completes: number;
+  paid_orders: number;
+  revenue_cents: number;
+  coin_spend: number;
+  unlock_count: number;
+  completion_rate: number;
+};
+
+type Dashboard = Partial<DashboardMetric> & {
+  timezone?: string;
+  window?: { start: string; end: string; days: number };
+  trend?: DashboardMetric[];
+  previous?: Partial<DashboardMetric>;
+  top_dramas?: { id: number; title: string; plays: number; completes: number; completion_rate: number }[];
+  overview?: Record<string, number>;
+  recent_orders?: { order_no: string; user_id: number; amount_cents: number; currency: string; status: string; created_at: string }[];
+};
+
+const money = (cents?: number) => `$${((cents ?? 0) / 100).toFixed(2)}`;
+/** completion_rate is stored in basis points of the day's plays. */
+const rate = (basisPoints?: number) => `${((basisPoints ?? 0) / 100).toFixed(1)}%`;
+const int = (value?: number) => String(value ?? 0);
+
+function Delta({ value, render }: { value: number; render?: (value: number) => string }) {
+  if (!value) return <Typography.Text type="secondary">环比持平 · 0</Typography.Text>;
+  const text = render ? render(Math.abs(value)) : int(Math.abs(value));
+  return (
+    <Typography.Text type={value > 0 ? "success" : "danger"}>
+      环比 {value > 0 ? "↑" : "↓"} {text}
+    </Typography.Text>
+  );
+}
+
+/** Dependency-free bar chart: one column per business day. */
+function MiniBars({ rows, pick, color, format }: { rows: DashboardMetric[]; pick: (row: DashboardMetric) => number; color: string; format: (value: number) => string }) {
+  const values = rows.map(pick);
+  const max = Math.max(1, ...values);
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 96 }}>
+        {rows.map((row, index) => (
+          <Tooltip key={row.day} title={`${row.day} · ${format(values[index])}`}>
+            <div style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+              <div
+                style={{
+                  height: `${(values[index] / max) * 100}%`,
+                  minHeight: values[index] > 0 ? 3 : 1,
+                  background: values[index] > 0 ? color : "#eceff3",
+                  borderRadius: 3,
+                }}
+              />
+            </div>
+          </Tooltip>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+        {rows.map((row) => (
+          <Typography.Text key={row.day} type="secondary" style={{ flex: 1, fontSize: 11, textAlign: "center" }}>
+            {row.day.slice(5)}
+          </Typography.Text>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function DashboardPage() {
-  const { data } = useLoad<any>("/admin/v1/dashboard", {});
+  const [day, setDay] = useState("");
+  const [days, setDays] = useState(7);
+  const query = `/admin/v1/dashboard?days=${days}${day ? `&day=${day}` : ""}`;
+  const { data, reload, loading, error } = useLoad<Dashboard>(query, {});
+  const trend = data.trend ?? [];
+  const previous = data.previous ?? {};
+  const overview = data.overview ?? {};
+  const delta = (current: number | undefined, before: number | undefined, render?: (value: number) => string) => (
+    <Delta value={(current ?? 0) - (before ?? 0)} render={render} />
+  );
+
+  const kpis: { title: string; node: ReactNode; hint: ReactNode }[] = [
+    {
+      title: "活跃用户（登录去重）",
+      node: <Statistic value={data.active_users ?? 0} />,
+      hint: delta(data.active_users, previous.active_users),
+    },
+    { title: "新增用户", node: <Statistic value={data.new_users ?? 0} />, hint: delta(data.new_users, previous.new_users) },
+    { title: "播放次数", node: <Statistic value={data.plays ?? 0} />, hint: delta(data.plays, previous.plays) },
+    { title: "完播次数", node: <Statistic value={data.completes ?? 0} />, hint: delta(data.completes, previous.completes) },
+    {
+      title: "完播率",
+      node: <Statistic value={rate(data.completion_rate)} />,
+      hint: delta(data.completion_rate, previous.completion_rate, (value) => `${(value / 100).toFixed(1)}pp`),
+    },
+    { title: "营收", node: <Statistic value={(data.revenue_cents ?? 0) / 100} precision={2} prefix="$" />, hint: delta(data.revenue_cents, previous.revenue_cents, money) },
+    { title: "付费订单", node: <Statistic value={data.paid_orders ?? 0} />, hint: delta(data.paid_orders, previous.paid_orders) },
+    { title: "金币消耗", node: <Statistic value={data.coin_spend ?? 0} />, hint: delta(data.coin_spend, previous.coin_spend) },
+  ];
+
+  const overviewItems: [string, string][] = [
+    ["总用户", int(overview.total_users)],
+    ["有效会员", int(overview.active_members)],
+    ["已发布剧集", int(overview.published_dramas)],
+    ["已发布集数", int(overview.published_episodes)],
+    ["待发布集数", int(overview.episodes_awaiting_publish)],
+    ["待审评论", int(overview.pending_comments)],
+    ["累计播放", int(overview.lifetime_plays)],
+    ["累计营收", money(overview.lifetime_revenue_cents)],
+  ];
+
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
-      <Typography.Title level={4}>数据看板 · {data.timezone}</Typography.Title>
-      <Space>
-        <Card title="活跃用户">{data.active_users ?? "-"}</Card>
-        <Card title="新增用户">{data.new_users ?? "-"}</Card>
-        <Card title="营收（分）">{data.revenue_cents ?? "-"}</Card>
-        <Card title="完播率（万分比）">{data.completion_rate ?? "-"}</Card>
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Space style={{ width: "100%", justifyContent: "space-between" }} wrap align="start">
+        <Space direction="vertical" size={2}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            数据看板 · {data.timezone ?? "America/Los_Angeles"}
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            业务日按洛杉矶时区切分；指标全部来自真实事件（播放打点 / 支付订单 / 金币流水），无占位数字。
+          </Typography.Text>
+        </Space>
+        <Space wrap>
+          <Input type="date" value={day} onChange={(event) => setDay(event.target.value)} style={{ width: 160 }} />
+          <Select
+            value={days}
+            onChange={setDays}
+            style={{ width: 120 }}
+            options={[
+              { value: 7, label: "近 7 天" },
+              { value: 14, label: "近 14 天" },
+              { value: 30, label: "近 30 天" },
+            ]}
+          />
+          <Button onClick={reload} loading={loading}>
+            刷新
+          </Button>
+        </Space>
       </Space>
-      <Table rowKey="day" dataSource={data.trend ?? []} pagination={false} columns={[{ title: "日期", dataIndex: "day" }, { title: "活跃", dataIndex: "active_users" }, { title: "营收", dataIndex: "revenue_cents" }]} />
+
+      {error ? <Alert type="error" showIcon message="看板加载失败" description={error} /> : null}
+
+      <Typography.Text type="secondary">
+        指标日期：{data.day ?? "-"}（洛杉矶业务日）· 环比对比前一天
+      </Typography.Text>
+
+      {loading && trend.length === 0 ? (
+        <Skeleton active paragraph={{ rows: 6 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]}>
+            {kpis.map((item) => (
+              <Col key={item.title} xs={12} md={6}>
+                <Card size="small">
+                  <div style={{ color: "rgba(0,0,0,0.45)", fontSize: 14, marginBottom: 4 }}>{item.title}</div>
+                  {item.node}
+                  <div style={{ marginTop: 4 }}>{item.hint}</div>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+
+          <Card size="small" title="累计与待办">
+            <Row gutter={[16, 16]}>
+              {overviewItems.map(([title, value]) => (
+                <Col key={title} xs={12} sm={8} md={6} xl={3}>
+                  <Statistic title={title} value={value} />
+                </Col>
+              ))}
+            </Row>
+          </Card>
+
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}>
+              <Card size="small" title={`播放次数趋势（${data.window?.start ?? "-"} ~ ${data.window?.end ?? "-"}）`}>
+                <MiniBars rows={trend} pick={(row) => row.plays} color="#E53B3E" format={(value) => `${value} 次`} />
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card size="small" title="营收趋势">
+                <MiniBars rows={trend} pick={(row) => row.revenue_cents} color="#2f9e44" format={money} />
+              </Card>
+            </Col>
+          </Row>
+
+          <Card size="small" title="趋势明细">
+            <Table
+              rowKey="day"
+              size="small"
+              loading={loading}
+              dataSource={trend}
+              pagination={false}
+              scroll={{ x: 900 }}
+              columns={[
+                { title: "日期", dataIndex: "day", fixed: "left" },
+                { title: "新增用户", dataIndex: "new_users" },
+                { title: "活跃用户", dataIndex: "active_users" },
+                { title: "播放", dataIndex: "plays" },
+                { title: "完播", dataIndex: "completes" },
+                { title: "完播率", dataIndex: "completion_rate", render: rate },
+                { title: "付费订单", dataIndex: "paid_orders" },
+                { title: "营收", dataIndex: "revenue_cents", render: money },
+                { title: "金币消耗", dataIndex: "coin_spend" },
+                { title: "解锁", dataIndex: "unlock_count" },
+              ]}
+            />
+          </Card>
+
+          <Row gutter={[16, 16]}>
+            <Col xs={24} xl={12}>
+              <Card size="small" title="热门剧集（窗口内真实播放）">
+                <Table
+                  rowKey="id"
+                  size="small"
+                  loading={loading}
+                  dataSource={data.top_dramas ?? []}
+                  pagination={false}
+                  locale={{ emptyText: "窗口内暂无播放" }}
+                  columns={[
+                    { title: "剧集", dataIndex: "title" },
+                    { title: "播放", dataIndex: "plays", width: 80 },
+                    { title: "完播", dataIndex: "completes", width: 80 },
+                    { title: "完播率", dataIndex: "completion_rate", width: 100, render: rate },
+                  ]}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} xl={12}>
+              <Card size="small" title="最近订单">
+                <Table
+                  rowKey="order_no"
+                  size="small"
+                  loading={loading}
+                  dataSource={data.recent_orders ?? []}
+                  pagination={false}
+                  scroll={{ x: 560 }}
+                  locale={{ emptyText: "暂无订单" }}
+                  columns={[
+                    { title: "订单号", dataIndex: "order_no" },
+                    { title: "用户", dataIndex: "user_id", width: 80 },
+                    { title: "金额", dataIndex: "amount_cents", width: 100, render: money },
+                    {
+                      title: "状态",
+                      dataIndex: "status",
+                      width: 90,
+                      render: (value: string) => <Tag color={value === "paid" ? "green" : undefined}>{value}</Tag>,
+                    },
+                    { title: "时间", dataIndex: "created_at", width: 150, render: formatTime },
+                  ]}
+                />
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
     </Space>
   );
 }
 
-export function UsersPage() {
-  const { data, reload } = useLoad<{ items: any[] }>("/admin/v1/users", { items: [] });
-  const [form] = Form.useForm();
+type AdminUserRow = {
+  id: number;
+  public_id?: string | null;
+  display_name: string;
+  email?: string | null;
+  avatar_url?: string | null;
+  gender?: string | null;
+  bio?: string | null;
+  region?: string | null;
+  locale?: string | null;
+  coins: number;
+  member: boolean;
+  member_until?: string | null;
+  created_at: string;
+};
+
+const GENDER_OPTIONS = [
+  { value: "unspecified", label: "未设置" },
+  { value: "female", label: "女性" },
+  { value: "male", label: "男性" },
+  { value: "other", label: "其他" },
+];
+
+const LOCALE_OPTIONS = ["en", "zh", "ja", "ko", "es", "pt"].map((value) => ({ value, label: value }));
+
+/** 头像 + 昵称 + 副标题（简介 / 邮箱）两行单元格。 */
+function UserCell({ row }: { row: AdminUserRow }) {
+  const initial = row.display_name?.trim()?.[0]?.toUpperCase() ?? "?";
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
-      <Typography.Title level={4}>用户管理</Typography.Title>
-      <Table rowKey="id" dataSource={data.items} pagination={false} columns={[
-        { title: "昵称", dataIndex: "display_name" },
-        { title: "ID", dataIndex: "public_id" },
-        { title: "金币", dataIndex: "coins" },
-        { title: "会员", dataIndex: "member", render: (v) => (v ? "有效" : "无") },
-        { title: "注册时间", dataIndex: "created_at" },
-      ]} />
-      <Card title="调整金币（仅管理员）">
-        <Form form={form} layout="inline" onFinish={async (values) => {
-          try {
-            await api(`/admin/v1/users/${values.user_id}/coins`, { method: "POST", body: JSON.stringify({ delta: values.delta, reason: values.reason }) });
-            message.success("已入账");
-            reload();
-          } catch (e: any) {
-            message.error(String(e?.detail ?? e.message));
-          }
-        }}>
-          <Form.Item name="user_id" rules={[{ required: true }]}><InputNumber placeholder="用户 ID" /></Form.Item>
-          <Form.Item name="delta" rules={[{ required: true }]}><InputNumber placeholder="变动" /></Form.Item>
-          <Form.Item name="reason" rules={[{ required: true }]}><Input placeholder="原因" /></Form.Item>
-          <Button htmlType="submit" type="primary">确认调账</Button>
+    <Space size={10} align="center">
+      <Avatar src={row.avatar_url || undefined} style={{ background: "#f0f0f0", color: "#8c8c8c", flex: "none" }}>
+        {initial}
+      </Avatar>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 600, lineHeight: "20px" }}>{row.display_name || "-"}</div>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ tooltip: row.bio || row.email || "" }}>
+          {row.bio || row.email || "—"}
+        </Typography.Text>
+      </div>
+    </Space>
+  );
+}
+
+/** 行内「调账」弹窗：预选用户、方向切换、快捷金额、改后余额实时预览。 */
+function CoinAdjustModal({ user, onClose, onSaved }: { user: AdminUserRow; onClose: () => void; onSaved: (text: string) => void }) {
+  const [form] = Form.useForm<{ amount: number; reason: string }>();
+  const [direction, setDirection] = useState<"add" | "sub">("add");
+  const [saving, setSaving] = useState(false);
+  const amount = Form.useWatch("amount", form);
+  const delta = (typeof amount === "number" ? amount : 0) * (direction === "add" ? 1 : -1);
+  const after = user.coins + delta;
+  const negative = after < 0;
+
+  const submit = async () => {
+    const values = await form.validateFields().catch(() => null);
+    if (!values) return; // antd 已经把出错字段标红了
+    setSaving(true);
+    try {
+      const res = await api<{ before: number; delta: number; after: number }>(`/admin/v1/users/${user.id}/coins`, {
+        method: "POST",
+        body: JSON.stringify({ delta: direction === "add" ? values.amount : -values.amount, reason: values.reason.trim() }),
+      });
+      onSaved(`已入账：${res.before} → ${res.after} 金币`);
+    } catch (e: any) {
+      message.error(errorText(e));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title="调整金币"
+      okText="确认调账"
+      cancelText="取消"
+      confirmLoading={saving}
+      okButtonProps={{ disabled: negative }}
+      onOk={submit}
+      onCancel={onClose}
+    >
+      <Space direction="vertical" size={12} style={{ width: "100%" }}>
+        <Card size="small" style={{ background: "#fafafa" }}>
+          <Space size={16} wrap>
+            <span>
+              <Typography.Text type="secondary">用户：</Typography.Text>
+              <Typography.Text strong>{user.display_name}</Typography.Text>
+            </span>
+            <span>
+              <Typography.Text type="secondary">ID：</Typography.Text>
+              {user.public_id || user.id}
+            </span>
+            <span>
+              <Typography.Text type="secondary">当前余额：</Typography.Text>
+              <Typography.Text strong>{user.coins}</Typography.Text>
+            </span>
+          </Space>
+        </Card>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ amount: 100, reason: "" }}
+          onFinish={submit}
+        >
+          <Form.Item label="调整方式">
+            <Radio.Group value={direction} onChange={(e) => setDirection(e.target.value)} optionType="button" buttonStyle="solid">
+              <Radio.Button value="add">增加金币</Radio.Button>
+              <Radio.Button value="sub">扣减金币</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item
+            name="amount"
+            label="数量"
+            rules={[
+              { required: true, message: "请输入数量" },
+              { type: "number", min: 1, message: "数量需大于 0" },
+            ]}
+          >
+            <InputNumber min={1} precision={0} style={{ width: 160 }} placeholder="金币数量" />
+          </Form.Item>
+          <Space size={8} style={{ marginTop: -8, marginBottom: 14 }}>
+            <Typography.Text type="secondary">快捷：</Typography.Text>
+            {[100, 200, 500].map((value) => (
+              <Button key={value} size="small" onClick={() => form.setFieldValue("amount", value)}>
+                {value}
+              </Button>
+            ))}
+          </Space>
+          <Form.Item name="reason" label="原因" rules={[{ required: true, whitespace: true, message: "请填写调账原因" }]}>
+            <Input placeholder="如：活动补发 / 客诉补偿" maxLength={200} />
+          </Form.Item>
         </Form>
+        {negative ? (
+          <Alert type="error" showIcon message={`扣减后余额为 ${after}，余额不能为负，请减少扣减数量。`} />
+        ) : (
+          <Alert type="info" showIcon message={`调整后余额：${user.coins} → ${after}`} />
+        )}
+      </Space>
+    </Modal>
+  );
+}
+
+/** 行内「编辑」弹窗：管理员修改昵称 / 邮箱 / 性别 / 地区 / 语言 / 头像 / 简介。 */
+function UserEditModal({ user, onClose, onSaved }: { user: AdminUserRow; onClose: () => void; onSaved: (text: string) => void }) {
+  const [form] = Form.useForm();
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    const values = await form.validateFields().catch(() => null);
+    if (!values) return; // antd 已经把出错字段标红了
+    setSaving(true);
+    try {
+      await api(`/admin/v1/users/${user.id}`, { method: "PATCH", body: JSON.stringify(values) });
+      onSaved(`已更新「${values.display_name || user.display_name}」的资料`);
+    } catch (e: any) {
+      message.error(errorText(e));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title={`编辑用户 · ${user.display_name}`}
+      okText="保存"
+      cancelText="取消"
+      width={560}
+      confirmLoading={saving}
+      onOk={submit}
+      onCancel={onClose}
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{
+          display_name: user.display_name ?? "",
+          email: user.email ?? "",
+          gender: user.gender || "unspecified",
+          region: user.region ?? "",
+          locale: user.locale || "en",
+          avatar_url: user.avatar_url ?? "",
+          bio: user.bio ?? "",
+        }}
+      >
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Form.Item name="display_name" label="昵称" rules={[{ required: true, whitespace: true, message: "昵称不能为空", max: 64 }]}>
+              <Input maxLength={64} placeholder="用户昵称" />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item
+              name="email"
+              label="邮箱"
+              tooltip="留空表示解绑邮箱"
+              rules={[{ type: "email", message: "邮箱格式不正确" }]}
+            >
+              <Input maxLength={320} placeholder="user@example.com" allowClear />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item name="gender" label="性别">
+              <Select options={GENDER_OPTIONS} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item name="region" label="地区" tooltip="两位国家 / 地区码，如 US、HK">
+              <Input maxLength={8} placeholder="US" />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item name="locale" label="语言">
+              <Select options={LOCALE_OPTIONS} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item name="avatar_url" label="头像地址">
+              <Input maxLength={500} placeholder="https://…" allowClear />
+            </Form.Item>
+          </Col>
+        </Row>
+        <Form.Item name="bio" label="简介">
+          <Input.TextArea rows={3} maxLength={500} showCount placeholder="用户自我介绍" />
+        </Form.Item>
+        <Typography.Text type="secondary">用户 ID / 金币 / 会员状态不能在此修改；金币请使用「调账」。</Typography.Text>
+      </Form>
+    </Modal>
+  );
+}
+
+export function UsersPage() {
+  const isAdmin = useIsAdmin();
+  const [keyword, setKeyword] = useState("");
+  const [query, setQuery] = useState("");
+  const [coinTarget, setCoinTarget] = useState<AdminUserRow | null>(null);
+  const [editTarget, setEditTarget] = useState<AdminUserRow | null>(null);
+  const { data, reload, loading } = useLoad<{ items: AdminUserRow[] }>(
+    query ? `/admin/v1/users?q=${encodeURIComponent(query)}` : "/admin/v1/users",
+    { items: [] }
+  );
+
+  // 输入停顿 300ms 后再查，避免每敲一个字符都打一次接口。
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(keyword.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [keyword]);
+
+  const saved = (text: string) => {
+    message.success(text);
+    setCoinTarget(null);
+    setEditTarget(null);
+    reload();
+  };
+
+  const adminOnly = isAdmin ? "" : "仅管理员可操作";
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Typography.Title level={4} style={{ margin: 0 }}>用户管理</Typography.Title>
+      <Card
+        title={query ? `用户列表 · 搜索「${query}」` : "用户列表"}
+        extra={
+          <Space>
+            <Input.Search
+              allowClear
+              placeholder="昵称 / ID / 邮箱"
+              style={{ width: 240 }}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onSearch={(value) => setQuery(value.trim())}
+            />
+            <Button onClick={() => reload()} loading={loading}>刷新</Button>
+          </Space>
+        }
+      >
+        <Table
+          rowKey="id"
+          dataSource={data.items}
+          loading={loading}
+          size="middle"
+          scroll={{ x: 900 }}
+          locale={{ emptyText: query ? `没有匹配「${query}」的用户` : "暂无用户" }}
+          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 位用户` }}
+          columns={[
+            { title: "用户", dataIndex: "display_name", width: 240, render: (_, row) => <UserCell row={row} /> },
+            {
+              title: "ID",
+              dataIndex: "public_id",
+              width: 130,
+              render: (value: string | null, row) => (
+                <Typography.Text copyable={{ text: value ?? String(row.id) }} style={{ fontFamily: "monospace" }}>
+                  {value || row.id}
+                </Typography.Text>
+              ),
+            },
+            {
+              title: "金币",
+              dataIndex: "coins",
+              width: 100,
+              align: "right",
+              sorter: (a: AdminUserRow, b: AdminUserRow) => a.coins - b.coins,
+              render: (value: number) => <Typography.Text strong>{value}</Typography.Text>,
+            },
+            {
+              title: "会员",
+              dataIndex: "member",
+              width: 200,
+              render: (value: boolean, row) =>
+                value ? (
+                  <Space size={6}>
+                    <Tag color="green" style={{ marginInlineEnd: 0 }}>有效</Tag>
+                    {row.member_until ? (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        至 {formatTime(row.member_until)}
+                      </Typography.Text>
+                    ) : null}
+                  </Space>
+                ) : (
+                  <Typography.Text type="secondary">无</Typography.Text>
+                ),
+            },
+            { title: "注册时间", dataIndex: "created_at", width: 160, render: (v: string) => formatTime(v) },
+            {
+              title: "操作",
+              key: "action",
+              width: 140,
+              fixed: "right",
+              render: (_, row) => (
+                <Space size={0}>
+                  <Tooltip title={adminOnly}>
+                    <Button type="link" size="small" disabled={!isAdmin} onClick={() => setCoinTarget(row)}>
+                      调账
+                    </Button>
+                  </Tooltip>
+                  <Tooltip title={adminOnly}>
+                    <Button type="link" size="small" disabled={!isAdmin} onClick={() => setEditTarget(row)}>
+                      编辑
+                    </Button>
+                  </Tooltip>
+                </Space>
+              ),
+            },
+          ]}
+        />
       </Card>
+      {coinTarget ? <CoinAdjustModal user={coinTarget} onClose={() => setCoinTarget(null)} onSaved={saved} /> : null}
+      {editTarget ? <UserEditModal user={editTarget} onClose={() => setEditTarget(null)} onSaved={saved} /> : null}
     </Space>
   );
 }
@@ -79,26 +668,10 @@ export function HomeOpsPage() {
   );
 }
 
-export function RewardsPage() {
-  const [amounts, setAmounts] = useState("30,30,50,50,30,60,90");
-  return (
-    <Card title="金币与任务（次日生效）">
-      <Space>
-        <Input value={amounts} onChange={(e) => setAmounts(e.target.value)} style={{ width: 360 }} />
-        <Button type="primary" onClick={async () => {
-          const parsed = amounts.split(",").map((n) => Number(n.trim()));
-          const row = await api<any>("/admin/v1/rewards/config", { method: "POST", body: JSON.stringify({ code: "checkin", amounts: parsed }) });
-          message.success(`将于 ${row.effective_on} 生效`);
-        }}>保存</Button>
-      </Space>
-    </Card>
-  );
-}
-
 export function CommentsPage() {
   const { data, reload } = useLoad<{ items: any[] }>("/admin/v1/comments", { items: [] });
   return (
-    <Table rowKey="id" dataSource={data.items} pagination={false} columns={[
+    <Table rowKey="id" dataSource={data.items} pagination={false} scroll={{ x: 720 }} columns={[
       { title: "内容", dataIndex: "body" },
       { title: "剧集", dataIndex: "drama_id" },
       { title: "用户", dataIndex: "user_id" },
@@ -115,25 +688,167 @@ export function CommentsPage() {
 
 export function FinancePage() {
   const { data } = useLoad<{ items: any[] }>("/admin/v1/finance/orders", { items: [] });
-  return <Table rowKey="order_no" dataSource={data.items} pagination={false} columns={[{ title: "订单号", dataIndex: "order_no" }, { title: "用户", dataIndex: "user_id" }, { title: "金额（分）", dataIndex: "amount_cents" }, { title: "状态", dataIndex: "status" }, { title: "时间", dataIndex: "created_at" }]} />;
+  return <Table rowKey="order_no" dataSource={data.items} pagination={false} scroll={{ x: 720 }} columns={[{ title: "订单号", dataIndex: "order_no" }, { title: "用户", dataIndex: "user_id" }, { title: "金额（分）", dataIndex: "amount_cents" }, { title: "状态", dataIndex: "status" }, { title: "时间", dataIndex: "created_at", render: (v: string) => formatTime(v) }]} />;
+}
+
+type PlanItem = {
+  code: string;
+  name_en: string;
+  name_zh: string;
+  price_cents: number;
+  currency: string;
+  version: number;
+  benefits?: { items?: string[]; best?: boolean };
+};
+
+const PLAN_PERIOD: Record<string, string> = {
+  weekly: "7 天",
+  monthly: "30 天",
+  yearly: "365 天",
+};
+
+function centsToDollars(cents: number) {
+  return (cents / 100).toFixed(2);
+}
+
+function dollarsToCents(value: number) {
+  return Math.round(value * 100);
 }
 
 export function PlansPage() {
-  const { data, reload } = useLoad<{ items: any[] }>("/admin/v1/plans", { items: [] });
+  const { data, reload, loading } = useLoad<{ items: PlanItem[] }>("/admin/v1/plans", { items: [] });
+  const [editing, setEditing] = useState<PlanItem | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm<{ price: number; benefits: string; best: boolean }>();
+
+  const openEdit = (plan: PlanItem) => {
+    setEditing(plan);
+    form.setFieldsValue({
+      price: Number(centsToDollars(plan.price_cents)),
+      benefits: (plan.benefits?.items ?? []).join("\n"),
+      best: Boolean(plan.benefits?.best),
+    });
+  };
+
+  const closeEdit = () => {
+    if (saving) return;
+    setEditing(null);
+  };
+
+  const onSave = async (values: { price: number; benefits: string; best: boolean }) => {
+    if (!editing) return;
+    const priceCents = dollarsToCents(values.price);
+    if (!Number.isFinite(priceCents) || priceCents <= 0) {
+      message.error("价格必须大于 0");
+      return;
+    }
+    const items = values.benefits
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    setSaving(true);
+    try {
+      const result = await api<{ version: number; price_cents: number }>(`/admin/v1/plans/${editing.code}/price`, {
+        method: "POST",
+        body: JSON.stringify({
+          price_cents: priceCents,
+          benefits: { items, best: values.best },
+        }),
+      });
+      message.success(`已写入新版本 v${result.version} · $${centsToDollars(result.price_cents)}`);
+      setEditing(null);
+      reload();
+    } catch (e) {
+      message.error(`保存失败：${errorText(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
-      {(data.items ?? []).map((plan) => (
-        <Card key={plan.code} title={`${plan.name_zh || plan.name_en} · $${(plan.price_cents / 100).toFixed(2)}`}>
-          <Button onClick={async () => {
-            const next = Number(prompt("新价格（分）", String(plan.price_cents)));
-            if (!next) return;
-            await api(`/admin/v1/plans/${plan.code}/price`, { method: "POST", body: JSON.stringify({ price_cents: next, benefits: plan.benefits }) });
-            message.success("已写入新版本");
-            reload();
-          }}>修改价格</Button>
-          {plan.benefits?.best ? <Tag color="red">Best</Tag> : null}
-        </Card>
-      ))}
+    <Space direction="vertical" style={{ width: "100%" }} size="middle">
+      {(data.items ?? []).map((plan) => {
+        const items = plan.benefits?.items ?? [];
+        return (
+          <Card
+            key={plan.code}
+            loading={loading && !data.items.length}
+            title={
+              <Space size={8}>
+                <span>{plan.name_zh || plan.name_en}</span>
+                <Typography.Text type="secondary" style={{ fontWeight: 400 }}>
+                  {PLAN_PERIOD[plan.code] ?? plan.code}
+                </Typography.Text>
+                {plan.benefits?.best ? <Tag color="red">Best</Tag> : null}
+              </Space>
+            }
+            extra={<Typography.Text strong>${centsToDollars(plan.price_cents)}</Typography.Text>}
+          >
+            <Space direction="vertical" size={12} style={{ width: "100%" }}>
+              {items.length ? (
+                <Space size={[6, 6]} wrap>
+                  {items.map((item) => (
+                    <Tag key={item}>{item}</Tag>
+                  ))}
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">未配置权益</Typography.Text>
+              )}
+              <Space>
+                <Button onClick={() => openEdit(plan)}>修改价格</Button>
+                <Typography.Text type="secondary">当前版本 v{plan.version}</Typography.Text>
+              </Space>
+            </Space>
+          </Card>
+        );
+      })}
+      <Modal
+        title={editing ? `修改价格 · ${editing.name_zh || editing.name_en}` : "修改价格"}
+        open={editing !== null}
+        onCancel={closeEdit}
+        onOk={() => form.submit()}
+        okText="保存新版本"
+        cancelText="取消"
+        confirmLoading={saving}
+        maskClosable={!saving}
+        keyboard={!saving}
+        destroyOnClose
+        width={480}
+      >
+        {editing ? (
+          <Form form={form} layout="vertical" onFinish={onSave} requiredMark={false} style={{ marginTop: 8 }}>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+              当前 ${centsToDollars(editing.price_cents)} · v{editing.version}。保存会写入一个新版本，已购订单仍按当时版本计价。
+            </Typography.Paragraph>
+            <Form.Item
+              label="价格（美元）"
+              name="price"
+              rules={[
+                { required: true, message: "请填写价格" },
+                { type: "number", min: 0.01, message: "价格至少 $0.01" },
+              ]}
+            >
+              <InputNumber
+                min={0.01}
+                step={0.01}
+                precision={2}
+                prefix="$"
+                style={{ width: "100%" }}
+                autoFocus
+              />
+            </Form.Item>
+            <Form.Item label="权益（一行一条）" name="benefits">
+              <Input.TextArea rows={4} placeholder={"Unlock all\nNo ads\n1080p"} />
+            </Form.Item>
+            <Form.Item label="推荐标记" name="best">
+              <Radio.Group>
+                <Radio value={true}>标为 Best</Radio>
+                <Radio value={false}>不标记</Radio>
+              </Radio.Group>
+            </Form.Item>
+          </Form>
+        ) : null}
+      </Modal>
     </Space>
   );
 }
@@ -148,14 +863,37 @@ export function OpsCenterPage() {
         <Input placeholder="推送标题" value={title} onChange={(e) => setTitle(e.target.value)} />
         <Button type="primary" onClick={async () => { await api(`/admin/v1/pushes?title=${encodeURIComponent(title)}`, { method: "POST" }); setTitle(""); reload(); }}>记录推送</Button>
       </Space>
-      <Table rowKey="id" dataSource={data.items} pagination={false} columns={[{ title: "内容", dataIndex: "title" }, { title: "送达", dataIndex: "delivered_count" }, { title: "时间", dataIndex: "sent_at" }]} />
+      <Table rowKey="id" dataSource={data.items} pagination={false} scroll={{ x: 480 }} columns={[{ title: "内容", dataIndex: "title" }, { title: "送达", dataIndex: "delivered_count" }, { title: "时间", dataIndex: "sent_at" }]} />
     </Space>
   );
 }
 
+type EpisodePreview = {
+  open: boolean;
+  /** iframe embed URL shown in the modal; falls back to the player page URL. */
+  url?: string;
+  title: string;
+};
+
 export function EpisodesPanel({ dramaId }: { dramaId: string }) {
   const [status, setStatus] = useState<string | undefined>();
-  const { data, reload } = useLoad<{ items: any[] }>(`/admin/v1/dramas/${dramaId}/episodes?page_size=100${status ? `&status=${status}` : ""}`, { items: [] });
+  const [preview, setPreview] = useState<EpisodePreview>({ open: false, title: "" });
+  const closePreview = () => setPreview({ open: false, title: "" });
+  const { data, reload } = useLoad<{ items: any[] }>(`/admin/v1/dramas/${dramaId}/episodes?page_size=200${status ? `&status=${status}` : ""}`, { items: [] });
+
+  const openPreview = async (episodeId: number, episodeNumber: number) => {
+    try {
+      const signed = await api<{ url: string; embed_url?: string }>(`/admin/v1/episodes/${episodeId}/preview-url`);
+      setPreview({
+        open: true,
+        url: signed.embed_url ?? signed.url,
+        title: `预览 · 第 ${episodeNumber} 集`,
+      });
+    } catch (e) {
+      message.error(`预览失败：${errorText(e)}`);
+    }
+  };
+
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
       <Space>
@@ -163,18 +901,42 @@ export function EpisodesPanel({ dramaId }: { dramaId: string }) {
         <Button onClick={reload}>筛选</Button>
         <Button onClick={async () => { await api(`/admin/v1/dramas/${dramaId}/episodes/bulk`, { method: "POST", body: JSON.stringify({ count: 64 }) }); reload(); }}>登记 64 集</Button>
       </Space>
-      <Table rowKey="id" dataSource={data.items} pagination={{ pageSize: 20 }} columns={[
+      <Table rowKey="id" dataSource={data.items} pagination={{ pageSize: 20 }} scroll={{ x: 560 }} columns={[
         { title: "集", dataIndex: "episode_number" },
         { title: "标题", dataIndex: "title" },
         { title: "状态", dataIndex: "status" },
         { title: "操作", render: (_, row) => (
-          <Button size="small" onClick={async () => {
-            await api(`/admin/v1/episodes/${row.id}/upload-session`, { method: "POST", body: JSON.stringify({ filename: "ep.mp4", mime: "video/mp4", size_bytes: 1024, width: 720, height: 1280 }) });
-            message.success("已创建直传会话，文件不经过 API");
-            reload();
-          }}>上传</Button>
+          row.bunny_video_id ? (
+            <Button size="small" type="link" style={{ padding: 0 }} onClick={() => openPreview(row.id, row.episode_number)}>预览</Button>
+          ) : (
+            <Button size="small" onClick={async () => {
+              await api(`/admin/v1/episodes/${row.id}/upload-session`, { method: "POST", body: JSON.stringify({ filename: "ep.mp4", mime: "video/mp4", size_bytes: 1024, width: 720, height: 1280 }) });
+              message.success("已创建直传会话，文件不经过 API");
+              reload();
+            }}>上传</Button>
+          )
         ) },
       ]} />
+      <Modal
+        open={preview.open}
+        title={preview.title}
+        footer={null}
+        width={460}
+        centered
+        destroyOnHidden
+        onCancel={closePreview}
+        styles={{ body: { padding: 0, background: "#000" } }}
+      >
+        {preview.url ? (
+          <iframe
+            src={preview.url}
+            title="episode preview"
+            style={{ display: "block", width: "100%", height: "74vh", border: 0, background: "#000" }}
+            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+        ) : null}
+      </Modal>
     </Space>
   );
 }
@@ -197,27 +959,273 @@ export function GroupsPanel({ dramaId }: { dramaId: string }) {
   );
 }
 
-export function PublishPanel({ dramaId, status }: { dramaId: string; status: string }) {
-  const act = async (to_status: string) => {
-    await api(`/admin/v1/dramas/${dramaId}/status`, { method: "POST", body: JSON.stringify({ to_status }) });
-    message.success(to_status);
-    window.location.reload();
-  };
+type PublishAction = { to: string; label: string; primary?: boolean; danger?: boolean };
+
+const DRAMA_STATUS_TEXT: Record<string, string> = {
+  draft: "草稿",
+  in_review: "审核中",
+  published: "已上架",
+  unpublished: "已下架",
+};
+
+const DRAMA_STATUS_COLOR: Record<string, string> = {
+  draft: "default",
+  in_review: "orange",
+  published: "green",
+  unpublished: "red",
+};
+
+type DeleteImpact = {
+  groups?: string[];
+  banner_count?: number;
+  push_count?: number;
+  episode_count?: number;
+};
+
+/**
+ * 删除预检：后端用 409 + {confirm_required, impact} 返回“删除会带走什么”。
+ * 走 api() 而不是裸 fetch，才能复用统一的 401 跳登录与错误解析（403 会抛出
+ * “admin only”，之前直接被丢进 JSON.stringify 里展示给用户）。
+ */
+async function previewDramaDelete(dramaId: string): Promise<DeleteImpact | null> {
+  try {
+    await api(`/admin/v1/dramas/${dramaId}/delete`, {
+      method: "POST",
+      body: JSON.stringify({ confirm: false }),
+    });
+    // 后端总会先返回 409；真的 200 说明剧集已经被删掉了。
+    return null;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409 && e.detail?.confirm_required) {
+      return (e.detail.impact ?? {}) as DeleteImpact;
+    }
+    throw e;
+  }
+}
+
+function DeleteConfirmContent({
+  dramaTitle,
+  impact,
+  fallbackEpisodeCount,
+}: {
+  dramaTitle: string;
+  impact: DeleteImpact;
+  fallbackEpisodeCount?: number;
+}) {
+  const groups = impact.groups ?? [];
+  const episodes = impact.episode_count ?? fallbackEpisodeCount ?? 0;
+  const rows: [string, string][] = [
+    ["分集", `${episodes} 集（视频记录、字幕、封面一并删除）`],
+    ["首页分组引用", groups.length ? `${groups.length} 个：${groups.join("、")}` : "无"],
+    ["Banner 引用", impact.banner_count ? `${impact.banner_count} 条` : "无"],
+    ["推送记录", impact.push_count ? `${impact.push_count} 条` : "无"],
+    ["用户数据", "观看进度、解锁记录与评论"],
+  ];
   return (
-    <Space direction="vertical">
-      <Typography.Text>当前状态：{status}</Typography.Text>
-      <Space>
-        <Button onClick={() => act("in_review")}>提交审核</Button>
-        <Button type="primary" onClick={() => act("published")}>上架</Button>
-        <Button danger onClick={() => act("unpublished")}>下架</Button>
-      </Space>
-      <Button danger type="primary" onClick={async () => {
-        const preview = await fetch(`/admin/v1/dramas/${dramaId}/delete`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("minitv_admin_token")}` }, body: JSON.stringify({ confirm: false }) });
-        const body = await preview.json();
-        if (!window.confirm(`删除不可恢复。影响：${JSON.stringify(body.detail?.impact ?? body)}`)) return;
-        await api(`/admin/v1/dramas/${dramaId}/delete`, { method: "POST", body: JSON.stringify({ confirm: true }) });
-        window.location.href = "/dramas";
-      }}>删除剧集</Button>
+    <Space direction="vertical" size={12} style={{ width: "100%" }}>
+      <Alert
+        type="error"
+        showIcon
+        message="删除后不可恢复"
+        description={`《${dramaTitle}》及其关联数据会被永久删除，后台无法找回。`}
+      />
+      <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+        {rows.map(([label, value]) => (
+          <li key={label}>
+            {label}：{value}
+          </li>
+        ))}
+      </ul>
     </Space>
+  );
+}
+
+export function PublishPanel({
+  dramaId,
+  dramaTitle,
+  episodeCount,
+  status,
+  issues = [],
+}: {
+  dramaId: string;
+  dramaTitle: string;
+  episodeCount?: number;
+  status: string;
+  issues?: string[];
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const { confirm, confirmModal } = useConfirm();
+  const navigate = useNavigate();
+  // 删除剧集是高危操作，后端只放行 admin（docs/software-architecture.md 角色矩阵）。
+  const isAdmin = useIsAdmin();
+
+  const submitStatus = async (to_status: string, label: string) => {
+    setBusy(to_status);
+    try {
+      await api(`/admin/v1/dramas/${dramaId}/status`, {
+        method: "POST",
+        body: JSON.stringify({ to_status }),
+      });
+      message.success(`${label}成功`);
+      window.location.reload();
+    } catch (e) {
+      // 409 = 状态机不允许的跳转（例如草稿直接上架）
+      message.error(`${label}失败：${errorText(e)}`);
+      setBusy(null);
+    }
+  };
+
+  const act = async (to_status: string, label: string) => {
+    if (issues.length === 0) {
+      await submitStatus(to_status, label);
+      return;
+    }
+    confirm({
+      title: `${label}前还有未完成的步骤`,
+      okText: `仍然${label}`,
+      cancelText: "取消",
+      content: (
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Alert type="warning" showIcon message="下面这些还没有完成" />
+          <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+            {issues.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </Space>
+      ),
+      onOk: () => submitStatus(to_status, label),
+    });
+  };
+
+  const onDelete = async () => {
+    setDeleting(true);
+    let impact: DeleteImpact | null = null;
+    try {
+      impact = await previewDramaDelete(dramaId);
+    } catch (e) {
+      message.error(
+        e instanceof ApiError && e.status === 403
+          ? "删除失败：只有管理员可以删除剧集，请用 admin 账号登录"
+          : `获取删除影响范围失败：${errorText(e)}`,
+      );
+      return;
+    } finally {
+      setDeleting(false);
+    }
+    if (impact === null) {
+      message.success(`《${dramaTitle}》已删除`);
+      navigate("/dramas");
+      return;
+    }
+    confirm({
+      title: "删除剧集",
+      danger: true,
+      okText: "删除",
+      cancelText: "取消",
+      width: 480,
+      content: (
+        <DeleteConfirmContent
+          dramaTitle={dramaTitle}
+          impact={impact}
+          fallbackEpisodeCount={episodeCount}
+        />
+      ),
+      onOk: async () => {
+        try {
+          await api(`/admin/v1/dramas/${dramaId}/delete`, {
+            method: "POST",
+            body: JSON.stringify({ confirm: true }),
+          });
+        } catch (e) {
+          message.error(
+            e instanceof ApiError && e.status === 403
+              ? "删除失败：只有管理员可以删除剧集，请用 admin 账号登录"
+              : `删除失败：${errorText(e)}`,
+          );
+          throw e;
+        }
+        message.success(`《${dramaTitle}》已删除`);
+        navigate("/dramas");
+      },
+    });
+  };
+
+  // 状态机见 backend/app/modules/content/service.py：
+  // draft -> in_review -> published，published -> unpublished，unpublished 可重新上架。
+  // 这里只列出当前状态下合法的动作，避免点了按钮才吃到 409。
+  const actions: PublishAction[] =
+    status === "draft"
+      ? [{ to: "in_review", label: "提交审核", primary: true }]
+      : status === "in_review"
+        ? [
+            { to: "published", label: "通过并上架", primary: true },
+            { to: "draft", label: "退回草稿" },
+          ]
+        : status === "published"
+          ? [{ to: "unpublished", label: "下架", primary: true, danger: true }]
+          : [
+              { to: "published", label: "重新上架", primary: true },
+              { to: "in_review", label: "提交复审" },
+            ];
+
+  return (
+    <>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Space size={8}>
+          <Typography.Text>当前状态：</Typography.Text>
+          <Tag color={DRAMA_STATUS_COLOR[status]}>{DRAMA_STATUS_TEXT[status] ?? status}</Tag>
+        </Space>
+
+      {issues.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ width: "100%" }}
+          message="上架前建议先完成这些"
+          description={
+            <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+              {issues.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          }
+        />
+      )}
+
+      <Space wrap>
+        {actions.map((action) => (
+          <Button
+            key={action.to}
+            type={action.primary ? "primary" : "default"}
+            danger={action.danger}
+            loading={busy === action.to}
+            disabled={busy !== null && busy !== action.to}
+            onClick={() => act(action.to, action.label)}
+          >
+            {action.label}
+          </Button>
+        ))}
+      </Space>
+
+      <Typography.Text type="secondary">
+        流程：草稿 → 提交审核 → 上架；已上架可下架，下架后可重新上架。
+      </Typography.Text>
+
+      <Tooltip title={isAdmin ? "" : "仅管理员可删除剧集"}>
+        {/* Tooltip 在 disabled 元素上不触发，所以包一层 span */}
+        <span style={{ display: "inline-block" }}>
+          <Button danger disabled={!isAdmin} loading={deleting} onClick={onDelete}>
+            删除剧集
+          </Button>
+        </span>
+      </Tooltip>
+
+      </Space>
+
+      {/* 自定义确认弹框（替代 window.confirm），放在 Space 外，避免多出一个空间距 */}
+      {confirmModal}
+    </>
   );
 }
