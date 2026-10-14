@@ -58,6 +58,9 @@ python3 scripts/release.py r2 --dist web/dist --note "官网首版"
 
 ## 5. 服务器发布
 
+- 目标服务器：`root@YOUR_SERVER_IP`（主机名 `iv-yex8aqiy9s3z47gll3wc`，Byteplus 新加坡）。
+  本机免密登录：`ssh byteplus-sg-1`（经 `ali-sz-1` 跳板，原因见 `AGENTS.md`）。
+
 服务器部署接入后统一包一层：
 
 ```bash

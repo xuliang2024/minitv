@@ -1,5 +1,19 @@
 # AGENTS.md — LiteTV 仓库工作须知
 
+## 项目服务器（2026-10-14 起）
+
+本项目对应的线上服务器：
+
+| 项 | 值 |
+|---|---|
+| IP | `YOUR_SERVER_IP` |
+| SSH | `ssh byteplus-sg-1`（等价 `ssh root@YOUR_SERVER_IP`，Key 免密） |
+| 主机名 | `iv-yex8aqiy9s3z47gll3wc` |
+| 系统 | Ubuntu 24.04 LTS x86_64（Byteplus，新加坡） |
+
+- 本机直连其 22 端口会被 FlClash 代理节点掐断；`~/.ssh/config` 中已给 `byteplus-sg-1` / `YOUR_SERVER_IP` 配置 `ProxyJump ali-sz-1` 跳板，直接用别名或 IP 即可登录。
+- 服务器上的部署 / 发布动作仍必须走 `python3 scripts/release.py`（见下节发布纪律）。
+
 ## 发布纪律（多 Agent 强制，违反即事故）
 
 本仓库可能有多个 Agent / 会话同时在执行任务。所有"上线"动作（发布到 Cloudflare R2、部署到服务器）必须遵守：
