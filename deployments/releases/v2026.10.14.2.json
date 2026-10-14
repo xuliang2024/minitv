@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.14.2",
+  "target": "server",
+  "status": "published",
+  "sha": "533d2e94dafca263a0605c78a40c99a723fe9f7f",
+  "short_sha": "533d2e94",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-14T21:49:43+08:00",
+  "finished_at": "2026-10-14T21:49:58+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 86750,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "首版 API 重试：修复 psycopg 驱动。工作区其余改动未纳入发布",
+  "dirty": true
+}
