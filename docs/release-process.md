@@ -56,6 +56,8 @@ python3 scripts/release.py r2 --dist web/dist --note "官网首版"
 
 `minitv.us` 已配置（ruleset `67dfb14054bc4c4bac4355e83a58b259`，规则 id `63bbd494400d40af903c0dbea1580585`）。缺这条规则时根路径返回 R2 404 页。
 
+`admin.minitv.us` 同样已配置（2026-10-14）：R2 自定义域名挂在 `minitv-web` 桶，根路径 Rewrite 到 `/admin/index.html`（CMS 静态页发布在桶内 `/admin/` 前缀）。`api.minitv.us` 为 A 记录指向服务器 `YOUR_SERVER_IP`（Cloudflare 代理）。
+
 ## 5. 服务器发布
 
 - 目标服务器：`root@YOUR_SERVER_IP`（主机名 `iv-yex8aqiy9s3z47gll3wc`，Byteplus 新加坡）。
