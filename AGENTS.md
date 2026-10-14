@@ -11,7 +11,7 @@
 | 主机名 | `iv-yex8aqiy9s3z47gll3wc` |
 | 系统 | Ubuntu 24.04 LTS x86_64（Byteplus，新加坡） |
 
-- 本机直连其 22 端口会被 FlClash 代理节点掐断；`~/.ssh/config` 中已给 `byteplus-sg-1` / `YOUR_SERVER_IP` 配置 `ProxyJump ali-sz-1` 跳板，直接用别名或 IP 即可登录。
+- 直连 22 端口正常（2026-10-14 验证）。若某代理端点封锁出站 22 端口导致连不上，可临时经 `ali-sz-1` 跳板（在 `~/.ssh/config` 的 `byteplus-sg-1` 块内加 `ProxyJump ali-sz-1`）。
 - 服务器上的部署 / 发布动作仍必须走 `python3 scripts/release.py`（见下节发布纪律）。
 
 ## 发布纪律（多 Agent 强制，违反即事故）
