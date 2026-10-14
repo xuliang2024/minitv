@@ -162,6 +162,17 @@ systemctl daemon-reload
 systemctl enable minitv-api
 systemctl restart minitv-api
 
+# Cloudflare SSL mode is Full, so the origin must answer on 443.
+# A self-signed cert is enough; visitors only see Cloudflare's certificate.
+install -d -m 755 /etc/nginx/ssl
+if [[ ! -f /etc/nginx/ssl/api.minitv.us.crt ]]; then
+  openssl req -x509 -nodes -newkey rsa:2048 -days 825 \
+    -keyout /etc/nginx/ssl/api.minitv.us.key \
+    -out /etc/nginx/ssl/api.minitv.us.crt \
+    -subj "/CN=api.minitv.us" \
+    -addext "subjectAltName=DNS:api.minitv.us"
+  chmod 600 /etc/nginx/ssl/api.minitv.us.key
+fi
 cat > /etc/nginx/sites-available/minitv-api << NGINX
 server {
     listen 80 default_server;
@@ -174,6 +185,23 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 60s;
+    }
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name api.minitv.us _;
+    ssl_certificate /etc/nginx/ssl/api.minitv.us.crt;
+    ssl_certificate_key /etc/nginx/ssl/api.minitv.us.key;
+    client_max_body_size 32m;
+
+    location / {
+        proxy_pass http://127.0.0.1:${API_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
         proxy_read_timeout 60s;
     }
 }
