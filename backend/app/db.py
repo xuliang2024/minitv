@@ -25,10 +25,15 @@ def load_env(path: Path | None = None) -> None:
 
 def database_url() -> str:
     load_env()
-    return os.environ.get(
+    url = os.environ.get(
         "DATABASE_URL",
         "postgresql://minitv:minitv_local@127.0.0.1:15432/minitv",
     )
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://"):]
+    return url
 
 
 class Base(DeclarativeBase):

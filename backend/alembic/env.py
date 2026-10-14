@@ -23,6 +23,12 @@ if config.config_file_name is not None:
 load_env()
 url = os.environ.get("ALEMBIC_DATABASE_URL") or os.environ.get("DATABASE_URL")
 if url:
+    # requirements install psycopg 3, not psycopg2. Force the dialect so a bare
+    # postgresql:// URL does not import a driver that is not installed.
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    elif url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url[len("postgres://"):]
     config.set_main_option("sqlalchemy.url", url)
 
 target_metadata = Base.metadata
