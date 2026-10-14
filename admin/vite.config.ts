@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  // admin.minitv.us rewrites only "/" to the R2 object /admin/index.html.
+  // Built assets must therefore live under /admin/ as well.
+  base: "/admin/",
   plugins: [react()],
   server: {
     port: 5173,

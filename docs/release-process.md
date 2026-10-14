@@ -62,6 +62,7 @@ python3 scripts/release.py r2 --dist web/dist --note "官网首版"
 
 ```bash
 cd admin && VITE_API_BASE=https://api.minitv.us npm run build
+# vite base 必须是 /admin/，否则页面在根路径改写后仍去请求 /assets/*（桶里不存在）
 python3 scripts/release.py r2 --dist admin/dist --source admin --prefix admin \
   --verify-url https://admin.minitv.us --note "管理后台"
 ```
