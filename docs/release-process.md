@@ -49,6 +49,13 @@ python3 scripts/release.py r2 --dist web/dist --note "官网首版"
 实现说明：上传走 Cloudflare REST API（`CLOUDFLARE_API_TOKEN` + `.env` 的 `R2_ACCOUNT_ID`），**不需要 S3 凭据**。
 缓存策略：`index.html` → `no-cache`；`assets/**` → 一年 immutable；其余 → 5 分钟。
 
+前置条件（每个 R2 自定义域名只配一次）：R2 自定义域名**不会**自动把 `/` 映射到 `index.html`，必须在 zone 里配一条 URL Rewrite 转换规则：
+
+- 表达式：`((http.host eq "minitv.us" or http.host eq "www.minitv.us") and http.request.uri.path eq "/")`
+- 动作：rewrite path → `/index.html`
+
+`minitv.us` 已配置（ruleset `67dfb14054bc4c4bac4355e83a58b259`，规则 id `63bbd494400d40af903c0dbea1580585`）。缺这条规则时根路径返回 R2 404 页。
+
 ## 5. 服务器发布
 
 服务器部署接入后统一包一层：
@@ -81,6 +88,7 @@ python3 scripts/release.py status --json   # 给脚本 / Agent 读取
 - 发布中途失败：脚本自动删 tag、写 failed 记录。失败发生在根目录切换前 → 线上内容不变；提升阶段出错 → 用 `rollback` 恢复，记录里有完整文件清单。
 - 锁"残留"：flock 随进程释放，不存在死锁；如 status 显示可疑在途版本，检查记录和线上状态后人工决定回滚或补记。
 - 无权上传：确认 shell 里有 `CLOUDFLARE_API_TOKEN`、`.env` 里有 `R2_ACCOUNT_ID`。
+- 线上校验 403（error code 1010）：Cloudflare 按 UA 拦截默认脚本 UA（`Python-urllib` 会被拦）。`release.py` 已带 `lite-tv-release/1.0` UA；自己写脚本访问 `minitv.us` 时同样要设置正常 UA。
 
 ## 9. 相关文件
 

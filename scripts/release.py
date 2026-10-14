@@ -47,6 +47,7 @@ DEFAULT_BUCKET = "minitv-web"
 TZ_NAME = "Asia/Shanghai"
 LOCK_NAME = "minitv-release.lock"
 UPLOAD_WORKERS = 6
+VERIFY_UA = "lite-tv-release/1.0"
 VERSION_RE = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})\.(\d+)$")
 
 
@@ -504,7 +505,8 @@ def verify_public(match_digest: str) -> bool:
     url = f"{base}/?release-check={int(time.time())}"
     for attempt in range(1, 4):
         try:
-            with urllib.request.urlopen(url, timeout=15) as resp:
+            req = urllib.request.Request(url, headers={"User-Agent": VERIFY_UA})
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 body = resp.read()
             if hashlib.sha256(body).hexdigest() == match_digest:
                 return True
@@ -720,7 +722,7 @@ def cmd_r2(args: argparse.Namespace) -> int:
                 base = os.environ.get("R2_PUBLIC_BASE_URL", "").rstrip("/")
                 print(f"   线上校验: {base} 内容一致 ✅")
             else:
-                print("   ⚠️ 线上校验未通过（可能缓存未刷新，稍后自行复核）")
+                print("   ⚠️ 线上校验未通过：检查 R2 根路径 Rewrite 规则（/ → /index.html）与缓存，稍后复核")
         else:
             print("   根目录:   未切换（--no-promote）")
         print(f"   记录:     {record_path.relative_to(REPO)}" + ("（已提交）" if committed else "（未提交，请手动检查）"))
