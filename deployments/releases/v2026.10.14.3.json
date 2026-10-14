@@ -1,0 +1,49 @@
+{
+  "version": "v2026.10.14.3",
+  "target": "r2",
+  "status": "published",
+  "sha": "2c9263ce8b80ada3d05f28b7a48066e0d33d728f",
+  "short_sha": "2c9263ce",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.14.3/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "1ea3b0af6b6b58e69cc145042753e14633da99d2506689ff6198e2d571c35711",
+  "files": [
+    {
+      "path": "assets/hls-ldmpDFfV.js",
+      "size": 594977
+    },
+    {
+      "path": "assets/index-Bh3BW9JK.js",
+      "size": 176318
+    },
+    {
+      "path": "assets/index-DWU8leQr.css",
+      "size": 22081
+    },
+    {
+      "path": "index.html",
+      "size": 391
+    },
+    {
+      "path": "ph_feed.png",
+      "size": 470870
+    },
+    {
+      "path": "qr.png",
+      "size": 2174
+    }
+  ],
+  "started_at": "2026-10-14T21:50:44+08:00",
+  "finished_at": "2026-10-14T21:51:01+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 87398,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "首版官网。源码已提交，dist 为生产构建产物",
+  "dirty": true
+}
