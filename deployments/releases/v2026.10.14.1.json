@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.14.1",
+  "target": "server",
+  "status": "failed",
+  "sha": "8921c76445163278d3cda9da9d88d7dc89abac86",
+  "short_sha": "8921c764",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 1,
+  "started_at": "2026-10-14T21:48:06+08:00",
+  "finished_at": "2026-10-14T21:48:53+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 86098,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "首版 API。工作区仍有验收截图与数据脚本，未纳入本次发布，部署只同步已提交的 backend/",
+  "dirty": true
+}
