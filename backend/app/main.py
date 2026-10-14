@@ -28,14 +28,30 @@ def load_env() -> None:
 load_env()
 app = FastAPI(title="MiniTV Local", version="0.0.0")
 
+_DEFAULT_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "https://minitv.us",
+    "https://www.minitv.us",
+    "https://admin.minitv.us",
+]
+
+
+def _cors_origins() -> list[str]:
+    extra = os.environ.get("CORS_ORIGINS", "")
+    origins = list(_DEFAULT_ORIGINS)
+    for item in extra.split(","):
+        item = item.strip().rstrip("/")
+        if item and item not in origins:
+            origins.append(item)
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

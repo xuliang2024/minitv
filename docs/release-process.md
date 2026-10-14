@@ -58,10 +58,22 @@ python3 scripts/release.py r2 --dist web/dist --note "官网首版"
 
 `admin.minitv.us` 同样已配置（2026-10-14）：R2 自定义域名挂在 `minitv-web` 桶，根路径 Rewrite 到 `/admin/index.html`（CMS 静态页发布在桶内 `/admin/` 前缀）。`api.minitv.us` 为 A 记录指向服务器 `YOUR_SERVER_IP`（Cloudflare 代理）。
 
-## 5. 服务器发布
+管理后台用同一个 R2 命令，但提升到桶内前缀，不覆盖官网根目录：
+
+```bash
+cd admin && VITE_API_BASE=https://api.minitv.us npm run build
+python3 scripts/release.py r2 --dist admin/dist --source admin --prefix admin \
+  --verify-url https://admin.minitv.us --note "管理后台"
+```
+
+官网构建同样要带生产 API 地址：`cd web && VITE_API_BASE=https://api.minitv.us npm run build`。
+
+## 5. API 服务器发布
 
 - 目标服务器：`root@YOUR_SERVER_IP`（主机名 `iv-yex8aqiy9s3z47gll3wc`，Byteplus 新加坡）。
   本机免密登录：`ssh byteplus-sg-1`（直连）。如遇代理端点封锁 22 端口的临时情况，处理方式见 `AGENTS.md`。
+
+部署脚本是 `scripts/deploy_server.sh`：rsync `backend/` 到 `/opt/minitv`，首次生成服务器 `.env`（不复制本地开发库口令），安装 PostgreSQL / Redis / Nginx，跑 `alembic upgrade head`，创建三个后台账号，用 systemd `minitv-api` 监听 `127.0.0.1:18110`，Nginx 在 80 端口反代。已有 `.env` 不会被覆盖。Cloudflare 代理下源站用 HTTP 即可。
 
 服务器部署接入后统一包一层：
 

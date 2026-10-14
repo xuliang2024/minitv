@@ -498,8 +498,8 @@ def upload_entries(r2: R2, entries: list[tuple[str, bytes]], key_prefix: str, la
         raise ReleaseError(f"{len(failures)} 个文件上传失败：\n{detail}")
 
 
-def verify_public(match_digest: str) -> bool:
-    base = os.environ.get("R2_PUBLIC_BASE_URL", "").rstrip("/")
+def verify_public(match_digest: str, base_url: str | None = None) -> bool:
+    base = (base_url if base_url is not None else os.environ.get("R2_PUBLIC_BASE_URL", "")).rstrip("/")
     if not base:
         return True
     url = f"{base}/?release-check={int(time.time())}"
@@ -597,7 +597,7 @@ def cmd_r2(args: argparse.Namespace) -> int:
 
     index_mtime = (dist / "index.html").stat().st_mtime if (dist / "index.html").exists() else 0
     stale_files: list[str] = []
-    web = REPO / "web"
+    web = REPO / (source or "web")
     for candidate in [web / "src", web / "public"]:
         if candidate.exists():
             for p in candidate.rglob("*"):
@@ -619,7 +619,9 @@ def cmd_r2(args: argparse.Namespace) -> int:
         print(f"   文件数量:   {len(entries)}（{human_size(total_size)}）")
         print(f"   目标桶:     {os.environ.get('R2_BUCKET') or DEFAULT_BUCKET}")
         print(f"   版本目录:   releases/{version}/")
-        print(f"   根目录切换: {'否（--no-promote）' if args.no_promote else '是（index.html 最后上传）'}")
+        promote_prefix = (args.prefix or "").strip("/")
+        promote_where = f"{promote_prefix}/" if promote_prefix else "桶根目录"
+        print(f"   提升位置:   {'否（--no-promote）' if args.no_promote else promote_where}")
         print(f"   dist 摘要:  {digest[:16]}…")
         r2 = make_r2(args.bucket)
         r2.head_bucket()
@@ -663,13 +665,16 @@ def cmd_r2(args: argparse.Namespace) -> int:
         upload_entries(r2, entries, version_prefix, "上传版本目录")
 
         promoted = False
+        promote_prefix = (args.prefix or "").strip("/")
+        live_prefix = f"{promote_prefix}/" if promote_prefix else ""
+        pointer_key = f"{live_prefix}releases/current.json" if live_prefix else "releases/current.json"
         if not args.no_promote:
             others = [(rel, data) for rel, data in entries if rel != "index.html"]
             index_only = [(rel, data) for rel, data in entries if rel == "index.html"]
-            upload_entries(r2, others, "", "切换根目录")
-            upload_entries(r2, index_only, "", "切换根目录(index)")
+            upload_entries(r2, others, live_prefix, f"切换 {live_prefix or '根目录'}")
+            upload_entries(r2, index_only, live_prefix, f"切换 {live_prefix or '根目录'}(index)")
             r2.put(
-                "releases/current.json",
+                pointer_key,
                 (
                     json.dumps({
                         "version": version,
@@ -695,6 +700,7 @@ def cmd_r2(args: argparse.Namespace) -> int:
             "short_sha": short,
             "bucket": args.bucket or os.environ.get("R2_BUCKET") or DEFAULT_BUCKET,
             "prefix": version_prefix,
+            "promote_prefix": live_prefix,
             "promoted_root": promoted,
             "dist_digest": digest,
             "files": [{"path": rel, "size": len(data)} for rel, data in entries],
@@ -715,9 +721,12 @@ def cmd_r2(args: argparse.Namespace) -> int:
         print(f"   桶:       {record['bucket']}")
         print(f"   版本目录: {version_prefix}")
         if promoted:
-            print("   根目录:   已切换（index.html 最后上传）")
+            print(f"   线上目录: 已切换 {live_prefix or '/'}（index.html 最后上传）")
             index_data = next((data for rel, data in entries if rel == "index.html"), None)
-            verified = bool(index_data is not None and verify_public(hashlib.sha256(index_data).hexdigest()))
+            verified = bool(index_data is not None and verify_public(
+                hashlib.sha256(index_data).hexdigest(),
+                args.verify_url or None,
+            ))
             if verified:
                 base = os.environ.get("R2_PUBLIC_BASE_URL", "").rstrip("/")
                 print(f"   线上校验: {base} 内容一致 ✅")
@@ -846,10 +855,14 @@ def cmd_rollback(args: argparse.Namespace) -> int:
     files = [f["path"] for f in record.get("files", [])]
     if not files:
         raise ReleaseError(f"{version} 的记录里没有文件清单，无法回滚")
+    live_prefix = str(record.get("promote_prefix") or "").strip("/")
+    if live_prefix:
+        live_prefix = live_prefix + "/"
+    pointer_key = f"{live_prefix}releases/current.json" if live_prefix else "releases/current.json"
 
     if args.dry_run:
         print("📋 dry-run 回滚计划（不写任何东西）")
-        print(f"   目标版本: {version}（{len(files)} 个文件，切换根目录）")
+        print(f"   目标版本: {version}（{len(files)} 个文件，切换 {live_prefix or '根目录'}）")
         print(f"   提交:     {record.get('short_sha')}")
         print(f"   记录:     {record_file.relative_to(REPO)}")
         return 0
@@ -877,7 +890,7 @@ def cmd_rollback(args: argparse.Namespace) -> int:
         r2 = make_r2()
         previous_version = None
         try:
-            previous_version = json.loads(r2.get("releases/current.json")).get("version")
+            previous_version = json.loads(r2.get(pointer_key)).get("version")
         except ReleaseError:
             pass
 
@@ -888,11 +901,11 @@ def cmd_rollback(args: argparse.Namespace) -> int:
             entries.append((rel, data))
         others = [(rel, data) for rel, data in entries if rel != "index.html"]
         index_only = [(rel, data) for rel, data in entries if rel == "index.html"]
-        upload_entries(r2, others, "", "切换根目录")
-        upload_entries(r2, index_only, "", "切换根目录(index)")
+        upload_entries(r2, others, live_prefix, f"切换 {live_prefix or '根目录'}")
+        upload_entries(r2, index_only, live_prefix, f"切换 {live_prefix or '根目录'}(index)")
 
         r2.put(
-            "releases/current.json",
+            pointer_key,
             (
                 json.dumps({
                     "version": version,
@@ -947,7 +960,9 @@ def main(argv: list[str] | None = None) -> int:
     p_r2.add_argument("--wait", type=int, default=60, help="等锁秒数（默认 60；0 立即失败）")
     p_r2.add_argument("--dry-run", action="store_true", help="只校验和展示计划，不写任何东西")
     p_r2.add_argument("--allow-dirty", action="store_true", help="允许带未提交改动发布（记录 dirty 标记）")
-    p_r2.add_argument("--no-promote", action="store_true", help="只上传版本目录，不切换根目录")
+    p_r2.add_argument("--no-promote", action="store_true", help="只上传版本目录，不切换线上目录")
+    p_r2.add_argument("--prefix", default="", help="提升到桶内前缀（如 admin）；版本归档仍在 releases/{version}/")
+    p_r2.add_argument("--verify-url", default="", help="线上校验基址（默认 R2_PUBLIC_BASE_URL）")
     p_r2.add_argument("--allow-no-index", action="store_true", help="允许没有 index.html")
     p_r2.add_argument("--sha", default="HEAD", help="打 tag 的提交（默认 HEAD）")
     p_r2.set_defaults(func=cmd_r2)
