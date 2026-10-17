@@ -36,6 +36,7 @@ _DEFAULT_ORIGINS = [
     "https://minitv.us",
     "https://www.minitv.us",
     "https://admin.minitv.us",
+    "https://h5.minitv.us",
 ]
 
 

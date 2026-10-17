@@ -46,7 +46,7 @@ lines.extend([
     f"DATABASE_URL=postgresql://minitv:{pg_password}@127.0.0.1:5432/minitv",
     f"REDIS_PASSWORD={redis_password}",
     f"REDIS_URL=redis://:{redis_password}@127.0.0.1:6379/0",
-    "CORS_ORIGINS=https://minitv.us,https://www.minitv.us,https://admin.minitv.us",
+    "CORS_ORIGINS=https://minitv.us,https://www.minitv.us,https://admin.minitv.us,https://h5.minitv.us",
     "SITE_DOMAIN=minitv.us",
     "SITE_URL=https://minitv.us",
     "WWW_URL=https://www.minitv.us",
