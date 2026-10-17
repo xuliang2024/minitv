@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.18.1",
+  "target": "r2",
+  "status": "published",
+  "sha": "68ed44bc130be9051bbbbdec12fd7e53a5d50ec1",
+  "short_sha": "68ed44bc",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.18.1/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "5d427057f37c3d2f345cd2f6f6ad56dcd4129036f3ccf11311628c35bfcd1e3a",
+  "files": [
+    {
+      "path": "assets/index-C7rnq1nR.js",
+      "size": 754882
+    },
+    {
+      "path": "assets/index-DOa1epvU.css",
+      "size": 8152
+    },
+    {
+      "path": "index.html",
+      "size": 492
+    }
+  ],
+  "started_at": "2026-10-18T06:14:54+08:00",
+  "finished_at": "2026-10-18T06:14:59+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 26526,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "H5 源码已提交后重新发布",
+  "dirty": false
+}
