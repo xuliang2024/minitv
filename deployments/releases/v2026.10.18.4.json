@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.18.4",
+  "target": "r2",
+  "status": "published",
+  "sha": "895c089673046e6734284ead38c71decec76468a",
+  "short_sha": "895c0896",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.18.4/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "9822a8e0963d2b9de0cc35819bf6411ce9fddef85db0f5c9a31f2908d3d98fd2",
+  "files": [
+    {
+      "path": "assets/index-DfBOcJMz.js",
+      "size": 756100
+    },
+    {
+      "path": "assets/index-DhY7vBid.css",
+      "size": 9261
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-18T06:38:40+08:00",
+  "finished_at": "2026-10-18T06:38:46+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 34236,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "修复首页横向溢出与横幅高度塌陷",
+  "dirty": false
+}
