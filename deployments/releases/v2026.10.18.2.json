@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.18.2",
+  "target": "server",
+  "status": "published",
+  "sha": "aee44404b0ff5fe74a520611a5c3d3d613ea4caa",
+  "short_sha": "aee44404",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-18T06:23:50+08:00",
+  "finished_at": "2026-10-18T06:24:04+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 29229,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "允许 h5.minitv.us 跨域。工作区其余 App/文档改动未纳入。",
+  "dirty": true
+}
