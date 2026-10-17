@@ -69,6 +69,20 @@ python3 scripts/release.py r2 --dist admin/dist --source admin --prefix admin \
 
 官网构建同样要带生产 API 地址：`cd web && VITE_API_BASE=https://api.minitv.us npm run build`。
 
+独立 H5 用单独的桶 `minitv-h5`，不和官网、管理后台共用 `minitv-web`：
+
+```bash
+cd h5 && VITE_API_BASE=https://api.minitv.us npm run build
+python3 scripts/release.py r2 --dist h5/dist --source h5 --bucket minitv-h5 \
+  --verify-url https://h5.minitv.us --note "H5"
+```
+
+`h5.minitv.us` 已挂到该桶（2026-10-17）。根路径 Rewrite 规则 id `c6d51b1aa07b43eda518c23e92d78d36`：`http.host eq "h5.minitv.us" and path eq "/"` → `/index.html`。桶公开策略是 `CnamesOnly`，允许列表只有 `h5.minitv.us`。允许列表要这样写，`access` 放 query、域名放 `cname`，放 JSON body 不会生效：
+
+```bash
+PUT /accounts/{account}/r2/buckets/minitv-h5/policy?access=CnamesOnly&cname=h5.minitv.us
+```
+
 ## 5. API 服务器发布
 
 - 目标服务器：`root@YOUR_SERVER_IP`（主机名 `iv-yex8aqiy9s3z47gll3wc`，Byteplus 新加坡）。

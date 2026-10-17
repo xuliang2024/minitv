@@ -17,6 +17,8 @@ admin/node_modules/
 admin/dist/
 web/node_modules/
 web/dist/
+h5/node_modules/
+h5/dist/
 
 # local media library (large, regenerable via scripts/)
 data/litetv-videos-local/
