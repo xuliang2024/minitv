@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.17.2",
+  "target": "r2",
+  "status": "published",
+  "sha": "91b9928b94262303b2a980a8f7b155e3297fd886",
+  "short_sha": "91b9928b",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.17.2/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "607349dd539bbea58d2493680b6c8e28aa69655073ca0dafdde3b28a85268098",
+  "files": [
+    {
+      "path": "assets/index-B2qaxymQ.js",
+      "size": 1368410
+    },
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-17T16:04:32+08:00",
+  "finished_at": "2026-10-17T16:05:59+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 73076,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "首页运营、剧集与分组后台",
+  "dirty": false
+}
