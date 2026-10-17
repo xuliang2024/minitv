@@ -728,7 +728,7 @@ def cmd_r2(args: argparse.Namespace) -> int:
                 args.verify_url or None,
             ))
             if verified:
-                base = os.environ.get("R2_PUBLIC_BASE_URL", "").rstrip("/")
+                base = (args.verify_url or os.environ.get("R2_PUBLIC_BASE_URL", "")).rstrip("/")
                 print(f"   线上校验: {base} 内容一致 ✅")
             else:
                 print("   ⚠️ 线上校验未通过：检查 R2 根路径 Rewrite 规则（/ → /index.html）与缓存，稍后复核")

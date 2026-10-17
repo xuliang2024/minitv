@@ -1,13 +1,45 @@
 import { useEffect, useState } from "react";
 import { getJson } from "../api";
 import type { Locale } from "../copy";
-import { t } from "../copy";
+import { t, floorName } from "../copy";
 import { RANK_COLORS } from "../format";
 import type { Banner, ChannelTab, ConfigPayload, DramaCard, HomeGroup, HomePayload } from "../types";
 
 interface Props {
   locale: Locale;
   onOpen: (dramaId: number) => void;
+}
+
+/**
+ * The ops backend can be empty on a fresh environment (no ChannelTab rows).
+ * Discover is the one pinned tab, so render it anyway instead of a blank page.
+ */
+const DEFAULT_TAB: ChannelTab = {
+  code: "discover",
+  title_en: "Discover",
+  title_zh: "发现",
+  position: 0,
+  locked: true,
+  group_id: null,
+};
+
+/** No banner configured: promote the first drama of the first floor instead. */
+function heroFromGroups(groups: HomeGroup[], locale: Locale): Banner[] {
+  for (const group of groups) {
+    const [first] = group.dramas;
+    if (first?.cover_url) {
+      return [{
+        id: -first.id,
+        drama_id: first.id,
+        slot: "hero",
+        title: first.title,
+        cover_url: first.cover_url,
+        kicker: floorName(group.name, locale),
+        headline: first.title,
+      }];
+    }
+  }
+  return [];
 }
 
 export function HomePage({ locale, onOpen }: Props) {
@@ -43,35 +75,53 @@ export function HomePage({ locale, onOpen }: Props) {
       <div className="group-page">
         <div className="group-bar">
           <button className="icon-btn" onClick={() => setGroup(null)}>←</button>
-          <h1>{group.name}</h1>
+          <h1>{floorName(group.name, locale)}</h1>
         </div>
         <PosterGrid dramas={group.dramas} onOpen={onOpen} />
       </div>
     );
   }
 
-  if (loading) return <div className="center">…</div>;
+  if (loading) return <HomeSkeleton />;
   if (error) return <div className="center"><button className="retry" onClick={load}>{t(locale, "retry")}</button></div>;
-  if (tabs.length === 0) return <div className="center">{t(locale, "empty")}</div>;
 
-  const tab = tabs[tabIndex];
+  const shown = tabs.length > 0 ? tabs : [DEFAULT_TAB];
+  const tab = shown[tabIndex] ?? DEFAULT_TAB;
   const discover = tab.locked || tabIndex === 0;
   const bound = groups.find((item) => item.id === tab.group_id) ?? null;
+  const hasContent = banners.length > 0 || groups.some((group) => group.dramas.length > 0);
+  const hero = banners.length > 0 ? banners : heroFromGroups(groups, locale);
 
   return (
     <div>
       <div className="channel">
-        {tabs.map((item, index) => (
+        {shown.map((item, index) => (
           <button key={item.code} className={index === tabIndex ? "on" : ""} onClick={() => setTabIndex(index)}>
             {locale === "zh" && item.title_zh ? item.title_zh : item.title_en}
           </button>
         ))}
       </div>
-      {discover ? (
-        <Discover banners={banners} groups={groups} locale={locale} onOpen={onOpen} onMore={setGroup} />
+      {!hasContent ? (
+        <div className="center" style={{ height: "60vh" }}>{t(locale, "empty")}</div>
+      ) : discover ? (
+        <Discover banners={hero} groups={groups} locale={locale} onOpen={onOpen} onMore={setGroup} />
+      ) : bound ? (
+        <PosterGrid dramas={bound.dramas} onOpen={onOpen} />
       ) : (
-        <PosterGrid dramas={bound?.dramas ?? []} onOpen={onOpen} />
+        <div className="center" style={{ height: "50vh" }}>{t(locale, "empty")}</div>
       )}
+    </div>
+  );
+}
+
+function HomeSkeleton() {
+  return (
+    <div className="home-skeleton" aria-hidden>
+      <div className="sk-hero" />
+      <div className="sk-floor" />
+      <div className="grid3">
+        {Array.from({ length: 6 }, (_, index) => <div key={index} className="sk-card" />)}
+      </div>
     </div>
   );
 }
@@ -141,19 +191,22 @@ function Floor({
   onMore: () => void;
 }) {
   const style = group.style || "poster3";
+  const limit = style === "rank" ? 3 : style === "grid2" ? 4 : 6;
   return (
     <section>
       <div className="floor-head">
         <b />
-        <span>{group.name}</span>
-        <button onClick={onMore}>{t(locale, "more")} ›</button>
+        <span>{floorName(group.name, locale)}</span>
+        {group.dramas.length > limit && (
+          <button onClick={onMore}>{t(locale, "more")} ›</button>
+        )}
       </div>
       {style === "rank" ? (
-        <RankList dramas={group.dramas.slice(0, 3)} onOpen={onOpen} />
+        <RankList dramas={group.dramas.slice(0, limit)} onOpen={onOpen} />
       ) : style === "grid2" ? (
-        <LandscapeGrid dramas={group.dramas.slice(0, 4)} badge={group.badge} locale={locale} onOpen={onOpen} />
+        <LandscapeGrid dramas={group.dramas.slice(0, limit)} badge={group.badge} locale={locale} onOpen={onOpen} />
       ) : (
-        <PosterGrid dramas={group.dramas.slice(0, 6)} badge={group.badge} onOpen={onOpen} />
+        <PosterGrid dramas={group.dramas.slice(0, limit)} badge={group.badge} onOpen={onOpen} />
       )}
     </section>
   );

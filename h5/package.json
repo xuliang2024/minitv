@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:home": "node scripts/verify-home.mjs"
   },
   "dependencies": {
     "hls.js": "^1.6.16",

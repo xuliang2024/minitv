@@ -101,7 +101,7 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
       <div className="meta">
         <h2>{payload.drama.title}</h2>
         {payload.drama.synopsis && (
-          <p className="syn" onClick={() => setExpanded(!expanded)}>
+          <p className={expanded ? "syn open" : "syn"} onClick={() => setExpanded(!expanded)}>
             {t(locale, "episode_short", { number: current.episode_number })} | {payload.drama.synopsis} {expanded ? t(locale, "collapse") : t(locale, "expand")}
           </p>
         )}

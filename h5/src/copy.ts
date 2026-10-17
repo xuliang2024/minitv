@@ -50,6 +50,21 @@ const zh: Record<string, string> = {
 
 export type Locale = "en" | "zh";
 
+/** Ops stores floor names in one language; the English UI should not show CJK. */
+const FLOOR_EN: Record<string, string> = {
+  新上架: "New Arrivals",
+  本周推荐: "This Week",
+  热播: "Trending Now",
+  榜单: "Ranking",
+  猜你喜欢: "For You",
+  已完结: "Completed",
+};
+
+export function floorName(name: string, locale: Locale): string {
+  if (locale === "zh") return name;
+  return FLOOR_EN[name] ?? name;
+}
+
 export function t(locale: Locale, key: string, vars: Record<string, string | number> = {}): string {
   const table = locale === "zh" ? zh : en;
   let text = table[key] ?? en[key] ?? key;
