@@ -1,0 +1,69 @@
+{
+  "version": "v2026.10.17.3",
+  "target": "r2",
+  "status": "published",
+  "sha": "aa07cfd2af3d2b8d7ef51a035bea5d63075ce3d4",
+  "short_sha": "aa07cfd2",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.17.3/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "8a420a29bee0230d5d52dbbfb40ececcd509ac51633279e523ad61b3a1bee52e",
+  "files": [
+    {
+      "path": "apple-touch-icon.png",
+      "size": 26122
+    },
+    {
+      "path": "assets/hls-ldmpDFfV.js",
+      "size": 594977
+    },
+    {
+      "path": "assets/index-DCkrScnw.js",
+      "size": 176378
+    },
+    {
+      "path": "assets/index-ZnoGF62b.css",
+      "size": 21975
+    },
+    {
+      "path": "brand/minitv-icon.png",
+      "size": 50520
+    },
+    {
+      "path": "favicon-192.png",
+      "size": 29396
+    },
+    {
+      "path": "favicon-32.png",
+      "size": 1619
+    },
+    {
+      "path": "favicon.ico",
+      "size": 5383
+    },
+    {
+      "path": "index.html",
+      "size": 671
+    },
+    {
+      "path": "ph_feed.png",
+      "size": 470870
+    },
+    {
+      "path": "qr.png",
+      "size": 2174
+    }
+  ],
+  "started_at": "2026-10-17T16:06:28+08:00",
+  "finished_at": "2026-10-17T16:07:18+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 73843,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "官网图标与首页微调。web/scripts 验收脚本未纳入本次发布。",
+  "dirty": true
+}
