@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.18.5",
+  "target": "r2",
+  "status": "published",
+  "sha": "33ddbc951dc91554c2d083d461f15fc38fafb69e",
+  "short_sha": "33ddbc95",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.18.5/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "1522baf3c03c595d9f9eb1e42474ead5b3de00236ef909becd393c1ecf2fcaba",
+  "files": [
+    {
+      "path": "assets/index-CV9Yt6vW.js",
+      "size": 760102
+    },
+    {
+      "path": "assets/index-Dj8W4pUf.css",
+      "size": 10235
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-18T06:54:28+08:00",
+  "finished_at": "2026-10-18T06:54:41+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 39160,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "fix(h5): 底部TabBar矢量图标与精细化交互",
+  "dirty": false
+}
