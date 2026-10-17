@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.17.1",
+  "target": "server",
+  "status": "published",
+  "sha": "6ea058b0899249c1eac5d7214d7fd41fd2afbe4e",
+  "short_sha": "6ea058b0",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-17T16:02:41+08:00",
+  "finished_at": "2026-10-17T16:03:10+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 71974,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "上线首页运营、推荐流、邮箱/Google 登录，并迁移到 b7e2c1a94d30。工作区仍有未纳入的 App、文档和脚本改动，部署只同步已提交的 backend/。",
+  "dirty": true
+}
