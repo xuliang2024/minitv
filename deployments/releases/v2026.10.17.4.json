@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.17.4",
+  "target": "r2",
+  "status": "published",
+  "sha": "45ae5341ab6be1b49b5281dc75923ee90954fef2",
+  "short_sha": "45ae5341",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.17.4/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "5d427057f37c3d2f345cd2f6f6ad56dcd4129036f3ccf11311628c35bfcd1e3a",
+  "files": [
+    {
+      "path": "assets/index-C7rnq1nR.js",
+      "size": 754882
+    },
+    {
+      "path": "assets/index-DOa1epvU.css",
+      "size": 8152
+    },
+    {
+      "path": "index.html",
+      "size": 492
+    }
+  ],
+  "started_at": "2026-10-17T16:32:45+08:00",
+  "finished_at": "2026-10-17T16:33:13+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 83711,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "独立 H5 首发：首页/发现流/播放页，API 指向 api.minitv.us",
+  "dirty": true
+}
