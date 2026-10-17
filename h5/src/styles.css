@@ -12,7 +12,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; background: var(--bg); color: #fff; }
+html, body, #root { height: 100%; margin: 0; background: var(--bg); color: #fff; overflow-x: hidden; }
 button, input { font: inherit; color: inherit; }
 button { background: none; border: 0; padding: 0; cursor: pointer; }
 a { color: inherit; text-decoration: none; }
@@ -20,6 +20,7 @@ img { display: block; max-width: 100%; }
 
 .app {
   height: 100%;
+  width: 100%;
   max-width: 480px;
   margin: 0 auto;
   display: flex;
@@ -29,7 +30,7 @@ img { display: block; max-width: 100%; }
   overflow: hidden;
 }
 
-.stage { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+.stage { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
 .stage.bleed { overflow: hidden; }
 
 .topbar {
@@ -63,8 +64,9 @@ img { display: block; max-width: 100%; }
 .tabs svg { width: 22px; height: 22px; }
 
 .channel {
-  display: flex; gap: 18px; overflow-x: auto; padding: 6px 14px 0;
-  scrollbar-width: none;
+  display: flex; gap: 18px; overflow-x: auto; overflow-y: hidden;
+  padding: 6px 14px 0; max-width: 100%;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
 }
 .channel::-webkit-scrollbar { display: none; }
 .channel button { color: var(--muted); font-size: 14px; white-space: nowrap; padding-bottom: 6px; }
@@ -74,15 +76,30 @@ img { display: block; max-width: 100%; }
   background: var(--red); border-radius: 2px;
 }
 
-.banner { margin: 12px 12px 4px; position: relative; }
-.banner-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; border-radius: 14px; }
+.banner { margin: 12px 12px 4px; position: relative; overflow: hidden; }
+.banner-track { display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; border-radius: 14px; }
 .banner-track::-webkit-scrollbar { display: none; }
+/*
+ * Height comes from the padded media box, not from `aspect-ratio` on the
+ * slide: a flex item that is a <button> collapses to 0 in several mobile
+ * WebViews, and a percentage-height <img> then renders nothing.
+ */
 .banner-slide {
-  flex: 0 0 100%; scroll-snap-align: start; position: relative;
-  aspect-ratio: 4 / 5; background: var(--sheet); overflow: hidden;
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  display: block;
+  position: relative;
+  padding: 0;
+  text-align: left;
+  scroll-snap-align: start;
+  background: var(--sheet);
+  overflow: hidden;
 }
-.banner-slide img, .cover { width: 100%; height: 100%; object-fit: cover; }
-.banner-slide img { object-position: center 18%; }
+.banner-media { display: block; position: relative; width: 100%; padding-top: 125%; }
+.banner-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 18%; }
+.cover { width: 100%; height: 100%; object-fit: cover; }
 .banner-copy {
   position: absolute; left: 0; right: 0; bottom: 0;
   padding: 96px 16px 18px;
@@ -109,9 +126,12 @@ img { display: block; max-width: 100%; }
 .grid3, .grid2 { display: grid; gap: 12px 8px; padding: 0 12px; }
 .grid3 { grid-template-columns: repeat(3, 1fr); }
 .grid2 { grid-template-columns: repeat(2, 1fr); }
-.poster { position: relative; aspect-ratio: 3 / 4; border-radius: 8px; overflow: hidden; background: var(--sheet); }
-.land { position: relative; aspect-ratio: 16 / 10; border-radius: 8px; overflow: hidden; background: var(--sheet); }
-.card p { margin: 6px 0 0; font-size: 12px; line-height: 1.25; height: 30px; overflow: hidden; }
+.poster, .land { position: relative; border-radius: 8px; overflow: hidden; background: var(--sheet); }
+.poster-media { display: block; padding-top: 133.333%; }
+.land-media { display: block; padding-top: 62.5%; }
+.poster-media img, .land-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card p { margin: 6px 0 0; font-size: 12px; line-height: 1.25; height: 30px; overflow: hidden; text-align: left; }
+.card { text-align: left; min-width: 0; }
 .grid2 .card p { height: 17px; white-space: nowrap; text-overflow: ellipsis; }
 .rank-no {
   position: absolute; left: 5px; top: 2px; font-style: italic; font-weight: 900; font-size: 18px;

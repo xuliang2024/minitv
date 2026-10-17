@@ -159,18 +159,28 @@ function BannerCarousel({ banners, locale, onOpen }: { banners: Banner[]; locale
         }}
       >
         {banners.map((banner) => (
-          <button
+          <div
             key={banner.id}
             className="banner-slide"
+            role="button"
+            tabIndex={0}
             onClick={() => banner.drama_id != null && onOpen(banner.drama_id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                if (banner.drama_id != null) onOpen(banner.drama_id);
+              }
+            }}
           >
-            {banner.cover_url && <img src={banner.cover_url} alt="" />}
+            <span className="banner-media">
+              {banner.cover_url && <img src={banner.cover_url} alt="" />}
+            </span>
             <div className="banner-copy">
               <span className="chip">{t(locale, "exclusive")}</span>
               {banner.kicker && <p className="kicker">{banner.kicker}</p>}
               <p className="headline">{banner.headline || banner.title || ""}</p>
             </div>
-          </button>
+          </div>
         ))}
       </div>
       {banners.length > 1 && (
@@ -219,7 +229,9 @@ function PosterGrid({ dramas, onOpen, badge }: { dramas: DramaCard[]; onOpen: (i
       {dramas.map((drama, index) => (
         <button key={drama.id} className="card" onClick={() => onOpen(drama.id)}>
           <div className="poster">
-            {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+            <span className="poster-media">
+              {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+            </span>
             {badge === "rank" && (
               <span className="rank-no" style={{ color: index < 3 ? RANK_COLORS[index] : "rgba(255,255,255,.7)" }}>{index + 1}</span>
             )}
@@ -244,7 +256,9 @@ function LandscapeGrid({
       {dramas.map((drama) => (
         <button key={drama.id} className="card" onClick={() => onOpen(drama.id)}>
           <div className="land">
-            {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+            <span className="land-media">
+              {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+            </span>
             {badge === "label" && <span className="hot">{t(locale, "hot")}</span>}
           </div>
           <p>{drama.title}</p>
