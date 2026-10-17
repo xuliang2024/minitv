@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.18.3",
+  "target": "r2",
+  "status": "published",
+  "sha": "73e54f5b097ee924ccd4517f6bf679672f566dce",
+  "short_sha": "73e54f5b",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.18.3/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "8a18001ea2d456366fcd7844b564526eda77d0820531c0227aa08fc1ca59e7e2",
+  "files": [
+    {
+      "path": "assets/index-CW1yV6Uq.css",
+      "size": 8748
+    },
+    {
+      "path": "assets/index-Dq9zMgg6.js",
+      "size": 755830
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-18T06:30:15+08:00",
+  "finished_at": "2026-10-18T06:30:21+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 31460,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "首页按发现页兜底并补主推、骨架屏、楼层英文名",
+  "dirty": false
+}
