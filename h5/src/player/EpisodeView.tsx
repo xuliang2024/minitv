@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { postJson } from "../api";
+import { IconPlayCenter } from "../icons";
 import type { PlaybackAuth } from "../types";
 import { attachHls, type PlayerHandle } from "./hls";
 
@@ -112,8 +113,15 @@ export function EpisodeView({ dramaId, episodeId, resumeSeconds = 0, active, pla
       <video ref={videoRef} playsInline onClick={toggle} />
       {failed && <div className="lock">Could not play</div>}
       {paused && playable && (
-        <button className="lock" style={{ background: "transparent", color: "#fff", fontSize: 42 }} onClick={toggle}>
-          ▶
+        <button
+          type="button"
+          className="play-pause-overlay"
+          aria-label="Play"
+          onClick={toggle}
+        >
+          <span className="play-pause-badge">
+            <IconPlayCenter size={34} />
+          </span>
         </button>
       )}
       <div className="progress"><b style={{ width: `${progress * 100}%` }} /></div>

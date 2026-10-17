@@ -3,6 +3,15 @@ import { getJson, postJson } from "../api";
 import type { Locale } from "../copy";
 import { t } from "../copy";
 import { formatCount } from "../format";
+import {
+  IconBack,
+  IconChevronUp,
+  IconComment,
+  IconEpisodes,
+  IconHeart,
+  IconShare,
+  IconStar,
+} from "../icons";
 import { EpisodeView } from "../player/EpisodeView";
 import type { PlayEpisode, PlayPayload } from "../types";
 
@@ -86,17 +95,66 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
         ))}
       </div>
       <div className="back">
-        <button className="icon-btn" onClick={onBack}>←</button>
-        <span>{t(locale, "episode_short", { number: current.episode_number })}</span>
+        <button className="icon-btn back-btn" onClick={onBack} aria-label="Back">
+          <IconBack size={20} />
+        </button>
+        <span className="back-title">{t(locale, "episode_short", { number: current.episode_number })}</span>
       </div>
       <div className="scrim" />
       <div className="rail">
-        <button style={{ color: liked ? "var(--gold)" : "#fff" }} onClick={() => { const next = !liked; setLiked(next); react("like", !next); }}>
-          ♥<span>{formatCount(payload.drama.play_count, locale)}</span>
+        <button
+          type="button"
+          className={liked ? "rail-btn on" : "rail-btn"}
+          onClick={() => {
+            const next = !liked;
+            setLiked(next);
+            react("like", !next);
+          }}
+          aria-label="Like"
+        >
+          <span className="rail-icon"><IconHeart active={liked} size={30} /></span>
+          <span className="rail-label">{formatCount(payload.drama.play_count, locale)}</span>
         </button>
-        <button onClick={() => setSheet("episodes")}>💬</button>
-        <button style={{ color: favorited ? "var(--gold)" : "#fff" }} onClick={() => { const next = !favorited; setFavorited(next); react("favorite", !next); }}>★</button>
-        <button>↗</button>
+
+        <button
+          type="button"
+          className="rail-btn"
+          onClick={() => setSheet("episodes")}
+          aria-label={t(locale, "episodes_tab")}
+        >
+          <span className="rail-icon"><IconComment size={30} /></span>
+          <span className="rail-label">{payload.items.length > 0 ? payload.items.length : t(locale, "select")}</span>
+        </button>
+
+        <button
+          type="button"
+          className={favorited ? "rail-btn on" : "rail-btn"}
+          onClick={() => {
+            const next = !favorited;
+            setFavorited(next);
+            react("favorite", !next);
+          }}
+          aria-label={t(locale, "favorite")}
+        >
+          <span className="rail-icon"><IconStar active={favorited} size={30} /></span>
+          <span className="rail-label">{t(locale, "favorite")}</span>
+        </button>
+
+        <button
+          type="button"
+          className="rail-btn"
+          onClick={() => {
+            if (navigator.share) {
+              navigator.share({ title: payload.drama.title, url: window.location.href }).catch(() => undefined);
+            } else if (navigator.clipboard) {
+              navigator.clipboard.writeText(window.location.href).catch(() => undefined);
+            }
+          }}
+          aria-label={t(locale, "share")}
+        >
+          <span className="rail-icon"><IconShare size={30} /></span>
+          <span className="rail-label">{t(locale, "share")}</span>
+        </button>
       </div>
       <div className="meta">
         <h2>{payload.drama.title}</h2>
@@ -109,7 +167,9 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
         <p className="ai">{t(locale, "ai_disclaimer")}</p>
       </div>
       <button className="ep-bar" onClick={() => setSheet("episodes")}>
-        ☰ <span style={{ flex: 1, textAlign: "left" }}>{t(locale, "all_episodes_bar", { count: payload.items.length })}</span> ⌃
+        <IconEpisodes size={18} />
+        <span style={{ flex: 1, textAlign: "left" }}>{t(locale, "all_episodes_bar", { count: payload.items.length })}</span>
+        <IconChevronUp size={16} />
       </button>
       {sheet && (
         <>

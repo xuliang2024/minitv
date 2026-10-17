@@ -21,6 +21,8 @@ const en: Record<string, string> = {
   exclusive: "MiniTV Original",
   hot: "HOT",
   coming: "Coming soon",
+  share: "Share",
+  favorite: "Favorite",
 };
 
 const zh: Record<string, string> = {
@@ -46,6 +48,8 @@ const zh: Record<string, string> = {
   exclusive: "MiniTV 独播",
   hot: "热播",
   coming: "即将开放",
+  share: "分享",
+  favorite: "收藏",
 };
 
 export type Locale = "en" | "zh";

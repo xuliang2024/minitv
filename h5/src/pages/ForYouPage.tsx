@@ -3,6 +3,7 @@ import { getJson, postJson } from "../api";
 import type { Locale } from "../copy";
 import { t } from "../copy";
 import { formatCount } from "../format";
+import { IconComment, IconEpisodes, IconHeart, IconShare } from "../icons";
 import { EpisodeView } from "../player/EpisodeView";
 import type { FeedItem, FeedPage } from "../types";
 
@@ -144,10 +145,42 @@ function FeedSlot({
       />
       <div className="scrim" />
       <div className="rail">
-        <div className="avatar">{drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}</div>
-        <button onClick={toggleLike} style={{ color: liked ? "var(--gold)" : "#fff" }}>♥<span>{formatCount(drama.play_count, locale)}</span></button>
-        <button onClick={() => onOpenDrama(drama.id)}>💬</button>
-        <button>↗</button>
+        <div className="avatar" onClick={() => onOpenDrama(drama.id)} role="button" tabIndex={0}>
+          {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+        </div>
+        <button
+          type="button"
+          className={liked ? "rail-btn on" : "rail-btn"}
+          onClick={toggleLike}
+          aria-label="Like"
+        >
+          <span className="rail-icon"><IconHeart active={liked} size={30} /></span>
+          <span className="rail-label">{formatCount(drama.play_count, locale)}</span>
+        </button>
+        <button
+          type="button"
+          className="rail-btn"
+          onClick={() => onOpenDrama(drama.id)}
+          aria-label="Episodes"
+        >
+          <span className="rail-icon"><IconComment size={30} /></span>
+          <span className="rail-label">{drama.published_episode_count || t(locale, "select")}</span>
+        </button>
+        <button
+          type="button"
+          className="rail-btn"
+          onClick={() => {
+            if (navigator.share) {
+              navigator.share({ title: drama.title, url: window.location.href }).catch(() => undefined);
+            } else if (navigator.clipboard) {
+              navigator.clipboard.writeText(window.location.href).catch(() => undefined);
+            }
+          }}
+          aria-label={t(locale, "share")}
+        >
+          <span className="rail-icon"><IconShare size={30} /></span>
+          <span className="rail-label">{t(locale, "share")}</span>
+        </button>
       </div>
       <div className="meta">
         <h2>{drama.title}</h2>
@@ -156,7 +189,10 @@ function FeedSlot({
           <span>{tags}</span>
         </div>
       </div>
-      <button className="select-pill" onClick={() => onOpenDrama(drama.id)}>☰ {t(locale, "select")}</button>
+      <button className="select-pill" onClick={() => onOpenDrama(drama.id)}>
+        <IconEpisodes size={15} />
+        <span>{t(locale, "select")}</span>
+      </button>
       {finished && (
         <button className="select-pill" style={{ bottom: 132, background: "var(--red)", color: "#fff" }} onClick={() => onOpenDrama(drama.id)}>
           {t(locale, "all_episodes", { count: drama.published_episode_count })}
