@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { loadLocale, saveLocale, t, type Locale } from "./copy";
+import { IconForYou, IconHome, IconMe, IconRewards, IconSearch } from "./icons";
 import { ForYouPage } from "./pages/ForYouPage";
 import { HomePage } from "./pages/HomePage";
 import { PlayPage } from "./pages/PlayPage";
@@ -7,11 +8,17 @@ import { SearchPage } from "./pages/SearchPage";
 
 type Tab = "home" | "foryou" | "rewards" | "me";
 
-const TABS: { id: Tab; key: string; icon: string }[] = [
-  { id: "home", key: "nav.home", icon: "⌂" },
-  { id: "foryou", key: "nav.foryou", icon: "▷" },
-  { id: "rewards", key: "nav.rewards", icon: "✦" },
-  { id: "me", key: "nav.me", icon: "☺" },
+interface TabItem {
+  id: Tab;
+  key: string;
+  renderIcon: (active: boolean) => ReactNode;
+}
+
+const TABS: TabItem[] = [
+  { id: "home", key: "nav.home", renderIcon: (active) => <IconHome active={active} /> },
+  { id: "foryou", key: "nav.foryou", renderIcon: (active) => <IconForYou active={active} /> },
+  { id: "rewards", key: "nav.rewards", renderIcon: (active) => <IconRewards active={active} /> },
+  { id: "me", key: "nav.me", renderIcon: (active) => <IconMe active={active} /> },
 ];
 
 export function App() {
@@ -35,7 +42,11 @@ export function App() {
           {searching ? null : tab === "home" ? <div className="brand"><i>M</i>iniTV</div> : <h1>{t(locale, TABS.find((item) => item.id === tab)!.key)}</h1>}
           <span style={{ flex: 1 }} />
           <button className="icon-btn" onClick={switchLocale}>{locale === "zh" ? "EN" : "中"}</button>
-          {!searching && <button className="icon-btn" onClick={() => setSearching(true)}>⌕</button>}
+          {!searching && (
+            <button className="icon-btn search-btn" onClick={() => setSearching(true)} aria-label={t(locale, "search")}>
+              <IconSearch />
+            </button>
+          )}
         </header>
       )}
       <main className={playing || tab === "foryou" ? "stage bleed" : "stage"}>
@@ -52,13 +63,24 @@ export function App() {
         )}
       </main>
       {!playing && !searching && (
-        <nav className="tabs">
-          {TABS.map((item) => (
-            <a key={item.id} className={item.id === tab ? "on" : ""} onClick={() => setTab(item.id)}>
-              <span>{item.icon}</span>
-              {t(locale, item.key)}
-            </a>
-          ))}
+        <nav className="tabs" role="tablist">
+          {TABS.map((item) => {
+            const active = item.id === tab;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                data-tab={item.id}
+                aria-selected={active}
+                className={active ? "tab-item on" : "tab-item"}
+                onClick={() => setTab(item.id)}
+              >
+                <span className="tab-icon">{item.renderIcon(active)}</span>
+                <span className="tab-label">{t(locale, item.key)}</span>
+              </button>
+            );
+          })}
         </nav>
       )}
     </div>
