@@ -124,6 +124,11 @@ class HomeGroup(Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # group order
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    # How the discover page paints this floor. poster3 = three posters,
+    # rank = a sideways ranking card, grid2 = a two-column poster grid.
+    style: Mapped[str] = mapped_column(String(16), nullable=False, default="poster3")
+    # rank paints 1/2/3 by itself; label paints this marketing chip instead.
+    badge: Mapped[str] = mapped_column(String(16), nullable=False, default="rank")
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

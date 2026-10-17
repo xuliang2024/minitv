@@ -10,7 +10,14 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.content.models import DRAMA_STATUSES, EPISODE_STATUSES, Drama, Episode
+from app.modules.content.models import (
+    DRAMA_STATUSES,
+    EPISODE_STATUSES,
+    Drama,
+    DramaTag,
+    Episode,
+    Tag,
+)
 
 DRAMA_TRANSITIONS: dict[str, frozenset[str]] = {
     "draft": frozenset({"in_review"}),
@@ -102,6 +109,22 @@ def list_published_episodes(session: Session, drama_id: int) -> list[Episode]:
             .order_by(Episode.episode_number)
         )
     )
+
+
+def tags_by_drama(session: Session, drama_ids: list[int]) -> dict[int, list[Tag]]:
+    """Enabled tags per drama, keyed by drama id, in tag-id order."""
+    tags: dict[int, list[Tag]] = {}
+    if not drama_ids:
+        return tags
+    rows = session.execute(
+        select(DramaTag.drama_id, Tag)
+        .join(Tag, Tag.id == DramaTag.tag_id)
+        .where(DramaTag.drama_id.in_(drama_ids), Tag.status == "enabled")
+        .order_by(Tag.id)
+    )
+    for drama_id, tag in rows:
+        tags.setdefault(drama_id, []).append(tag)
+    return tags
 
 
 def get_published_episode(session: Session, drama_id: int, episode_id: int) -> Episode | None:

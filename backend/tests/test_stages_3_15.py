@@ -17,6 +17,7 @@ from app.modules.account.models import User, VerificationCode
 from app.modules.billing.service import ensure_default_plans, sign_webhook
 from app.modules.common.models import AuditLog
 from app.modules.content.models import Episode, MediaUpload
+from app.modules.content.publish_service import GROUP_LIMIT
 from app.modules.content.upload_service import sign_callback
 from app.modules.playback.service import image_secret, sign_path, verify_token, video_secret
 from app.modules.wallet.models import CoinLedgerEntry, WalletAccount
@@ -176,13 +177,14 @@ def test_image_token_does_not_verify_as_video():
     assert verify_token(signed["path"], signed["expires_at"], signed["token"], 0, video_secret()) is False
 
 
-def test_unlock_is_idempotent_and_refuses_negative_balance(make, session, client):
+def test_unlock_is_idempotent_and_refuses_negative_balance(make, session, client, monkeypatch):
     headers = _ops(make, client)
     drama, episode = _publish_free_episode(make, client, headers)
     paid = make.episode(drama, number=3, status="published")
     paid.bunny_video_id = "paid-video"
     session.commit()
     user = make.user(email="payer@example.com", coins=50)
+    monkeypatch.setattr(accounts, "send_verification_code", lambda **_: "test")
     accounts.issue_code(session, email=user.email, purpose="login")
     # direct wallet path: price is 50, balance is 50
     first = unlock_episode(session, user_id=user.id, episode_id=paid.id, idempotency_key="k1")
@@ -248,15 +250,15 @@ def test_member_does_not_spend_coins_and_cancel_keeps_ledger(make, session, clie
     assert session.scalar(select(func.count()).select_from(CoinLedgerEntry).where(CoinLedgerEntry.user_id == user.id)) == after
 
 
-def test_groups_sort_independently_and_cap_at_20(make, client):
+def test_groups_sort_independently_and_cap_at_limit(make, client):
     headers = _ops(make, client)
-    dramas = [make.drama(title=f"G{i}") for i in range(21)]
+    dramas = [make.drama(title=f"G{i}") for i in range(GROUP_LIMIT + 1)]
     first = client.post("/admin/v1/groups", json={"name": "Must Watch", "position": 1}, headers=headers).json()["id"]
     second = client.post("/admin/v1/groups", json={"name": "Popular", "position": 2}, headers=headers).json()["id"]
-    for drama in dramas[:20]:
+    for drama in dramas[:GROUP_LIMIT]:
         added = client.post(f"/admin/v1/groups/{first}/dramas", json={"drama_id": drama.id, "confirm": True}, headers=headers)
         assert added.status_code == 200, added.text
-    overflow = client.post(f"/admin/v1/groups/{first}/dramas", json={"drama_id": dramas[20].id, "confirm": True}, headers=headers)
+    overflow = client.post(f"/admin/v1/groups/{first}/dramas", json={"drama_id": dramas[GROUP_LIMIT].id, "confirm": True}, headers=headers)
     assert overflow.status_code == 409
     other = client.post(f"/admin/v1/groups/{second}/dramas", json={"drama_id": dramas[0].id, "confirm": True}, headers=headers)
     assert other.status_code == 200
@@ -265,7 +267,7 @@ def test_groups_sort_independently_and_cap_at_20(make, client):
     client.patch(f"/admin/v1/groups/{second}", json={"position": 9}, headers=headers)
     still = client.get("/admin/v1/groups", headers=headers).json()["items"]
     assert next(item for item in still if item["id"] == second)["position"] == 9
-    assert next(item for item in still if item["id"] == first)["drama_count"] == 20
+    assert next(item for item in still if item["id"] == first)["drama_count"] == GROUP_LIMIT
 
 
 def test_group_editor_rename_membership_and_drama_side(make, client):
@@ -348,6 +350,69 @@ def test_copy_requires_english_and_price_versions_stay_pinned(make, client, sess
     session.expire_all()
     sub = session.scalar(select(Subscription).where(Subscription.user_id == user.id, Subscription.status == "active"))
     assert sub.plan_version_id == version_id
+
+
+def test_google_verified_email_merges_with_existing_user(make, session, client, monkeypatch):
+    from app.modules.account.google import GoogleIdentity
+    from app.modules.account.models import ThirdPartyIdentity
+
+    existing = make.user(email="same@example.com", coins=20)
+
+    def identity(_token: str) -> GoogleIdentity:
+        return GoogleIdentity(
+            subject="google-subject-1",
+            email="same@example.com",
+            email_verified=True,
+            name="Same Person",
+            picture="",
+        )
+
+    monkeypatch.setattr(accounts, "verify_id_token", identity)
+    first = client.post("/v1/auth/google", json={"id_token": "signed-token"})
+    assert first.status_code == 200, first.text
+    assert first.json()["user_id"] == existing.id
+    assert first.json()["created"] is False
+    assert session.scalar(select(func.count()).select_from(User)) == 1
+    link = session.scalar(select(ThirdPartyIdentity).where(ThirdPartyIdentity.provider == "google"))
+    assert link is not None and link.user_id == existing.id
+
+    again = client.post("/v1/auth/google", json={"id_token": "signed-token"})
+    assert again.json()["user_id"] == existing.id
+    assert session.scalar(select(func.count()).select_from(ThirdPartyIdentity)) == 1
+
+
+def test_google_unverified_email_does_not_merge(make, session, client, monkeypatch):
+    from app.modules.account.google import GoogleIdentity
+
+    existing = make.user(email="same@example.com")
+
+    def identity(_token: str) -> GoogleIdentity:
+        return GoogleIdentity(
+            subject="google-subject-2",
+            email=None,
+            email_verified=False,
+            name="Other",
+            picture="",
+        )
+
+    monkeypatch.setattr(accounts, "verify_id_token", identity)
+    created = client.post("/v1/auth/google", json={"id_token": "signed-token"})
+    assert created.status_code == 200, created.text
+    assert created.json()["created"] is True
+    assert created.json()["user_id"] != existing.id
+
+
+def test_email_code_login_returns_the_registered_user(client, monkeypatch):
+    monkeypatch.setattr(accounts, "generate_code", lambda: "654321")
+    monkeypatch.setattr(accounts, "send_verification_code", lambda **_: "test-message")
+    registered = client.post("/v1/auth/email/code", json={"email": "Same@Example.com", "purpose": "register"})
+    assert registered.status_code == 200, registered.text
+    created = client.post("/v1/auth/email/register", json={"email": "same@example.com", "code": "654321"})
+    assert created.status_code == 200, created.text
+    client.post("/v1/auth/email/code", json={"email": "same@example.com", "purpose": "login"})
+    signed_in = client.post("/v1/auth/email/login", json={"email": "same@example.com", "code": "654321"})
+    assert signed_in.status_code == 200, signed_in.text
+    assert signed_in.json()["user_id"] == created.json()["user_id"]
 
 
 def test_verification_code_is_not_kept_when_email_fails(client, session, monkeypatch):

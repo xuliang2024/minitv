@@ -107,6 +107,15 @@ def _active_subscription(session: Session, user_id: int | None) -> bool:
     return sub is not None
 
 
+def subscription_active(session: Session, user_id: int | None) -> bool:
+    """Whether the viewer currently has a usable membership.
+
+    Public because the drama play page has to paint lock badges with the same
+    answer the authoriser uses, instead of re-deriving it.
+    """
+    return _active_subscription(session, user_id)
+
+
 def _has_unlock(session: Session, user_id: int | None, episode_id: int) -> bool:
     if user_id is None:
         return False

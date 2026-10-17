@@ -1,6 +1,44 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
-import { Alert, Avatar, Button, Card, Col, Form, Input, InputNumber, Modal, Radio, Row, Select, Skeleton, Space, Statistic, Table, Tag, Tooltip, Typography, message } from "antd";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  Col,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Radio,
+  Row,
+  Select,
+  Skeleton,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
+} from "antd";
+import {
+  AppstoreFilled,
+  CalendarOutlined,
+  CheckCircleFilled,
+  CheckCircleOutlined,
+  DollarOutlined,
+  EditOutlined,
+  InfoCircleOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+  RiseOutlined,
+  ShoppingCartOutlined,
+  ThunderboltOutlined,
+  TrophyFilled,
+  UserAddOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import { ApiError, api, errorText } from "../api";
 import { useConfirm } from "../confirm";
 import { useIsAdmin } from "../me";
@@ -67,46 +105,196 @@ const money = (cents?: number) => `$${((cents ?? 0) / 100).toFixed(2)}`;
 const rate = (basisPoints?: number) => `${((basisPoints ?? 0) / 100).toFixed(1)}%`;
 const int = (value?: number) => String(value ?? 0);
 
-function Delta({ value, render }: { value: number; render?: (value: number) => string }) {
-  if (!value) return <Typography.Text type="secondary">环比持平 · 0</Typography.Text>;
+function DeltaBadge({ value, render }: { value: number; render?: (value: number) => string }) {
+  if (value === 0) {
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          fontSize: 12,
+          color: "#98a2b3",
+          background: "#f2f4f7",
+          padding: "2px 8px",
+          borderRadius: 12,
+          fontWeight: 500,
+        }}
+      >
+        环比持平 · 0
+      </span>
+    );
+  }
+  const isUp = value > 0;
   const text = render ? render(Math.abs(value)) : int(Math.abs(value));
   return (
-    <Typography.Text type={value > 0 ? "success" : "danger"}>
-      环比 {value > 0 ? "↑" : "↓"} {text}
-    </Typography.Text>
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 3,
+        fontSize: 12,
+        color: isUp ? "#027a48" : "#b42318",
+        background: isUp ? "#edfcf2" : "#fef3f2",
+        padding: "2px 8px",
+        borderRadius: 12,
+        fontWeight: 600,
+      }}
+    >
+      环比 {isUp ? "↑" : "↓"} {text}
+    </span>
   );
 }
 
-/** Dependency-free bar chart: one column per business day. */
-function MiniBars({ rows, pick, color, format }: { rows: DashboardMetric[]; pick: (row: DashboardMetric) => number; color: string; format: (value: number) => string }) {
+/** 现代仪表板柱状图：限宽、轨道底色与数值提示 */
+function MiniBars({
+  rows,
+  pick,
+  color,
+  format,
+}: {
+  rows: DashboardMetric[];
+  pick: (row: DashboardMetric) => number;
+  color: string;
+  format: (value: number) => string;
+}) {
   const values = rows.map(pick);
   const max = Math.max(1, ...values);
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 96 }}>
-        {rows.map((row, index) => (
-          <Tooltip key={row.day} title={`${row.day} · ${format(values[index])}`}>
-            <div style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+    <div style={{ width: "100%", padding: "4px 0" }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 116 }}>
+        {rows.map((row, index) => {
+          const val = values[index];
+          const heightPercent = val > 0 ? (val / max) * 100 : 0;
+          return (
+            <Tooltip key={row.day} title={`${row.day} · ${format(val)}`}>
               <div
                 style={{
-                  height: `${(values[index] / max) * 100}%`,
-                  minHeight: values[index] > 0 ? 3 : 1,
-                  background: values[index] > 0 ? color : "#eceff3",
-                  borderRadius: 3,
+                  flex: 1,
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  cursor: "pointer",
                 }}
-              />
-            </div>
-          </Tooltip>
-        ))}
+              >
+                {/* 柱顶数值 */}
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: val > 0 ? "#475467" : "#d0d5dd",
+                    fontWeight: 600,
+                    marginBottom: 4,
+                    fontVariantNumeric: "tabular-nums",
+                    whiteSpace: "nowrap",
+                    transform: "scale(0.9)",
+                  }}
+                >
+                  {val > 0 ? format(val).replace(/ 次|\.00/g, "") : ""}
+                </div>
+                {/* 柱条轨道 */}
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: 32,
+                    height: "80%",
+                    background: "#f2f4f7",
+                    borderRadius: "6px 6px 0 0",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "flex-end",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "100%",
+                      height: `${heightPercent}%`,
+                      minHeight: val > 0 ? 4 : 0,
+                      background: val > 0 ? color : "transparent",
+                      borderRadius: "6px 6px 0 0",
+                      transition: "height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}
+                  />
+                </div>
+              </div>
+            </Tooltip>
+          );
+        })}
       </div>
-      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 8, borderTop: "1px solid #eaecf0", paddingTop: 8 }}>
         {rows.map((row) => (
-          <Typography.Text key={row.day} type="secondary" style={{ flex: 1, fontSize: 11, textAlign: "center" }}>
+          <div
+            key={row.day}
+            style={{
+              flex: 1,
+              fontSize: 11,
+              color: "#98a2b3",
+              textAlign: "center",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
             {row.day.slice(5)}
-          </Typography.Text>
+          </div>
         ))}
       </div>
     </div>
+  );
+}
+
+function KpiCard({
+  title,
+  value,
+  hint,
+  icon,
+  color,
+  bg,
+}: {
+  title: string;
+  value: ReactNode;
+  hint: ReactNode;
+  icon: ReactNode;
+  color: string;
+  bg: string;
+}) {
+  return (
+    <Card
+      bordered
+      styles={{ body: { padding: "16px 18px" } }}
+      style={{
+        borderRadius: 12,
+        borderColor: "#eaecf0",
+        boxShadow: "0 1px 3px rgba(16, 24, 40, 0.04)",
+        background: "#fff",
+        height: "100%",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <span style={{ fontSize: 13, color: "#667085", fontWeight: 500 }}>{title}</span>
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            background: bg,
+            color: color,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 15,
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </div>
+      </div>
+      <div style={{ margin: "8px 0 6px" }}>
+        <div style={{ fontSize: 24, fontWeight: 700, color: "#101828", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" }}>
+          {value}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center" }}>{hint}</div>
+    </Card>
   );
 }
 
@@ -119,176 +307,529 @@ export function DashboardPage() {
   const previous = data.previous ?? {};
   const overview = data.overview ?? {};
   const delta = (current: number | undefined, before: number | undefined, render?: (value: number) => string) => (
-    <Delta value={(current ?? 0) - (before ?? 0)} render={render} />
+    <DeltaBadge value={(current ?? 0) - (before ?? 0)} render={render} />
   );
 
-  const kpis: { title: string; node: ReactNode; hint: ReactNode }[] = [
+  const kpis: {
+    title: string;
+    value: ReactNode;
+    hint: ReactNode;
+    icon: ReactNode;
+    color: string;
+    bg: string;
+  }[] = [
     {
       title: "活跃用户（登录去重）",
-      node: <Statistic value={data.active_users ?? 0} />,
+      value: int(data.active_users),
       hint: delta(data.active_users, previous.active_users),
+      icon: <UserOutlined />,
+      color: "#1677ff",
+      bg: "#eff8ff",
     },
-    { title: "新增用户", node: <Statistic value={data.new_users ?? 0} />, hint: delta(data.new_users, previous.new_users) },
-    { title: "播放次数", node: <Statistic value={data.plays ?? 0} />, hint: delta(data.plays, previous.plays) },
-    { title: "完播次数", node: <Statistic value={data.completes ?? 0} />, hint: delta(data.completes, previous.completes) },
+    {
+      title: "新增用户",
+      value: int(data.new_users),
+      hint: delta(data.new_users, previous.new_users),
+      icon: <UserAddOutlined />,
+      color: "#0ea5e9",
+      bg: "#f0f9ff",
+    },
+    {
+      title: "播放次数",
+      value: int(data.plays),
+      hint: delta(data.plays, previous.plays),
+      icon: <PlayCircleOutlined />,
+      color: "#e53b3e",
+      bg: "#fff1f0",
+    },
+    {
+      title: "完播次数",
+      value: int(data.completes),
+      hint: delta(data.completes, previous.completes),
+      icon: <CheckCircleOutlined />,
+      color: "#8b5cf6",
+      bg: "#f5f3ff",
+    },
     {
       title: "完播率",
-      node: <Statistic value={rate(data.completion_rate)} />,
-      hint: delta(data.completion_rate, previous.completion_rate, (value) => `${(value / 100).toFixed(1)}pp`),
+      value: rate(data.completion_rate),
+      hint: delta(data.completion_rate, previous.completion_rate, (val) => `${(val / 100).toFixed(1)}pp`),
+      icon: <RiseOutlined />,
+      color: "#12b76a",
+      bg: "#edfcf2",
     },
-    { title: "营收", node: <Statistic value={(data.revenue_cents ?? 0) / 100} precision={2} prefix="$" />, hint: delta(data.revenue_cents, previous.revenue_cents, money) },
-    { title: "付费订单", node: <Statistic value={data.paid_orders ?? 0} />, hint: delta(data.paid_orders, previous.paid_orders) },
-    { title: "金币消耗", node: <Statistic value={data.coin_spend ?? 0} />, hint: delta(data.coin_spend, previous.coin_spend) },
+    {
+      title: "营收",
+      value: money(data.revenue_cents),
+      hint: delta(data.revenue_cents, previous.revenue_cents, money),
+      icon: <DollarOutlined />,
+      color: "#d97706",
+      bg: "#fffbeb",
+    },
+    {
+      title: "付费订单",
+      value: int(data.paid_orders),
+      hint: delta(data.paid_orders, previous.paid_orders),
+      icon: <ShoppingCartOutlined />,
+      color: "#f97316",
+      bg: "#fff7ed",
+    },
+    {
+      title: "金币消耗",
+      value: int(data.coin_spend),
+      hint: delta(data.coin_spend, previous.coin_spend),
+      icon: <ThunderboltOutlined />,
+      color: "#f59e0b",
+      bg: "#fefce8",
+    },
   ];
 
-  const overviewItems: [string, string][] = [
-    ["总用户", int(overview.total_users)],
-    ["有效会员", int(overview.active_members)],
-    ["已发布剧集", int(overview.published_dramas)],
-    ["已发布集数", int(overview.published_episodes)],
-    ["待发布集数", int(overview.episodes_awaiting_publish)],
-    ["待审评论", int(overview.pending_comments)],
-    ["累计播放", int(overview.lifetime_plays)],
-    ["累计营收", money(overview.lifetime_revenue_cents)],
+  const overviewItems: { title: string; value: string; isPending?: boolean; isHighlight?: boolean }[] = [
+    { title: "总用户", value: int(overview.total_users) },
+    { title: "有效会员", value: int(overview.active_members), isHighlight: true },
+    { title: "已发布剧集", value: int(overview.published_dramas) },
+    { title: "已发布集数", value: int(overview.published_episodes) },
+    { title: "待发布集数", value: int(overview.episodes_awaiting_publish), isPending: true },
+    { title: "待审评论", value: int(overview.pending_comments), isPending: true },
+    { title: "累计播放", value: int(overview.lifetime_plays), isHighlight: true },
+    { title: "累计营收", value: money(overview.lifetime_revenue_cents), isHighlight: true },
   ];
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <Space style={{ width: "100%", justifyContent: "space-between" }} wrap align="start">
-        <Space direction="vertical" size={2}>
+    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      {/* 顶部标题与时区控件 */}
+      <Space style={{ width: "100%", justifyContent: "space-between" }} wrap align="center">
+        <Space align="center" size={10} wrap>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            数据看板 · {data.timezone ?? "America/Los_Angeles"}
+            数据看板
           </Typography.Title>
-          <Typography.Text type="secondary">
-            业务日按洛杉矶时区切分；指标全部来自真实事件（播放打点 / 支付订单 / 金币流水），无占位数字。
-          </Typography.Text>
+          <Tag bordered={false} style={{ background: "#eff8ff", color: "#175cd3", borderRadius: 12, padding: "2px 10px", margin: 0 }}>
+            {data.timezone ?? "America/Los_Angeles"} (美西时区)
+          </Tag>
+          <Tag bordered={false} style={{ background: "#f2f4f7", color: "#475467", borderRadius: 12, margin: 0 }}>
+            指标日：{data.day ?? "-"}
+          </Tag>
         </Space>
-        <Space wrap>
-          <Input type="date" value={day} onChange={(event) => setDay(event.target.value)} style={{ width: 160 }} />
+        <Space wrap size={10}>
+          <div style={{ display: "inline-flex", alignItems: "center", position: "relative" }}>
+            <CalendarOutlined style={{ position: "absolute", left: 10, color: "#98a2b3", zIndex: 1, pointerEvents: "none" }} />
+            <Input
+              type="date"
+              value={day}
+              onChange={(event) => setDay(event.target.value)}
+              style={{ width: 160, paddingLeft: 30, borderRadius: 6 }}
+            />
+          </div>
           <Select
             value={days}
             onChange={setDays}
-            style={{ width: 120 }}
+            style={{ width: 110 }}
             options={[
               { value: 7, label: "近 7 天" },
               { value: 14, label: "近 14 天" },
               { value: 30, label: "近 30 天" },
             ]}
           />
-          <Button onClick={reload} loading={loading}>
+          <Button icon={<ReloadOutlined />} onClick={reload} loading={loading} style={{ borderRadius: 6 }}>
             刷新
           </Button>
         </Space>
       </Space>
 
+      {/* 业务规则轻提示 */}
+      <Alert
+        type="info"
+        showIcon
+        message={
+          <span style={{ fontSize: 13, color: "#475467" }}>
+            业务日统一按洛杉矶时区切分；指标全部来自线上真实事件打点（播放 / 支付订单 / 金币流水），环比自动对比前一天。
+          </span>
+        }
+        style={{
+          borderRadius: 8,
+          border: "1px solid #d0d5dd",
+          background: "#fafbfd",
+        }}
+      />
+
       {error ? <Alert type="error" showIcon message="看板加载失败" description={error} /> : null}
 
-      <Typography.Text type="secondary">
-        指标日期：{data.day ?? "-"}（洛杉矶业务日）· 环比对比前一天
-      </Typography.Text>
-
       {loading && trend.length === 0 ? (
-        <Skeleton active paragraph={{ rows: 6 }} />
+        <Skeleton active paragraph={{ rows: 8 }} />
       ) : (
         <>
+          {/* 8 个核心 KPI 卡片 */}
           <Row gutter={[16, 16]}>
             {kpis.map((item) => (
-              <Col key={item.title} xs={12} md={6}>
-                <Card size="small">
-                  <div style={{ color: "rgba(0,0,0,0.45)", fontSize: 14, marginBottom: 4 }}>{item.title}</div>
-                  {item.node}
-                  <div style={{ marginTop: 4 }}>{item.hint}</div>
-                </Card>
+              <Col key={item.title} xs={12} sm={12} md={6} xl={3}>
+                <KpiCard
+                  title={item.title}
+                  value={item.value}
+                  hint={item.hint}
+                  icon={item.icon}
+                  color={item.color}
+                  bg={item.bg}
+                />
               </Col>
             ))}
           </Row>
 
-          <Card size="small" title="累计与待办">
-            <Row gutter={[16, 16]}>
-              {overviewItems.map(([title, value]) => (
-                <Col key={title} xs={12} sm={8} md={6} xl={3}>
-                  <Statistic title={title} value={value} />
-                </Col>
-              ))}
+          {/* 全站累计与待办面板 */}
+          <Card
+            bordered
+            title={
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontWeight: 600, fontSize: 15 }}>全站累计与待办事项</span>
+                <Tag bordered={false} style={{ background: "#f2f4f7", color: "#667085", borderRadius: 10, fontSize: 11, margin: 0 }}>
+                  业务概览
+                </Tag>
+              </div>
+            }
+            styles={{ body: { padding: "16px 20px" }, header: { borderBottom: "1px solid #eaecf0", padding: "12px 20px" } }}
+            style={{
+              borderRadius: 12,
+              borderColor: "#eaecf0",
+              boxShadow: "0 1px 3px rgba(16, 24, 40, 0.04)",
+              background: "#fff",
+            }}
+          >
+            <Row gutter={[12, 12]}>
+              {overviewItems.map((item) => {
+                const isAlert = item.isPending && Number(item.value) > 0;
+                return (
+                  <Col key={item.title} xs={12} sm={8} md={6} xl={3}>
+                    <div
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: 8,
+                        background: isAlert ? "#fff9f0" : "#f8f9fa",
+                        border: isAlert ? "1px solid #fedf89" : "1px solid #f2f4f7",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div style={{ fontSize: 12, color: "#667085", marginBottom: 4 }}>{item.title}</div>
+                      <div
+                        style={{
+                          fontSize: 20,
+                          fontWeight: 700,
+                          color: item.isHighlight ? "#1677ff" : isAlert ? "#d97706" : "#101828",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {item.value}
+                      </div>
+                    </div>
+                  </Col>
+                );
+              })}
             </Row>
           </Card>
 
+          {/* 柱状趋势图双栏 */}
           <Row gutter={[16, 16]}>
             <Col xs={24} md={12}>
-              <Card size="small" title={`播放次数趋势（${data.window?.start ?? "-"} ~ ${data.window?.end ?? "-"}）`}>
-                <MiniBars rows={trend} pick={(row) => row.plays} color="#E53B3E" format={(value) => `${value} 次`} />
+              <Card
+                bordered
+                title={
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>播放次数趋势</span>
+                    <Tag bordered={false} style={{ background: "#f2f4f7", color: "#667085", borderRadius: 10, fontSize: 11, margin: 0 }}>
+                      {data.window?.start ?? "-"} ~ {data.window?.end ?? "-"}
+                    </Tag>
+                  </div>
+                }
+                styles={{ body: { padding: "16px 20px" }, header: { borderBottom: "1px solid #eaecf0", padding: "12px 20px" } }}
+                style={{
+                  borderRadius: 12,
+                  borderColor: "#eaecf0",
+                  boxShadow: "0 1px 3px rgba(16, 24, 40, 0.04)",
+                  background: "#fff",
+                }}
+              >
+                <MiniBars rows={trend} pick={(row) => row.plays} color="#E53B3E" format={(val) => `${val} 次`} />
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card size="small" title="营收趋势">
-                <MiniBars rows={trend} pick={(row) => row.revenue_cents} color="#2f9e44" format={money} />
+              <Card
+                bordered
+                title={
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>营收趋势</span>
+                    <Tag bordered={false} style={{ background: "#edfcf2", color: "#027a48", borderRadius: 10, fontSize: 11, margin: 0 }}>
+                      支付结算
+                    </Tag>
+                  </div>
+                }
+                styles={{ body: { padding: "16px 20px" }, header: { borderBottom: "1px solid #eaecf0", padding: "12px 20px" } }}
+                style={{
+                  borderRadius: 12,
+                  borderColor: "#eaecf0",
+                  boxShadow: "0 1px 3px rgba(16, 24, 40, 0.04)",
+                  background: "#fff",
+                }}
+              >
+                <MiniBars rows={trend} pick={(row) => row.revenue_cents} color="#12b76a" format={money} />
               </Card>
             </Col>
           </Row>
 
-          <Card size="small" title="趋势明细">
+          {/* 趋势明细表格 */}
+          <Card
+            bordered
+            title={<span style={{ fontWeight: 600, fontSize: 15 }}>趋势明细</span>}
+            styles={{ body: { padding: 0 }, header: { borderBottom: "1px solid #eaecf0", padding: "12px 20px" } }}
+            style={{
+              borderRadius: 12,
+              borderColor: "#eaecf0",
+              boxShadow: "0 1px 3px rgba(16, 24, 40, 0.04)",
+              overflow: "hidden",
+              background: "#fff",
+            }}
+          >
             <Table
               rowKey="day"
-              size="small"
               loading={loading}
               dataSource={trend}
               pagination={false}
-              scroll={{ x: 900 }}
+              scroll={{ x: 920 }}
               columns={[
-                { title: "日期", dataIndex: "day", fixed: "left" },
-                { title: "新增用户", dataIndex: "new_users" },
-                { title: "活跃用户", dataIndex: "active_users" },
-                { title: "播放", dataIndex: "plays" },
-                { title: "完播", dataIndex: "completes" },
-                { title: "完播率", dataIndex: "completion_rate", render: rate },
-                { title: "付费订单", dataIndex: "paid_orders" },
-                { title: "营收", dataIndex: "revenue_cents", render: money },
-                { title: "金币消耗", dataIndex: "coin_spend" },
-                { title: "解锁", dataIndex: "unlock_count" },
+                {
+                  title: "日期",
+                  dataIndex: "day",
+                  fixed: "left",
+                  width: 120,
+                  render: (v: string) => <span style={{ fontWeight: 600, color: "#101828" }}>{v}</span>,
+                },
+                {
+                  title: "新增用户",
+                  dataIndex: "new_users",
+                  render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>,
+                },
+                {
+                  title: "活跃用户",
+                  dataIndex: "active_users",
+                  render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>,
+                },
+                {
+                  title: "播放",
+                  dataIndex: "plays",
+                  render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{v}</span>,
+                },
+                {
+                  title: "完播",
+                  dataIndex: "completes",
+                  render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>,
+                },
+                {
+                  title: "完播率",
+                  dataIndex: "completion_rate",
+                  render: (v: number) => (
+                    <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600, color: v > 0 ? "#12b76a" : "#667085" }}>
+                      {rate(v)}
+                    </span>
+                  ),
+                },
+                {
+                  title: "付费订单",
+                  dataIndex: "paid_orders",
+                  render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>,
+                },
+                {
+                  title: "营收",
+                  dataIndex: "revenue_cents",
+                  render: (v: number) => (
+                    <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600, color: v > 0 ? "#027a48" : "#667085" }}>
+                      {money(v)}
+                    </span>
+                  ),
+                },
+                {
+                  title: "金币消耗",
+                  dataIndex: "coin_spend",
+                  render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>,
+                },
+                {
+                  title: "解锁次数",
+                  dataIndex: "unlock_count",
+                  render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>,
+                },
               ]}
             />
           </Card>
 
+          {/* 热门剧集与最近订单双栏 */}
           <Row gutter={[16, 16]}>
             <Col xs={24} xl={12}>
-              <Card size="small" title="热门剧集（窗口内真实播放）">
+              <Card
+                bordered
+                title={
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>热门剧集</span>
+                    <Tag bordered={false} style={{ background: "#f2f4f7", color: "#667085", borderRadius: 10, fontSize: 11, margin: 0 }}>
+                      窗口内真实播放
+                    </Tag>
+                  </div>
+                }
+                styles={{ body: { padding: 0 }, header: { borderBottom: "1px solid #eaecf0", padding: "12px 20px" } }}
+                style={{
+                  borderRadius: 12,
+                  borderColor: "#eaecf0",
+                  boxShadow: "0 1px 3px rgba(16, 24, 40, 0.04)",
+                  overflow: "hidden",
+                  background: "#fff",
+                }}
+              >
                 <Table
                   rowKey="id"
-                  size="small"
                   loading={loading}
                   dataSource={data.top_dramas ?? []}
                   pagination={false}
-                  locale={{ emptyText: "窗口内暂无播放" }}
+                  locale={{ emptyText: "窗口内暂无播放数据" }}
                   columns={[
-                    { title: "剧集", dataIndex: "title" },
-                    { title: "播放", dataIndex: "plays", width: 80 },
-                    { title: "完播", dataIndex: "completes", width: 80 },
-                    { title: "完播率", dataIndex: "completion_rate", width: 100, render: rate },
+                    {
+                      title: "排行",
+                      key: "rank",
+                      width: 64,
+                      render: (_, __, index) => {
+                        const rankStyles = [
+                          { bg: "#fff1f0", color: "#e53b3e" },
+                          { bg: "#fff9f0", color: "#f79009" },
+                          { bg: "#eff8ff", color: "#1677ff" },
+                        ];
+                        const style = rankStyles[index] ?? { bg: "#f2f4f7", color: "#667085" };
+                        return (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: 22,
+                              height: 22,
+                              borderRadius: 6,
+                              background: style.bg,
+                              color: style.color,
+                              fontSize: 12,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {index + 1}
+                          </span>
+                        );
+                      },
+                    },
+                    {
+                      title: "剧集",
+                      dataIndex: "title",
+                      render: (title: string, row) => (
+                        <Link to={`/dramas/${row.id}`} style={{ fontWeight: 600, color: "#101828" }}>
+                          {title}
+                        </Link>
+                      ),
+                    },
+                    {
+                      title: "播放",
+                      dataIndex: "plays",
+                      width: 80,
+                      render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{v}</span>,
+                    },
+                    {
+                      title: "完播",
+                      dataIndex: "completes",
+                      width: 80,
+                      render: (v: number) => <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>,
+                    },
+                    {
+                      title: "完播率",
+                      dataIndex: "completion_rate",
+                      width: 100,
+                      render: (v: number) => (
+                        <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600, color: "#12b76a" }}>
+                          {rate(v)}
+                        </span>
+                      ),
+                    },
                   ]}
                 />
               </Card>
             </Col>
             <Col xs={24} xl={12}>
-              <Card size="small" title="最近订单">
+              <Card
+                bordered
+                title={
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>最近订单</span>
+                    <Tag bordered={false} style={{ background: "#edfcf2", color: "#027a48", borderRadius: 10, fontSize: 11, margin: 0 }}>
+                      实时成交
+                    </Tag>
+                  </div>
+                }
+                styles={{ body: { padding: 0 }, header: { borderBottom: "1px solid #eaecf0", padding: "12px 20px" } }}
+                style={{
+                  borderRadius: 12,
+                  borderColor: "#eaecf0",
+                  boxShadow: "0 1px 3px rgba(16, 24, 40, 0.04)",
+                  overflow: "hidden",
+                  background: "#fff",
+                }}
+              >
                 <Table
                   rowKey="order_no"
-                  size="small"
                   loading={loading}
                   dataSource={data.recent_orders ?? []}
                   pagination={false}
                   scroll={{ x: 560 }}
-                  locale={{ emptyText: "暂无订单" }}
+                  locale={{ emptyText: "暂无订单数据" }}
                   columns={[
-                    { title: "订单号", dataIndex: "order_no" },
-                    { title: "用户", dataIndex: "user_id", width: 80 },
-                    { title: "金额", dataIndex: "amount_cents", width: 100, render: money },
+                    {
+                      title: "订单号",
+                      dataIndex: "order_no",
+                      render: (v: string) => (
+                        <span style={{ fontFamily: "monospace", fontSize: 12, color: "#475467" }}>{v}</span>
+                      ),
+                    },
+                    {
+                      title: "用户",
+                      dataIndex: "user_id",
+                      width: 90,
+                      render: (v: number) => (
+                        <span style={{ fontSize: 12, color: "#667085" }}>#{v}</span>
+                      ),
+                    },
+                    {
+                      title: "金额",
+                      dataIndex: "amount_cents",
+                      width: 100,
+                      render: (v: number) => (
+                        <span style={{ fontWeight: 700, color: "#027a48", fontVariantNumeric: "tabular-nums" }}>
+                          {money(v)}
+                        </span>
+                      ),
+                    },
                     {
                       title: "状态",
                       dataIndex: "status",
                       width: 90,
-                      render: (value: string) => <Tag color={value === "paid" ? "green" : undefined}>{value}</Tag>,
+                      render: (value: string) => (
+                        <Tag
+                          bordered={false}
+                          style={{
+                            background: value === "paid" ? "#edfcf2" : "#f2f4f7",
+                            color: value === "paid" ? "#027a48" : "#667085",
+                            borderRadius: 4,
+                            fontWeight: 500,
+                            margin: 0,
+                          }}
+                        >
+                          {value === "paid" ? "已支付" : value}
+                        </Tag>
+                      ),
                     },
-                    { title: "时间", dataIndex: "created_at", width: 150, render: formatTime },
+                    {
+                      title: "时间",
+                      dataIndex: "created_at",
+                      width: 150,
+                      render: formatTime,
+                    },
                   ]}
                 />
               </Card>
@@ -650,24 +1191,6 @@ export function UsersPage() {
   );
 }
 
-export function HomeOpsPage() {
-  const [tabs, setTabs] = useState("Discover,Ranking,New,English,Asian,Free");
-  return (
-    <Space direction="vertical">
-      <Typography.Title level={4}>首页运营</Typography.Title>
-      <Input.TextArea value={tabs} onChange={(e) => setTabs(e.target.value)} rows={3} />
-      <Button type="primary" onClick={async () => {
-        const codes = tabs.split(",").map((s) => s.trim()).filter(Boolean);
-        for (let i = 0; i < codes.length; i++) {
-          const code = codes[i];
-          await api(`/admin/v1/tabs?code=${code}&title_en=${code}&position=${i}`, { method: "POST" });
-        }
-        message.success("Tab 顺序已保存");
-      }}>保存 Tab 顺序</Button>
-    </Space>
-  );
-}
-
 export function CommentsPage() {
   const { data, reload } = useLoad<{ items: any[] }>("/admin/v1/comments", { items: [] });
   return (
@@ -766,44 +1289,168 @@ export function PlansPage() {
   };
 
   return (
-    <Space direction="vertical" style={{ width: "100%" }} size="middle">
-      {(data.items ?? []).map((plan) => {
-        const items = plan.benefits?.items ?? [];
-        return (
-          <Card
-            key={plan.code}
-            loading={loading && !data.items.length}
-            title={
-              <Space size={8}>
-                <span>{plan.name_zh || plan.name_en}</span>
-                <Typography.Text type="secondary" style={{ fontWeight: 400 }}>
-                  {PLAN_PERIOD[plan.code] ?? plan.code}
-                </Typography.Text>
-                {plan.benefits?.best ? <Tag color="red">Best</Tag> : null}
-              </Space>
-            }
-            extra={<Typography.Text strong>${centsToDollars(plan.price_cents)}</Typography.Text>}
-          >
-            <Space direction="vertical" size={12} style={{ width: "100%" }}>
-              {items.length ? (
-                <Space size={[6, 6]} wrap>
-                  {items.map((item) => (
-                    <Tag key={item}>{item}</Tag>
-                  ))}
-                </Space>
-              ) : (
-                <Typography.Text type="secondary">未配置权益</Typography.Text>
-              )}
-              <Space>
-                <Button onClick={() => openEdit(plan)}>修改价格</Button>
-                <Typography.Text type="secondary">当前版本 v{plan.version}</Typography.Text>
-              </Space>
-            </Space>
-          </Card>
-        );
-      })}
+    <Space direction="vertical" style={{ width: "100%" }} size={20}>
+      {/* 页面顶部标题与说明 */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <Space direction="vertical" size={4}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            会员套餐
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            维护三档会员套餐的价格、有效期与权益内容。修改价格会写入新的版本快照，客户端与官网将同步生效。
+          </Typography.Text>
+        </Space>
+        <Button icon={<ReloadOutlined />} onClick={() => reload()} loading={loading}>
+          刷新
+        </Button>
+      </div>
+
+      <Alert
+        type="info"
+        showIcon
+        icon={<InfoCircleOutlined />}
+        message="套餐版本机制说明"
+        description="修改价格或权益会即时生成递增的版本号（例如 v2），已购历史订单按购买时的版本计价对账，不会追溯改动。"
+        style={{ borderRadius: 8 }}
+      />
+
+      {/* 3 列并排卡片布局 */}
+      <Row gutter={[20, 20]} align="stretch">
+        {(data.items ?? []).map((plan) => {
+          const items = plan.benefits?.items ?? [];
+          const isBest = Boolean(plan.benefits?.best);
+          const periodText = PLAN_PERIOD[plan.code] ?? plan.code;
+
+          return (
+            <Col xs={24} sm={24} md={8} key={plan.code} style={{ display: "flex" }}>
+              <Card
+                hoverable
+                loading={loading && !data.items.length}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  borderRadius: 12,
+                  border: isBest ? "1.5px solid #ff4d4f" : "1px solid #e8e8e8",
+                  boxShadow: isBest ? "0 6px 16px rgba(255, 77, 79, 0.08)" : "0 2px 8px rgba(0, 0, 0, 0.04)",
+                  overflow: "hidden",
+                  position: "relative",
+                  transition: "all 0.3s ease",
+                }}
+                styles={{
+                  body: {
+                    padding: "24px",
+                    display: "flex",
+                    flexDirection: "column",
+                    flex: 1,
+                  },
+                }}
+              >
+                {/* 推荐角标 */}
+                {isBest && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      background: "linear-gradient(135deg, #ff4d4f, #f5222d)",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      padding: "4px 14px 4px 12px",
+                      borderBottomLeftRadius: 10,
+                      letterSpacing: "0.5px",
+                      boxShadow: "0 2px 6px rgba(245, 34, 45, 0.3)",
+                    }}
+                  >
+                    ★ BEST VALUE
+                  </div>
+                )}
+
+                {/* 卡片头部：套餐名与时长 */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <Typography.Title level={4} style={{ margin: 0, fontSize: 18 }}>
+                      {plan.name_zh || plan.name_en}
+                    </Typography.Title>
+                    <Tag color="default" style={{ margin: 0, borderRadius: 10, padding: "0 8px" }}>
+                      {periodText}
+                    </Tag>
+                  </div>
+                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                    标识码：{plan.code}
+                  </Typography.Text>
+                </div>
+
+                {/* 价格展示区 */}
+                <div
+                  style={{
+                    padding: "16px",
+                    background: isBest ? "rgba(255, 77, 79, 0.03)" : "#fafafa",
+                    borderRadius: 8,
+                    marginBottom: 20,
+                    display: "flex",
+                    alignItems: "baseline",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div>
+                    <span style={{ fontSize: 28, fontWeight: 700, color: isBest ? "#f5222d" : "#1f1f1f" }}>
+                      ${centsToDollars(plan.price_cents)}
+                    </span>
+                    <span style={{ fontSize: 13, color: "#8c8c8c", marginLeft: 4 }}>
+                      / {periodText}
+                    </span>
+                  </div>
+                  <Tag color="processing" style={{ borderRadius: 4, margin: 0 }}>
+                    v{plan.version}
+                  </Tag>
+                </div>
+
+                {/* 权益列表区 */}
+                <div style={{ flex: 1, marginBottom: 24 }}>
+                  <Typography.Text strong style={{ fontSize: 13, display: "block", marginBottom: 12, color: "#595959" }}>
+                    包含权益：
+                  </Typography.Text>
+                  {items.length ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {items.map((item) => (
+                        <div key={item} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <CheckCircleFilled style={{ color: isBest ? "#ff4d4f" : "#52c41a", fontSize: 14, flexShrink: 0 }} />
+                          <Typography.Text style={{ fontSize: 13 }}>{item}</Typography.Text>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                      暂无配置权益
+                    </Typography.Text>
+                  )}
+                </div>
+
+                {/* 操作按钮区 */}
+                <div style={{ paddingTop: 16, borderTop: "1px solid #f0f0f0" }}>
+                  <Button
+                    type={isBest ? "primary" : "default"}
+                    danger={isBest}
+                    icon={<EditOutlined />}
+                    block
+                    size="middle"
+                    onClick={() => openEdit(plan)}
+                    style={{ borderRadius: 6, fontWeight: 500 }}
+                  >
+                    修改套餐配置
+                  </Button>
+                </div>
+              </Card>
+            </Col>
+          );
+        })}
+      </Row>
+
+      {/* 修改价格与权益弹窗 */}
       <Modal
-        title={editing ? `修改价格 · ${editing.name_zh || editing.name_en}` : "修改价格"}
+        title={editing ? `修改配置 · ${editing.name_zh || editing.name_en}` : "修改配置"}
         open={editing !== null}
         onCancel={closeEdit}
         onOk={() => form.submit()}
@@ -817,11 +1464,15 @@ export function PlansPage() {
       >
         {editing ? (
           <Form form={form} layout="vertical" onFinish={onSave} requiredMark={false} style={{ marginTop: 8 }}>
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-              当前 ${centsToDollars(editing.price_cents)} · v{editing.version}。保存会写入一个新版本，已购订单仍按当时版本计价。
-            </Typography.Paragraph>
+            <Alert
+              type="warning"
+              showIcon
+              message={`当前版本 v${editing.version} · $${centsToDollars(editing.price_cents)}`}
+              description="点击保存将写入新版本，立即同步至客户端与官网，已有付费订单计价不受影响。"
+              style={{ marginBottom: 16, borderRadius: 6 }}
+            />
             <Form.Item
-              label="价格（美元）"
+              label="套餐售价（美元）"
               name="price"
               rules={[
                 { required: true, message: "请填写价格" },
@@ -837,13 +1488,17 @@ export function PlansPage() {
                 autoFocus
               />
             </Form.Item>
-            <Form.Item label="权益（一行一条）" name="benefits">
+            <Form.Item
+              label="包含权益（一行一条）"
+              name="benefits"
+              tooltip="每行输入一条权益，将在客户端及官网会员卡片列表中逐项展示"
+            >
               <Input.TextArea rows={4} placeholder={"Unlock all\nNo ads\n1080p"} />
             </Form.Item>
-            <Form.Item label="推荐标记" name="best">
+            <Form.Item label="推荐标签（Best）" name="best">
               <Radio.Group>
-                <Radio value={true}>标为 Best</Radio>
-                <Radio value={false}>不标记</Radio>
+                <Radio value={true}>标为 Best（重点高亮推荐）</Radio>
+                <Radio value={false}>不标记（常规套餐）</Radio>
               </Radio.Group>
             </Form.Item>
           </Form>

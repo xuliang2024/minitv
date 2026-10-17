@@ -31,6 +31,10 @@ class ChannelTab(Base):
     title_zh: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Discover is the only fixed tab. Every other tab is a homepage group shown
+    # as its own page, so it points at one home_groups row.
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("home_groups.id"), nullable=True)
 
 
 class Banner(Base):
@@ -43,6 +47,9 @@ class Banner(Base):
     ends_on: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="online")
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # The two lines painted over the hero still: a gold hook, then the title.
+    kicker: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    headline: Mapped[str] = mapped_column(String(80), nullable=False, default="")
 
 
 class HotSearch(Base):

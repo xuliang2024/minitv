@@ -93,6 +93,35 @@ def test_new_drama_is_draft_and_invisible_publicly(make, session, client):
     assert admin_hits["users"] == []
 
 
+def test_list_dramas_status_counts_cover_all_statuses(make, session, client):
+    """顶部统计条依赖 status_counts：全库按状态计数，且不受分页和筛选影响。"""
+    headers = _ops_headers(make, client)
+    make.drama(title="Pub One", status="published")
+    make.drama(title="Pub Two", status="published")
+    make.drama(title="Reviewing", status="in_review")
+    make.drama(title="Shelved", status="unpublished")
+    # 默认新建就是草稿
+    client.post("/admin/v1/dramas", json={"title": "Fresh Draft"}, headers=headers)
+
+    body = client.get("/admin/v1/dramas", params={"page_size": 1}, headers=headers).json()
+    assert body["status_counts"] == {
+        "all": 5,
+        "draft": 1,
+        "in_review": 1,
+        "published": 2,
+        "unpublished": 1,
+    }
+    # 只返回一页，但计数仍是全库的
+    assert len(body["items"]) == 1
+
+    filtered = client.get(
+        "/admin/v1/dramas", params={"status": "published"}, headers=headers
+    ).json()
+    assert filtered["total"] == 2
+    assert filtered["status_counts"]["all"] == 5
+    assert filtered["status_counts"]["published"] == 2
+
+
 # ---- acceptance 3: saved basic info reads back with new values ----
 
 

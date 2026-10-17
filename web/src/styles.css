@@ -110,14 +110,11 @@ summary:focus-visible {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 28px;
   height: 28px;
   border-radius: 9px;
-  background: linear-gradient(140deg, var(--accent-bright), #b62227);
-  color: #fff;
-  font-size: 11px;
+  object-fit: cover;
   box-shadow: 0 8px 20px rgba(229, 59, 62, 0.42);
 }
 
@@ -494,7 +491,6 @@ summary:focus-visible {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  font-size: 15px;
 }
 
 .poster-overlay {

@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.account.google import GoogleAuthError, GoogleIdentity, verify_id_token
 from app.modules.account.mail import MailError, send_email
 from app.modules.account.models import ThirdPartyIdentity, User, VerificationCode
 from app.modules.common.models import AuditLog
@@ -104,6 +105,7 @@ def _hash_code(code: str) -> str:
 
 
 def issue_code(session: Session, *, email: str, purpose: str) -> str:
+    email = _normalize_email(email)
     client = get_redis()
     key = f"code_rate:{purpose}:{email}"
     count = client.incr(key)
@@ -175,6 +177,7 @@ def _active_amount(session: Session, code: str, today: date | None = None) -> in
 
 
 def register(session: Session, *, email: str, code: str) -> tuple[User, str]:
+    email = _normalize_email(email)
     row = session.scalar(
         select(VerificationCode)
         .where(VerificationCode.email == email, VerificationCode.purpose == "register")
@@ -188,16 +191,107 @@ def register(session: Session, *, email: str, code: str) -> tuple[User, str]:
         raise AccountError(400, "invalid code")
     if session.scalar(select(User).where(User.email == email)):
         raise AccountError(409, "email already registered")
-    user = User(email=email, display_name=email.split("@")[0], public_id=str(secrets.randbelow(9_000_000_000) + 1_000_000_000))
+    user = _new_user(session, email=email, display_name=email.split("@")[0])
+    token = _issue_session(user)
+    session.commit()
+    return user, token
+
+
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _issue_session(user: User) -> str:
+    token = secrets.token_urlsafe(32)
+    get_redis().set(USER_SESSION_PREFIX + token, str(user.id), ex=60 * 60 * 24 * 30)
+    return token
+
+
+def _new_user(session: Session, *, email: str | None, display_name: str, avatar_url: str = "") -> User:
+    user = User(
+        email=email,
+        display_name=(display_name or (email.split("@")[0] if email else "MiniTV"))[:64],
+        avatar_url=avatar_url[:500],
+        public_id=str(secrets.randbelow(9_000_000_000) + 1_000_000_000),
+    )
     session.add(user)
     session.flush()
     session.add(WalletAccount(user_id=user.id, balance=0))
     session.flush()
     _credit(session, user.id, _active_amount(session, "register"), "register_reward", f"register:{user.id}")
-    token = secrets.token_urlsafe(32)
-    get_redis().set(USER_SESSION_PREFIX + token, str(user.id), ex=60 * 60 * 24 * 30)
+    return user
+
+
+def login_with_code(session: Session, *, email: str, code: str) -> tuple[User, str]:
+    """Sign in an existing user. A missing account is a registration, not a login."""
+    email = _normalize_email(email)
+    row = session.scalar(
+        select(VerificationCode)
+        .where(VerificationCode.email == email, VerificationCode.purpose == "login")
+        .order_by(VerificationCode.id.desc())
+    )
+    if row is None or row.expires_at < datetime.now(timezone.utc):
+        raise AccountError(400, "code expired")
+    if row.attempts >= 5 or not hmac.compare_digest(row.code_hash, _hash_code(code)):
+        row.attempts += 1
+        session.commit()
+        raise AccountError(400, "invalid code")
+    user = session.scalar(select(User).where(User.email == email))
+    if user is None:
+        raise AccountError(404, "email not registered")
+    session.delete(row)
+    token = _issue_session(user)
     session.commit()
     return user, token
+
+
+def login_with_google(session: Session, *, id_token: str) -> tuple[User, str, bool]:
+    """Sign in with Google and merge onto the same user when the email matches.
+
+    Merge order is the Google subject first, then a verified email already
+    stored on a user. An unverified Google email never links accounts.
+    """
+    try:
+        identity = verify_id_token(id_token)
+    except GoogleAuthError as exc:
+        raise AccountError(401, str(exc)) from exc
+    return link_google_identity(session, identity)
+
+
+def link_google_identity(session: Session, identity: GoogleIdentity) -> tuple[User, str, bool]:
+    linked = session.scalar(
+        select(ThirdPartyIdentity).where(
+            ThirdPartyIdentity.provider == "google",
+            ThirdPartyIdentity.provider_user_id == identity.subject,
+        )
+    )
+    created = False
+    if linked is not None:
+        user = session.get(User, linked.user_id)
+        if user is None:
+            raise AccountError(401, "google account is not linked")
+        if identity.email and user.email is None:
+            taken = session.scalar(select(User).where(User.email == identity.email))
+            if taken is None:
+                user.email = identity.email
+    else:
+        user = session.scalar(select(User).where(User.email == identity.email)) if identity.email else None
+        if user is None:
+            user = _new_user(
+                session,
+                email=identity.email,
+                display_name=identity.name,
+                avatar_url=identity.picture,
+            )
+            created = True
+        session.add(ThirdPartyIdentity(user_id=user.id, provider="google", provider_user_id=identity.subject))
+    if identity.name and not user.display_name:
+        user.display_name = identity.name
+    if identity.picture and not user.avatar_url:
+        user.avatar_url = identity.picture
+    token = _issue_session(user)
+    session.commit()
+    return user, token, created
 
 
 def resolve_user(session: Session, token: str | None) -> User | None:
@@ -210,6 +304,8 @@ def resolve_user(session: Session, token: str | None) -> User | None:
 
 
 def oauth_login(session: Session, *, provider: str) -> None:
+    if provider == "google":
+        raise AccountError(400, "use /v1/auth/google")
     flag = os.environ.get(f"OAUTH_{provider.upper()}_ENABLED", "")
     if flag != "1":
         raise AccountError(501, f"{provider} is not configured")

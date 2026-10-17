@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import threading
 import time
 from datetime import date, datetime, timezone
 
@@ -12,7 +14,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import get_db, get_engine, make_session_factory
 from app.modules.account.models import User
 from app.modules.account.service import (
     AccountError,
@@ -27,6 +29,7 @@ from app.modules.common import bunny
 from app.modules.common.models import AuditLog
 from app.modules.content.models import Drama, DramaHomeGroup, Episode, HomeGroup, MediaUpload
 from app.modules.content.publish_service import (
+    GROUP_LIMIT,
     PublishError,
     add_to_group,
     apply_due_schedules,
@@ -114,23 +117,43 @@ class DeleteIn(BaseModel):
     confirm: bool = False
 
 
+FLOOR_STYLES = {"poster3", "rank", "grid2"}
+FLOOR_BADGES = {"rank", "label"}
+
+
 class GroupIn(BaseModel):
     name: str
     position: int = 0
 
 
 class GroupUpdateIn(BaseModel):
-    """Rename, reorder, or pause a homepage group. Any subset of fields is accepted."""
+    """Rename, reorder, restyle, or pause a homepage group. Any subset of fields is accepted."""
 
     name: str | None = Field(default=None, max_length=64)
     position: int | None = None
     status: str | None = None
+    style: str | None = None
+    badge: str | None = None
 
     @field_validator("status")
     @classmethod
     def _status(cls, value: str | None) -> str | None:
         if value is not None and value not in {"active", "inactive"}:
             raise ValueError("status must be active or inactive")
+        return value
+
+    @field_validator("style")
+    @classmethod
+    def _style(cls, value: str | None) -> str | None:
+        if value is not None and value not in FLOOR_STYLES:
+            raise ValueError("style must be poster3, rank or grid2")
+        return value
+
+    @field_validator("badge")
+    @classmethod
+    def _badge(cls, value: str | None) -> str | None:
+        if value is not None and value not in FLOOR_BADGES:
+            raise ValueError("badge must be rank or label")
         return value
 
 
@@ -253,6 +276,24 @@ def list_episodes(
         stmt = stmt.where(or_(Episode.title.ilike(f"%{q}%"), Episode.episode_number == _maybe_int(q)))
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(stmt.order_by(Episode.episode_number).offset((page - 1) * page_size).limit(page_size)).all()
+    # Opening the episode list is the moment an operator notices a stuck
+    # "transcoding" badge. Match this page against the library listing so a
+    # finished encode flips without a manual sync click. One listing, not one
+    # request per row, and the listing is cached so paging does not refetch.
+    if bunny.live() and any(row.status == "transcoding" and row.bunny_video_id for row in rows):
+        remote_by_guid = _cached_library()
+        changed = False
+        for row in rows:
+            remote = remote_by_guid.get(row.bunny_video_id)
+            if row.status != "transcoding" or remote is None:
+                continue
+            try:
+                if apply_remote_video(db, row, remote)["changed"]:
+                    changed = True
+            except InvalidTransition:
+                continue
+        if changed:
+            db.commit()
     return {
         "total": total,
         "page": page,
@@ -331,6 +372,215 @@ def _latest_media_upload(db: Session, episode_id: int, video_id: str = "") -> Me
     return db.scalars(stmt.order_by(MediaUpload.id.desc())).first()
 
 
+# Bunny Stream video status (VideoModelStatus). 0 is "created" (no bytes, or
+# bytes just landed and encode has not started). 3 is "transcoding" and is
+# already playable once resolutions exist; 4 is "finished". >= 5 is a failure.
+_REMOTE_FINISHED = 4
+_REMOTE_TRANSCODING = 3
+_REMOTE_FAILED = 5
+
+# An upload this far past session creation with no pipeline movement is not
+# queued any more: Bunny silently dropped it. Both observed flavors are
+# permanent until the object is replaced — ``reencode`` is a no-op on the
+# second and answers ``400 Original file is missing`` on the first. Long
+# enough to ride out peak-hour delays.
+_REMOTE_STALLED_AFTER_SECONDS = 3600
+
+
+def _remote_upload_stalled(remote: dict) -> bool:
+    """True when Bunny kept the object but the pipeline never moved on it.
+
+    Two flavors seen in production:
+
+    - status 0 with no bytes accounted for — the upload died in transit and
+      the original never made it to storage (CDN ``/{guid}/original`` 404s).
+    - status 1/2 with zero encode progress and no resolutions — Bunny has
+      the original but the encoder never picked it up (sits 转码中 forever).
+
+    Either way the row must fall to ``transcode_failed`` so the retry path
+    (closed while transcoding) re-opens; without that the episode can never
+    be edited, replaced or deleted again. Fresh uploads inside the queue
+    window are left alone.
+    """
+    status = int(remote.get("status") or 0)
+    if status not in (0, 1, 2):
+        return False
+    uploaded = remote.get("dateUploaded")
+    if not uploaded:
+        return False
+    try:
+        uploaded_at = datetime.fromisoformat(str(uploaded))
+    except ValueError:
+        return False
+    if uploaded_at.tzinfo is None:
+        uploaded_at = uploaded_at.replace(tzinfo=timezone.utc)
+    if (datetime.now(timezone.utc) - uploaded_at).total_seconds() <= _REMOTE_STALLED_AFTER_SECONDS:
+        return False
+    if status == 0:
+        # No bytes accounted for: the original never survived the upload.
+        return int(remote.get("storageSize") or 0) == 0 and int(remote.get("length") or 0) == 0
+    # Bytes landed but nothing was ever encoded.
+    return int(remote.get("encodeProgress") or 0) == 0 and not (remote.get("availableResolutions") or "")
+
+
+def _remote_has_bytes(remote: dict) -> bool:
+    """True when Bunny has the original, even if encode has not started.
+
+    ``hasOriginal`` flips true as soon as the TUS body arrives. ``status`` can
+    stay 0 for a while after that, with no hash and no storage size yet — that
+    is a queue delay, not a failed upload.
+    """
+    if remote.get("hasOriginal"):
+        return True
+    if int(remote.get("storageSize") or 0) > 0:
+        return True
+    if int(remote.get("length") or 0) > 0:
+        return True
+    return int(remote.get("status") or 0) >= _REMOTE_TRANSCODING
+
+
+def apply_remote_video(db: Session, episode: Episode, remote: dict | None) -> dict:
+    """Advance one ``transcoding`` episode from a Bunny video object.
+
+    ``remote is None`` is the fake-mode signal: the local receiver already
+    finished the upload, so the row moves to ``in_review``. A missing remote
+    object (deleted upstream) is not the same thing and must be passed as an
+    empty dict, which leaves the row alone.
+    """
+    remote_status: int | None = None
+    duration_updated = False
+    if remote is not None:
+        remote_status = int(remote.get("status") or 0)
+        length = int(remote.get("length") or 0)
+        if length > 0 and episode.duration_seconds != length:
+            episode.duration_seconds = length
+            duration_updated = True
+
+    changed = duration_updated
+    if episode.status == "transcoding":
+        resolutions = (remote or {}).get("availableResolutions") or ""
+        length = int((remote or {}).get("length") or 0)
+        target = None
+        if remote is None or remote_status == _REMOTE_FINISHED:
+            target = "in_review"
+        elif remote_status == _REMOTE_TRANSCODING and resolutions and length > 0:
+            # Early play: at least one resolution is already watchable.
+            target = "in_review"
+        elif remote_status is not None and remote_status >= _REMOTE_FAILED:
+            target = "transcode_failed"
+        elif _remote_upload_stalled(remote):
+            # Bunny kept an object the pipeline dropped (no bytes, or an
+            # encoder that never picked it up); only a fresh session
+            # (re-opened by transcode_failed) can recover it.
+            target = "transcode_failed"
+        if target is not None:
+            transition_episode(db, episode, target)
+            upload = _latest_media_upload(db, episode.id, episode.bunny_video_id)
+            if upload is not None:
+                upload.status = "completed" if target == "in_review" else "failed"
+            changed = True
+    return {
+        "episode_id": episode.id,
+        "status": episode.status,
+        "remote_status": remote_status,
+        "duration_seconds": episode.duration_seconds,
+        "changed": changed,
+    }
+
+
+def reconcile_transcoding(db: Session, remote_by_guid: dict[str, dict]) -> dict[str, int]:
+    """Move every finished ``transcoding`` row forward from one library listing.
+
+    Rows whose video is still queued or encoding stay put. A GUID absent from
+    the listing is left alone too: a transient empty page must not be read as
+    "Bunny deleted the video".
+    """
+    rows = list(db.scalars(select(Episode).where(Episode.status == "transcoding", Episode.bunny_video_id != "")))
+    advanced = failed = pending = missing = 0
+    for episode in rows:
+        remote = remote_by_guid.get(episode.bunny_video_id)
+        if remote is None:
+            missing += 1
+            continue
+        before = episode.status
+        try:
+            apply_remote_video(db, episode, remote)
+        except InvalidTransition:
+            pending += 1
+            continue
+        if episode.status == before:
+            pending += 1
+        elif episode.status == "transcode_failed":
+            failed += 1
+        else:
+            advanced += 1
+    if advanced or failed:
+        db.add(
+            AuditLog(
+                actor_type="system",
+                actor_id=None,
+                action="reconcile_transcoding",
+                target_type="episode",
+                target_id=None,
+                payload={"advanced": advanced, "failed": failed, "pending": pending, "missing": missing},
+            )
+        )
+        db.commit()
+    return {"advanced": advanced, "failed": failed, "pending": pending, "missing": missing, "seen": len(rows)}
+
+
+_reconcile_log = logging.getLogger("minitv.transcode")
+_reconcile_started = False
+_RECONCILE_INTERVAL_SECONDS = 120
+_library_cache: tuple[float, dict[str, dict]] = (0.0, {})
+_LIBRARY_CACHE_SECONDS = 30.0
+
+
+def _cached_library() -> dict[str, dict]:
+    """Library listing reused across page views. A failed fetch keeps the last good copy."""
+    global _library_cache
+    fetched_at, cached = _library_cache
+    if cached and time.monotonic() - fetched_at < _LIBRARY_CACHE_SECONDS:
+        return cached
+    try:
+        fresh = bunny.list_stream_videos()
+    except bunny.BunnyError:
+        return cached
+    _library_cache = (time.monotonic(), fresh)
+    return fresh
+
+
+def _reconcile_forever() -> None:
+    while True:
+        time.sleep(_RECONCILE_INTERVAL_SECONDS)
+        if not bunny.live():
+            continue
+        session = make_session_factory(get_engine())()
+        try:
+            pending = session.scalar(
+                select(func.count()).select_from(Episode).where(Episode.status == "transcoding")
+            )
+            if not pending:
+                continue
+            result = reconcile_transcoding(session, bunny.list_stream_videos())
+            if result["advanced"] or result["failed"]:
+                _reconcile_log.info("transcode reconcile %s", result)
+        except Exception:
+            session.rollback()
+            _reconcile_log.exception("transcode reconcile failed")
+        finally:
+            session.close()
+
+
+def start_transcode_reconciler() -> None:
+    """Poll Bunny for finished encodes. The library webhook is not configured."""
+    global _reconcile_started
+    if _reconcile_started or not bunny.live():
+        return
+    _reconcile_started = True
+    threading.Thread(target=_reconcile_forever, name="transcode-reconcile", daemon=True).start()
+
+
 @router.post("/episodes/{episode_id}/sync-status")
 def sync_episode_status(episode_id: int, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
     """Poll Bunny once and advance a ``transcoding`` episode.
@@ -347,8 +597,7 @@ def sync_episode_status(episode_id: int, db: Session = Depends(get_db), user: Ad
     if not episode.bunny_video_id:
         raise HTTPException(status_code=409, detail="episode has no video")
 
-    remote_status: int | None = None
-    duration_updated = False
+    remote: dict | None = None
     source = "fake"
     if bunny.live():
         source = "bunny"
@@ -357,37 +606,16 @@ def sync_episode_status(episode_id: int, db: Session = Depends(get_db), user: Ad
                 remote = bunny.stream_video(episode.bunny_video_id)
             except bunny.BunnyError as exc:
                 raise HTTPException(status_code=502, detail=f"bunny upstream: {exc}") from exc
-            remote_status = int(remote.get("status", 0))
-            length = int(remote.get("length") or 0)
-            if length > 0 and episode.duration_seconds != length:
-                # Bunny's transcoded length is what the player will report.
-                episode.duration_seconds = length
-                duration_updated = True
-
-    if episode.status == "transcoding":
-        target = None
-        if remote_status is None or remote_status == 4:
-            target = "in_review"
-        elif remote_status >= 5:
-            target = "transcode_failed"
-        if target is not None:
-            try:
-                transition_episode(db, episode, target)
-            except InvalidTransition as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
-            upload = _latest_media_upload(db, episode.id, episode.bunny_video_id)
-            if upload is not None:
-                upload.status = "completed" if target == "in_review" else "failed"
-            db.commit()
-        elif duration_updated:
-            db.commit()
-    elif duration_updated:
+    try:
+        result = apply_remote_video(db, episode, remote)
+    except InvalidTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if result["changed"]:
         db.commit()
-
     return {
         "episode_id": episode.id,
         "status": episode.status,
-        "remote_status": remote_status,
+        "remote_status": result["remote_status"],
         "duration_seconds": episode.duration_seconds,
         "source": source,
     }
@@ -419,11 +647,33 @@ def upload_failed(
             "updated": False,
             "reason": payload.reason,
         }
+    # A browser error after the bytes have landed must not stamp 转码失败 onto
+    # a video Bunny has already accepted. Status 0 with no original means the
+    # object was created and nothing arrived — that one stays retryable.
+    video_id = payload.video_id or episode.bunny_video_id
+    if bunny.live() and video_id:
+        try:
+            remote = bunny.stream_video(video_id)
+        except bunny.BunnyError:
+            remote = None
+        if remote is not None and _remote_has_bytes(remote):
+            try:
+                apply_remote_video(db, episode, remote)
+            except InvalidTransition as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            db.commit()
+            return {
+                "episode_id": episode.id,
+                "status": episode.status,
+                "updated": episode.status != "transcoding",
+                "reason": payload.reason,
+                "ignored": "bytes already at bunny",
+            }
     try:
         transition_episode(db, episode, "transcode_failed")
     except InvalidTransition as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    upload = _latest_media_upload(db, episode.id, payload.video_id or episode.bunny_video_id)
+    upload = _latest_media_upload(db, episode.id, video_id)
     if upload is not None:
         upload.status = "failed"
     db.commit()
@@ -809,8 +1059,10 @@ def _group_out(row: HomeGroup, drama_count: int) -> dict:
         "name": row.name,
         "position": row.position,
         "status": row.status,
+        "style": row.style,
+        "badge": row.badge,
         "drama_count": drama_count,
-        "limit": 20,
+        "limit": GROUP_LIMIT,
     }
 
 
@@ -837,6 +1089,10 @@ def update_group(group_id: int, body: GroupUpdateIn, db: Session = Depends(get_d
         group.status = data["status"]
     if "position" in data and data["position"] is not None:
         group.position = data["position"]
+    if "style" in data and data["style"] is not None:
+        group.style = data["style"]
+    if "badge" in data and data["badge"] is not None:
+        group.badge = data["badge"]
     if not data:
         raise HTTPException(status_code=422, detail="nothing to update")
     db.commit()
@@ -942,26 +1198,194 @@ def list_copies(db: Session = Depends(get_db), user: AdminUser = Depends(require
     return {"items": [{"key": row.key, "en": row.en, "zh": row.zh} for row in rows]}
 
 
+DISCOVER_CODE = "discover"
+
+
+def _tab_out(row: ChannelTab) -> dict:
+    return {
+        "id": row.id,
+        "code": row.code,
+        "title_en": row.title_en,
+        "title_zh": row.title_zh,
+        "position": row.position,
+        "enabled": row.enabled,
+        "locked": row.locked or row.code == DISCOVER_CODE,
+        "group_id": row.group_id,
+    }
+
+
+class TabIn(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    title_en: str = Field(min_length=1, max_length=64)
+    title_zh: str = Field(default="", max_length=64)
+    position: int = 0
+    enabled: bool = True
+    group_id: int | None = None
+
+
+class TabUpdateIn(BaseModel):
+    title_en: str | None = Field(default=None, max_length=64)
+    title_zh: str | None = Field(default=None, max_length=64)
+    position: int | None = None
+    enabled: bool | None = None
+    group_id: int | None = None
+
+
+@router.get("/tabs")
+def list_tabs(db: Session = Depends(get_db), user: AdminUser = Depends(require_admin)):
+    rows = db.scalars(select(ChannelTab).order_by(ChannelTab.position, ChannelTab.id)).all()
+    return {"items": [_tab_out(row) for row in rows]}
+
+
 @router.post("/tabs")
-def save_tab(code: str, title_en: str, title_zh: str = "", position: int = 0, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
-    row = db.scalar(select(ChannelTab).where(ChannelTab.code == code))
+def save_tab(body: TabIn, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
+    if body.group_id is not None and db.get(HomeGroup, body.group_id) is None:
+        raise HTTPException(status_code=404, detail="group not found")
+    row = db.scalar(select(ChannelTab).where(ChannelTab.code == body.code))
     if row is None:
-        row = ChannelTab(code=code, title_en=title_en, title_zh=title_zh, position=position)
+        row = ChannelTab(code=body.code, title_en=body.title_en, title_zh=body.title_zh, position=body.position)
+        row.enabled = body.enabled
+        row.locked = body.code == DISCOVER_CODE
+        row.group_id = None if row.locked else body.group_id
         db.add(row)
     else:
-        row.position = position
-        row.title_en = title_en
-        row.title_zh = title_zh
+        row.position = body.position
+        row.title_en = body.title_en
+        row.title_zh = body.title_zh
+        row.enabled = body.enabled
+        if not (row.locked or row.code == DISCOVER_CODE):
+            row.group_id = body.group_id
     db.commit()
-    return {"id": row.id, "position": row.position}
+    return _tab_out(row)
+
+
+@router.patch("/tabs/{tab_id}")
+def update_tab(tab_id: int, body: TabUpdateIn, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
+    row = db.get(ChannelTab, tab_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="tab not found")
+    data = body.model_dump(exclude_unset=True)
+    if "group_id" in data and data["group_id"] is not None and db.get(HomeGroup, data["group_id"]) is None:
+        raise HTTPException(status_code=404, detail="group not found")
+    locked = row.locked or row.code == DISCOVER_CODE
+    if locked and ("position" in data or "enabled" in data or "group_id" in data):
+        raise HTTPException(status_code=409, detail="discover tab is fixed")
+    if "title_en" in data and data["title_en"] is not None:
+        row.title_en = data["title_en"]
+    if "title_zh" in data and data["title_zh"] is not None:
+        row.title_zh = data["title_zh"]
+    if "position" in data and data["position"] is not None:
+        row.position = data["position"]
+    if "enabled" in data and data["enabled"] is not None:
+        row.enabled = data["enabled"]
+    if "group_id" in data:
+        row.group_id = data["group_id"]
+    db.commit()
+    return _tab_out(row)
+
+
+@router.delete("/tabs/{tab_id}")
+def delete_tab(tab_id: int, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
+    row = db.get(ChannelTab, tab_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="tab not found")
+    if row.locked or row.code == DISCOVER_CODE:
+        raise HTTPException(status_code=409, detail="discover tab is fixed")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True}
+
+
+def _banner_out(row: Banner, drama: Drama | None) -> dict:
+    return {
+        "id": row.id,
+        "slot": row.slot,
+        "drama_id": row.drama_id,
+        "title": None if drama is None else drama.title,
+        "cover_url": None if drama is None else drama.cover_url,
+        "kicker": row.kicker,
+        "headline": row.headline,
+        "status": row.status,
+        "position": row.position,
+    }
+
+
+class BannerIn(BaseModel):
+    drama_id: int
+    slot: str = "home"
+    status: str = "online"
+    position: int = 0
+    kicker: str = Field(default="", max_length=80)
+    headline: str = Field(default="", max_length=80)
+
+
+class BannerUpdateIn(BaseModel):
+    drama_id: int | None = None
+    status: str | None = None
+    position: int | None = None
+    kicker: str | None = Field(default=None, max_length=80)
+    headline: str | None = Field(default=None, max_length=80)
+
+
+@router.get("/banners")
+def list_banners(slot: str = "home", db: Session = Depends(get_db), user: AdminUser = Depends(require_admin)):
+    rows = db.scalars(select(Banner).where(Banner.slot == slot).order_by(Banner.position, Banner.id)).all()
+    return {"items": [_banner_out(row, db.get(Drama, row.drama_id) if row.drama_id else None) for row in rows]}
 
 
 @router.post("/banners")
-def save_banner(drama_id: int, slot: str = "home", status: str = "online", db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
-    row = Banner(drama_id=drama_id, slot=slot, status=status)
+def save_banner(body: BannerIn, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
+    drama = db.get(Drama, body.drama_id)
+    if drama is None:
+        raise HTTPException(status_code=404, detail="drama not found")
+    count = db.scalar(select(func.count()).select_from(Banner).where(Banner.slot == body.slot, Banner.status == "online")) or 0
+    if body.status == "online" and count >= 3:
+        raise HTTPException(status_code=409, detail="a banner holds 3 dramas at most")
+    row = Banner(
+        drama_id=drama.id,
+        slot=body.slot,
+        status=body.status,
+        position=body.position,
+        kicker=body.kicker,
+        headline=body.headline or drama.title,
+    )
     db.add(row)
     db.commit()
-    return {"id": row.id}
+    return _banner_out(row, drama)
+
+
+@router.patch("/banners/{banner_id}")
+def update_banner(banner_id: int, body: BannerUpdateIn, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
+    row = db.get(Banner, banner_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="banner not found")
+    data = body.model_dump(exclude_unset=True)
+    drama = db.get(Drama, row.drama_id) if row.drama_id else None
+    if "drama_id" in data and data["drama_id"] is not None:
+        drama = db.get(Drama, data["drama_id"])
+        if drama is None:
+            raise HTTPException(status_code=404, detail="drama not found")
+        row.drama_id = drama.id
+    if "status" in data and data["status"] is not None:
+        row.status = data["status"]
+    if "position" in data and data["position"] is not None:
+        row.position = data["position"]
+    if "kicker" in data and data["kicker"] is not None:
+        row.kicker = data["kicker"]
+    if "headline" in data and data["headline"] is not None:
+        row.headline = data["headline"]
+    db.commit()
+    return _banner_out(row, drama)
+
+
+@router.delete("/banners/{banner_id}")
+def delete_banner(banner_id: int, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
+    row = db.get(Banner, banner_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="banner not found")
+    db.delete(row)
+    db.commit()
+    return {"deleted": True}
 
 
 @router.post("/hot-searches")

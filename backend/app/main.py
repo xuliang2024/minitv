@@ -79,11 +79,25 @@ def _register_routers() -> None:
     from app.modules.ops.flow_router import router as admin_flow_router
     from app.modules.ops.router import router as admin_router
     from app.modules.public_flow import router as public_flow_router
+    from app.modules.recommend.router import router as feed_router
 
     app.include_router(admin_router)
     app.include_router(admin_flow_router)
     app.include_router(public_router)
     app.include_router(public_flow_router)
+    app.include_router(feed_router)
 
 
 _register_routers()
+
+
+def _start_background_jobs() -> None:
+    # Tests pin BUNNY_MODE=fake, so this stays a no-op there. Real mode polls
+    # Bunny because the library has no webhook and finished encodes would
+    # otherwise sit on "transcoding" until someone clicks sync.
+    from app.modules.ops.flow_router import start_transcode_reconciler
+
+    start_transcode_reconciler()
+
+
+_start_background_jobs()

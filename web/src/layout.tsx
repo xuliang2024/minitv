@@ -12,9 +12,7 @@ export function SiteHeader() {
     <header className="site-header">
       <div className="shell header-inner">
         <a className="brand" href="#home">
-          <span className="brand-mark" aria-hidden="true">
-            ▶
-          </span>
+          <img className="brand-mark" src="/brand/minitv-icon.png" alt="" aria-hidden="true" />
           MiniTV
         </a>
         <nav className="site-nav" aria-label="Main">
@@ -39,9 +37,7 @@ export function SiteFooter() {
         <div className="footer-grid">
           <div className="footer-brand">
             <a className="brand" href="#home">
-              <span className="brand-mark" aria-hidden="true">
-                ▶
-              </span>
+              <img className="brand-mark" src="/brand/minitv-icon.png" alt="" aria-hidden="true" />
               MiniTV
             </a>
             <p>Vertical short dramas, built for the phone. Watch free episodes on the web, unlock everything in the app.</p>

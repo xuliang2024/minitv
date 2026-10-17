@@ -15,9 +15,11 @@ from app.modules.account.models import User
 from app.modules.account.service import AccountError
 from app.modules.billing import service as billing
 from app.modules.billing.service import BillingError
+from app.modules.common.auth import optional_user as _optional_user
+from app.modules.common.auth import require_user as _require_user
 from app.modules.common.models import AuditLog
 from app.modules.content import service as content
-from app.modules.content.models import Drama, Episode
+from app.modules.content.models import Drama, Episode, Tag
 from app.modules.content.upload_service import UploadRejected, apply_callback
 from app.modules.ops.config_models import (
     Banner,
@@ -30,24 +32,21 @@ from app.modules.ops.config_models import (
     Testimonial,
 )
 from app.modules.playback import service as playback
-from app.modules.playback.models import PlaybackProgress
+from app.modules.playback.models import PlaybackEvent, PlaybackProgress
 from app.modules.social.models import Comment, InboxMessage, Reaction
-from app.modules.wallet.models import CoinLedgerEntry, WalletAccount
+from app.modules.wallet.models import (
+    ENTITLEMENT_TYPE_COIN,
+    CoinLedgerEntry,
+    Entitlement,
+    WalletAccount,
+)
 from app.modules.wallet.service import EpisodeNotFoundError, InsufficientCoinsError, unlock_episode
 
 router = APIRouter(prefix="/v1", tags=["public-flow"])
 
 
-def _optional_user(request: Request, db: Session = Depends(get_db)) -> User | None:
-    auth = request.headers.get("Authorization", "")
-    token = auth[7:] if auth.startswith("Bearer ") else None
-    return accounts.resolve_user(db, token)
-
-
-def _require_user(user: User | None = Depends(_optional_user)) -> User:
-    if user is None:
-        raise HTTPException(status_code=401, detail="login required")
-    return user
+def _tags_of(db: Session, drama_id: int) -> list[Tag]:
+    return content.tags_by_drama(db, [drama_id]).get(drama_id, [])
 
 
 class PlaybackIn(BaseModel):
@@ -65,6 +64,15 @@ class RegisterIn(BaseModel):
     email: str
     code: str
     password: str | None = None
+
+
+class LoginIn(BaseModel):
+    email: str
+    code: str
+
+
+class GoogleIn(BaseModel):
+    id_token: str = Field(min_length=1)
 
 
 class EventIn(BaseModel):
@@ -159,6 +167,24 @@ def email_register(body: RegisterIn, db: Session = Depends(get_db)):
     except AccountError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     return {"token": token, "user_id": user.id, "public_id": user.public_id}
+
+
+@router.post("/auth/email/login")
+def email_login(body: LoginIn, db: Session = Depends(get_db)):
+    try:
+        user, token = accounts.login_with_code(db, email=body.email, code=body.code)
+    except AccountError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {"token": token, "user_id": user.id, "public_id": user.public_id}
+
+
+@router.post("/auth/google")
+def google_login(body: GoogleIn, db: Session = Depends(get_db)):
+    try:
+        user, token, created = accounts.login_with_google(db, id_token=body.id_token)
+    except AccountError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {"token": token, "user_id": user.id, "public_id": user.public_id, "created": created}
 
 
 @router.post("/auth/oauth/{provider}")
@@ -275,7 +301,10 @@ def config(locale: str = "en", db: Session = Depends(get_db)):
             copies[row.key] = row.en
     db.commit()
     return {
-        "tabs": [{"code": t.code, "title_en": t.title_en, "title_zh": t.title_zh, "position": t.position} for t in tabs],
+        "tabs": [
+            {"code": t.code, "title_en": t.title_en, "title_zh": t.title_zh, "position": t.position, "locked": t.locked, "group_id": t.group_id}
+            for t in tabs
+        ],
         "copies": copies,
     }
 
@@ -364,25 +393,104 @@ def read_messages(user: User = Depends(_require_user), db: Session = Depends(get
     return {"unread": 0}
 
 
-@router.get("/feed")
-def feed(db: Session = Depends(get_db)):
-    episodes = db.scalars(
-        select(Episode)
-        .join(Drama, Drama.id == Episode.drama_id)
-        .where(Drama.status == "published", Episode.status == "published")
-        .order_by(Episode.id.desc())
-        .limit(20)
-    ).all()
-    return {
-        "items": [
+@router.get("/dramas/{drama_id}/play")
+def drama_play(drama_id: int, user: User | None = Depends(_optional_user), db: Session = Depends(get_db)):
+    """The drama's own play page: every episode, its lock state, and the resume point.
+
+    Two doors lead here - the viewer taps a poster by hand, or the For-You player
+    finishes an episode and hands off to this page. Either way the payload has to
+    stand alone: the vertical episode scroller is painted from this one response,
+    so there is no second call to fetch the episode list.
+
+    Playback URLs are still absent; `POST /v1/playback` mints those and applies
+    the free / membership / coin-unlock rules.
+    """
+    drama = content.get_published_drama(db, drama_id)
+    if drama is None:
+        raise HTTPException(status_code=404, detail="drama not found")
+
+    uid = None if user is None else user.id
+    member = playback.subscription_active(db, uid)
+    progress_rows = (
+        {
+            episode_id: int(position or 0)
+            for episode_id, position in db.execute(
+                select(PlaybackProgress.episode_id, PlaybackProgress.position_seconds).where(
+                    PlaybackProgress.user_id == uid
+                )
+            )
+        }
+        if uid is not None
+        else {}
+    )
+    completed = (
+        set(
+            db.scalars(
+                select(PlaybackEvent.episode_id).where(
+                    PlaybackEvent.user_id == uid, PlaybackEvent.kind == "complete"
+                )
+            )
+        )
+        if uid is not None
+        else set()
+    )
+    unlocked = (
+        set(
+            db.scalars(
+                select(Entitlement.episode_id).where(
+                    Entitlement.user_id == uid,
+                    Entitlement.entitlement_type == ENTITLEMENT_TYPE_COIN,
+                )
+            )
+        )
+        if uid is not None
+        else set()
+    )
+
+    items: list[dict] = []
+    resume: dict | None = None
+    for episode in content.list_published_episodes(db, drama_id):
+        free = episode.episode_number <= drama.free_episode_count
+        locked = not (free or member or episode.id in unlocked)
+        position = progress_rows.get(episode.id, 0)
+        items.append(
             {
-                "drama_id": ep.drama_id,
-                "episode_id": ep.id,
-                "episode_number": ep.episode_number,
-                "title": ep.title,
+                "id": episode.id,
+                "episode_number": episode.episode_number,
+                "title": episode.title,
+                "duration_seconds": episode.duration_seconds,
+                "free": free,
+                "locked": locked,
+                "progress_seconds": position,
+                "unlock": {"coin_price": drama.coin_price_per_episode} if locked else None,
             }
-            for ep in episodes
-        ]
+        )
+        # Resume = the first watchable episode the viewer started but did not
+        # finish; otherwise the first watchable episode at all.
+        if resume is None and not locked and position > 0 and episode.id not in completed:
+            resume = {"episode_id": episode.id, "position_seconds": position}
+    if resume is None:
+        first = next((item for item in items if not item["locked"]), None)
+        resume = {"episode_id": first["id"], "position_seconds": 0} if first else None
+
+    tags = _tags_of(db, drama.id)
+    return {
+        "drama": {
+            "id": drama.id,
+            "title": drama.title,
+            "synopsis": drama.synopsis,
+            "cover_url": drama.cover_url,
+            "tags": [tag.name_en for tag in tags],
+            "free_episode_count": drama.free_episode_count,
+            "coin_price_per_episode": drama.coin_price_per_episode,
+            "play_count": drama.play_count,
+        },
+        "items": items,
+        "resume": resume,
+        "entitlement": {
+            "member": member,
+            "unlocked_episode_ids": sorted(unlocked),
+        },
     }
 
 
@@ -440,9 +548,32 @@ def home_groups(db: Session = Depends(get_db)):
             drama = content.get_published_drama(db, link.drama_id)
             if drama is not None:
                 dramas.append({"id": drama.id, "title": drama.title, "cover_url": drama.cover_url, "position": link.position_in_group})
-        payload.append({"id": group.id, "name": group.name, "position": group.position, "dramas": dramas})
+        payload.append(
+            {
+                "id": group.id,
+                "name": group.name,
+                "position": group.position,
+                "style": group.style,
+                "badge": group.badge,
+                "dramas": dramas,
+            }
+        )
     banners = db.scalars(select(Banner).where(Banner.status == "online").order_by(Banner.position)).all()
-    return {"groups": payload, "banners": [{"id": b.id, "drama_id": b.drama_id, "slot": b.slot} for b in banners]}
+    banner_payload = []
+    for banner in banners:
+        drama = content.get_published_drama(db, banner.drama_id) if banner.drama_id else None
+        banner_payload.append(
+            {
+                "id": banner.id,
+                "drama_id": banner.drama_id,
+                "slot": banner.slot,
+                "title": None if drama is None else drama.title,
+                "cover_url": None if drama is None else drama.cover_url,
+                "kicker": banner.kicker,
+                "headline": banner.headline or ("" if drama is None else drama.title),
+            }
+        )
+    return {"groups": payload, "banners": banner_payload}
 
 
 @router.get("/me/history")

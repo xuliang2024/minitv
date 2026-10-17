@@ -16,12 +16,12 @@ import Dramas from "./pages/Dramas";
 import DramaEdit from "./pages/DramaEdit";
 import Tags from "./pages/Tags";
 import GroupsPage, { GroupDetailPage } from "./pages/Groups";
+import { HomeOpsPage } from "./pages/HomeOps";
 import Rewards from "./pages/Rewards";
 import {
   CommentsPage,
   DashboardPage,
   FinancePage,
-  HomeOpsPage,
   OpsCenterPage,
   PlansPage,
   UsersPage,

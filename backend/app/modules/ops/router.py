@@ -202,10 +202,19 @@ def list_dramas(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+    # 全库按状态计数，不受分页 / 筛选影响，给列表页顶部的统计条用。
+    counts = {
+        row.status: row.n
+        for row in db.execute(
+            select(Drama.status, func.count(Drama.id).label("n")).group_by(Drama.status)
+        )
+    }
+    status_counts = {s: int(counts.get(s, 0)) for s in ("draft", "in_review", "published", "unpublished")}
     return {
         "total": total,
         "page": page,
         "page_size": page_size,
+        "status_counts": {"all": sum(status_counts.values()), **status_counts},
         "items": [_drama_out(db, d) for d in rows],
     }
 

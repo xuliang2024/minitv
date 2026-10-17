@@ -145,6 +145,45 @@ def stream_upload(video_id: str, file_path: str | os.PathLike[str], *, timeout: 
         raise BunnyError(f"stream upload failed ({status}): {body[:200]!r}")
 
 
+def list_stream_videos(*, page_size: int = 1000, attempts: int = 3) -> dict[str, dict]:
+    """Return every video in the library, keyed by GUID.
+
+    One page is up to 1000 items. Callers that need to reconcile a few hundred
+    episodes should use this instead of one ``GET`` per video: the library API
+    rate-limits single-object reads long before it rate-limits a listing.
+    """
+    library_id = _require("BUNNY_STREAM_LIBRARY_ID")
+    found: dict[str, dict] = {}
+    page = 1
+    while True:
+        last_error = ""
+        data: dict | None = None
+        for attempt in range(attempts):
+            status, _, body = _http(
+                "GET",
+                f"{STREAM_API}/library/{library_id}/videos?page={page}&itemsPerPage={page_size}",
+                headers={"AccessKey": _require("BUNNY_STREAM_API_KEY"), "Accept": "application/json"},
+                timeout=90,
+            )
+            if status == 200:
+                data = json.loads(body)
+                break
+            last_error = f"{status}: {body[:200]!r}"
+            if status not in RETRYABLE_STATUS or attempt == attempts - 1:
+                raise BunnyError(f"list videos failed ({last_error})")
+            time.sleep(0.5 * (2**attempt))
+        assert data is not None
+        items = data.get("items") or []
+        for item in items:
+            guid = item.get("guid")
+            if guid:
+                found[guid] = item
+        total = int(data.get("totalItems") or 0)
+        if not items or page * page_size >= total:
+            return found
+        page += 1
+
+
 def stream_video(video_id: str, *, attempts: int = 3) -> dict:
     """Return the Bunny Stream video object, retrying transient failures."""
     last_error = ""

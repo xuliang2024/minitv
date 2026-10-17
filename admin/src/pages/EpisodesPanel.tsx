@@ -457,7 +457,11 @@ function EpisodeEditorModal({
         : "保存并上传视频"
       : "保存";
 
-  const statusMeta = editing ? STATUS_META[editing.status] ?? { text: editing.status, color: "default" } : null;
+  // ``editing`` is the row from when the dialog opened. Once a replace starts,
+  // that badge is stale — a previous 转码失败 must not stay on the title while
+  // the new file is uploading or already at Bunny.
+  const liveStatus = phase === "uploading" || phase === "transcoding" ? "transcoding" : editing?.status;
+  const statusMeta = liveStatus ? STATUS_META[liveStatus] ?? { text: liveStatus, color: "default" } : null;
   const hasVideo = Boolean(editing?.bunny_video_id);
   const showFile = Boolean(pick.file);
   const showDrop = canReplaceVideo && replacing && !showFile;
@@ -633,7 +637,12 @@ function EpisodeEditorModal({
           {isCreate ? videoSection : infoSection}
           {isCreate ? infoSection : videoSection}
           {phase === "transcoding" && (
-            <Alert type="info" showIcon message="文件已上传，Bunny 正在转码" description="转码完成后会自动进入审核中。可以先关闭，稍后在列表里同步状态。" />
+            <Alert
+              type="info"
+              showIcon
+              message="文件已上传，Bunny 正在转码"
+              description="转码完成后会自动进入审核中。列表里的旧状态可以先忽略，关闭后会刷新。"
+            />
           )}
           {error && <Alert type="error" showIcon message={error} />}
         </div>

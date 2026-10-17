@@ -102,7 +102,7 @@ def _probe_dimensions(path: Path) -> tuple[int, int, int]:
         duration = int(round(float(document.get("format", {}).get("duration") or 0)))
         return int(stream.get("width") or 0), int(stream.get("height") or 0), duration
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
-        return 0, 0
+        return 0, 0, 0
 
 
 def _transition_to_transcoding(session: Session, episode: Episode) -> None:
@@ -217,6 +217,36 @@ def _sync_statuses(session: Session, episodes: Iterable[Episode]) -> dict[str, i
     if updated:
         session.commit()
     return {"updated": updated, "in_review": in_review, "failed": failed, "durations": durations}
+
+
+def pending_video_jobs(session: Session, *, catalog_path: Path = CATALOG_PATH, videos_root: Path = VIDEOS_ROOT) -> list[tuple[int, int]]:
+    """Return ``(drama_id, media_id)`` for dramas that still have a local MP4 without a Bunny id."""
+    document = json.loads(catalog_path.read_text(encoding="utf-8"))
+    jobs: list[tuple[int, int]] = []
+    for item in document.get("items", []):
+        title = " ".join(str(item.get("title", "")).split())
+        drama = session.scalar(select(Drama).where(Drama.title == title))
+        if drama is None:
+            continue
+        media_id = int(item["media_id"])
+        try:
+            files = _local_files(media_id, videos_root)
+        except FileNotFoundError:
+            continue
+        needed = False
+        for file_number, _path in files:
+            episode = session.scalar(
+                select(Episode).where(
+                    Episode.drama_id == drama.id,
+                    Episode.episode_number == file_number + 1,
+                )
+            )
+            if episode is not None and not episode.bunny_video_id:
+                needed = True
+                break
+        if needed:
+            jobs.append((drama.id, media_id))
+    return jobs
 
 
 def import_local_videos(
@@ -405,7 +435,12 @@ def import_local_videos(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Upload local MP4 files to Bunny Stream.")
-    parser.add_argument("--drama-id", type=int, required=True)
+    parser.add_argument("--drama-id", type=int, action="append", dest="drama_ids")
+    parser.add_argument(
+        "--missing-only",
+        action="store_true",
+        help="upload every catalog drama that still has a local MP4 without a Bunny video id",
+    )
     parser.add_argument(
         "--media-id",
         type=int,
@@ -431,39 +466,52 @@ def main() -> None:
 
     if not bunny.live() and not args.dry_run:
         raise SystemExit("BUNNY_MODE must be real before uploading; use --dry-run to inspect only")
+    if not args.drama_ids and not args.missing_only:
+        raise SystemExit("pass --drama-id or --missing-only")
 
     factory = make_session_factory(get_engine())
     with factory() as session:
-        result = import_local_videos(
-            session,
-            drama_id=args.drama_id,
-            media_id=args.media_id,
-            limit=args.limit,
-            dry_run=args.dry_run,
-            sync_status=args.sync_status,
-            workers=args.workers,
-            replace=args.replace,
-        )
+        targets = [(drama_id, args.media_id) for drama_id in (args.drama_ids or [])]
+        if args.missing_only:
+            targets = pending_video_jobs(session)
+        results = []
+        for drama_id, media_id in targets:
+            results.append(
+                import_local_videos(
+                    session,
+                    drama_id=drama_id,
+                    media_id=media_id,
+                    limit=args.limit,
+                    dry_run=args.dry_run,
+                    sync_status=args.sync_status,
+                    workers=args.workers,
+                    replace=args.replace,
+                )
+            )
 
-    prefix = "dry-run: " if result["dry_run"] else ""
-    print(
-        f"{prefix}drama #{result['drama_id']} {result['title']} "
-        f"(media {result['media_id']}): uploaded {result['uploaded']} "
-        f"(replaced {result['replaced']}), skipped {result['skipped']}, "
-        f"missing episode rows {result['missing']}"
-    )
-    for row in result["rows"]:
-        suffix = f" -> {row['video_id']}" if row.get("video_id") else ""
-        if row.get("error"):
-            suffix = f" -> {row['error']}"
-        print(f"  ep{row['episode']:03d} {row['file']}: {row['status']}{suffix}")
-    synced = result["sync"]
-    if synced["updated"] or args.sync_status:
+    uploaded = skipped = failed = 0
+    for result in results:
+        prefix = "dry-run: " if result["dry_run"] else ""
+        row_failed = sum(1 for row in result["rows"] if row["status"] == "failed")
+        failed += row_failed
+        uploaded += int(result["uploaded"])
+        skipped += int(result["skipped"])
         print(
-            f"status sync: {synced['updated']} updated, "
-            f"{synced['in_review']} in_review, {synced['failed']} failed, "
-            f"{synced.get('durations', 0)} durations filled"
+            f"{prefix}drama #{result['drama_id']} {result['title']} "
+            f"(media {result['media_id']}): uploaded {result['uploaded']} "
+            f"(replaced {result['replaced']}), skipped {result['skipped']}, "
+            f"failed {row_failed}, missing episode rows {result['missing']}"
         )
+        for row in result["rows"]:
+            if row["status"] in {"already_uploaded", "would_upload"} and not args.dry_run:
+                continue
+            if row["status"] == "already_uploaded":
+                continue
+            suffix = f" -> {row['video_id']}" if row.get("video_id") else ""
+            if row.get("error"):
+                suffix = f" -> {row['error']}"
+            print(f"  ep{row['episode']:03d} {row['file']}: {row['status']}{suffix}")
+    print(f"total uploaded {uploaded}, skipped {skipped}, failed {failed}, dramas {len(results)}")
 
 
 if __name__ == "__main__":

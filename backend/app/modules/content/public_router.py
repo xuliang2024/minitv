@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.modules.content import service as content
-from app.modules.content.models import Drama, DramaTag, Episode, Tag
+from app.modules.content.models import Drama, Episode, Tag
 
 router = APIRouter(prefix="/v1", tags=["public"])
 
@@ -91,19 +91,7 @@ def _episode_counters(db: Session) -> dict[int, dict]:
     }
 
 
-def _tags_by_drama(db: Session, drama_ids: list[int]) -> dict[int, list[Tag]]:
-    tags: dict[int, list[Tag]] = {}
-    if not drama_ids:
-        return tags
-    rows = db.execute(
-        select(DramaTag.drama_id, Tag)
-        .join(Tag, Tag.id == DramaTag.tag_id)
-        .where(DramaTag.drama_id.in_(drama_ids), Tag.status == "enabled")
-        .order_by(Tag.id)
-    ).all()
-    for drama_id, tag in rows:
-        tags.setdefault(drama_id, []).append(tag)
-    return tags
+_tags_by_drama = content.tags_by_drama
 
 
 def _preview_drama_out(drama: Drama, counters: dict, tags: list[Tag]) -> dict:

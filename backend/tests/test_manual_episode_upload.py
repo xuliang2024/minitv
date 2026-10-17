@@ -231,3 +231,251 @@ def test_sync_status_records_bunny_duration(make, client, session, monkeypatch):
     refreshed = session.get(Episode, episode.id)
     assert refreshed.status == "in_review"
     assert refreshed.duration_seconds == 97
+
+
+def test_sync_status_leaves_queued_videos_transcoding(make, client, session, monkeypatch):
+    """Bunny status 2 is 'uploaded, not encoding yet', not finished.
+
+    Treating it as finished is what left a bulk import showing 转码中 forever
+    once the library listing was never polled — and treating a still-queued
+    upload as in_review would publish a video that cannot play.
+    """
+    from app.modules.common import bunny as bunny_module
+
+    headers = _ops(make, client)
+    drama = make.drama(title="Still Queued Drama")
+    episode = make.episode(drama, number=1)
+
+    monkeypatch.setenv("BUNNY_MODE", "real")
+    monkeypatch.setattr(bunny_module, "create_stream_video", lambda title: "guid-queued")
+    monkeypatch.setattr(bunny_module, "tus_headers", lambda video_id, *, ttl=3600: {"Tus-Resumable": "1.0.0"})
+    monkeypatch.setattr(
+        bunny_module,
+        "stream_video",
+        lambda video_id: {"status": 2, "encodeProgress": 0, "length": 0, "availableResolutions": None},
+    )
+
+    assert _upload_session(client, headers, episode.id).status_code == 200
+    synced = client.post(f"/admin/v1/episodes/{episode.id}/sync-status", headers=headers)
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["status"] == "transcoding"
+    assert synced.json()["remote_status"] == 2
+
+    session.expire_all()
+    assert session.get(Episode, episode.id).status == "transcoding"
+
+
+def test_sync_status_fails_an_abandoned_upload(make, client, session, monkeypatch):
+    """A status-0 object that never got bytes is a dead end, not a queue.
+
+    Bunny sometimes keeps the video object but never stores the upload (no
+    storage, no length, no hash); reencode then refuses with "Original file
+    is missing". Left alone the row stays 转码中 forever, and neither a new
+    upload nor a delete is offered. Past the queue window it must drop to
+    transcode_failed so 重新上传 appears.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.common import bunny as bunny_module
+
+    headers = _ops(make, client)
+    drama = make.drama(title="Abandoned Upload Drama")
+    episode = make.episode(drama, number=1)
+
+    monkeypatch.setenv("BUNNY_MODE", "real")
+    guids = iter(["guid-abandoned", "guid-abandoned-retry"])
+    monkeypatch.setattr(bunny_module, "create_stream_video", lambda title: next(guids))
+    monkeypatch.setattr(bunny_module, "tus_headers", lambda video_id, *, ttl=3600: {"Tus-Resumable": "1.0.0"})
+    old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    monkeypatch.setattr(
+        bunny_module,
+        "stream_video",
+        lambda video_id: {
+            "status": 0,
+            "encodeProgress": 0,
+            "length": 0,
+            "storageSize": 0,
+            "hasOriginal": True,
+            "availableResolutions": None,
+            "dateUploaded": old,
+        },
+    )
+
+    assert _upload_session(client, headers, episode.id).status_code == 200
+    synced = client.post(f"/admin/v1/episodes/{episode.id}/sync-status", headers=headers)
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["status"] == "transcode_failed"
+
+    session.expire_all()
+    assert session.get(Episode, episode.id).status == "transcode_failed"
+    upload = session.scalar(select(MediaUpload).where(MediaUpload.episode_id == episode.id))
+    assert upload is not None and upload.status == "failed"
+
+    # The retry path re-opens: transcode_failed accepts a fresh session.
+    retry = _upload_session(client, headers, episode.id, filename="retry.mp4")
+    assert retry.status_code == 200, retry.text
+
+
+def test_sync_status_keeps_a_fresh_status0_upload_transcoding(make, client, session, monkeypatch):
+    """The same all-zero signature minutes after upload is just a queue wait."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.common import bunny as bunny_module
+
+    headers = _ops(make, client)
+    drama = make.drama(title="Fresh Upload Drama")
+    episode = make.episode(drama, number=1)
+
+    monkeypatch.setenv("BUNNY_MODE", "real")
+    monkeypatch.setattr(bunny_module, "create_stream_video", lambda title: "guid-fresh")
+    monkeypatch.setattr(bunny_module, "tus_headers", lambda video_id, *, ttl=3600: {"Tus-Resumable": "1.0.0"})
+    fresh = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    monkeypatch.setattr(
+        bunny_module,
+        "stream_video",
+        lambda video_id: {
+            "status": 0,
+            "encodeProgress": 0,
+            "length": 0,
+            "storageSize": 0,
+            "hasOriginal": True,
+            "availableResolutions": None,
+            "dateUploaded": fresh,
+        },
+    )
+
+    assert _upload_session(client, headers, episode.id).status_code == 200
+    synced = client.post(f"/admin/v1/episodes/{episode.id}/sync-status", headers=headers)
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["status"] == "transcoding"
+
+    session.expire_all()
+    assert session.get(Episode, episode.id).status == "transcoding"
+
+
+def test_sync_status_fails_a_status2_stall(make, client, session, monkeypatch):
+    """status 2 with zero progress past the window = the encoder never came.
+
+    Bunny sometimes accepts the original (status 2, bytes stored) and then
+    never starts encoding; reencode is a no-op on such objects. The row must
+    drop to transcode_failed or it stays 转码中 forever.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.common import bunny as bunny_module
+
+    headers = _ops(make, client)
+    drama = make.drama(title="Stalled Encoder Drama")
+    episode = make.episode(drama, number=1)
+
+    monkeypatch.setenv("BUNNY_MODE", "real")
+    monkeypatch.setattr(bunny_module, "create_stream_video", lambda title: "guid-stalled")
+    monkeypatch.setattr(bunny_module, "tus_headers", lambda video_id, *, ttl=3600: {"Tus-Resumable": "1.0.0"})
+    old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    monkeypatch.setattr(
+        bunny_module,
+        "stream_video",
+        lambda video_id: {
+            "status": 2,
+            "encodeProgress": 0,
+            "length": 0,
+            "storageSize": 2031524,
+            "hasOriginal": True,
+            "availableResolutions": None,
+            "dateUploaded": old,
+        },
+    )
+
+    assert _upload_session(client, headers, episode.id).status_code == 200
+    synced = client.post(f"/admin/v1/episodes/{episode.id}/sync-status", headers=headers)
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["status"] == "transcode_failed"
+
+    session.expire_all()
+    assert session.get(Episode, episode.id).status == "transcode_failed"
+
+
+def test_sync_status_keeps_a_fresh_status2_upload_transcoding(make, client, session, monkeypatch):
+    """status 2 minutes after upload is a normal queue wait, not a stall."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.common import bunny as bunny_module
+
+    headers = _ops(make, client)
+    drama = make.drama(title="Fresh Encoder Drama")
+    episode = make.episode(drama, number=1)
+
+    monkeypatch.setenv("BUNNY_MODE", "real")
+    monkeypatch.setattr(bunny_module, "create_stream_video", lambda title: "guid-queued2")
+    monkeypatch.setattr(bunny_module, "tus_headers", lambda video_id, *, ttl=3600: {"Tus-Resumable": "1.0.0"})
+    fresh = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    monkeypatch.setattr(
+        bunny_module,
+        "stream_video",
+        lambda video_id: {
+            "status": 2,
+            "encodeProgress": 0,
+            "length": 0,
+            "storageSize": 0,
+            "hasOriginal": True,
+            "availableResolutions": None,
+            "dateUploaded": fresh,
+        },
+    )
+
+    assert _upload_session(client, headers, episode.id).status_code == 200
+    synced = client.post(f"/admin/v1/episodes/{episode.id}/sync-status", headers=headers)
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["status"] == "transcoding"
+
+    session.expire_all()
+    assert session.get(Episode, episode.id).status == "transcoding"
+
+
+def test_upload_failed_keeps_a_landed_video(make, client, session, monkeypatch):
+    """A client error after the bytes arrive must not stamp 转码失败.
+
+    The editor used to call upload-failed for any exception after the session
+    existed, including one raised while the file was already at Bunny and only
+    waiting to encode (remote status 0, hasOriginal true).
+    """
+    from app.modules.common import bunny as bunny_module
+
+    headers = _ops(make, client)
+    drama = make.drama(title="Landed Bytes Drama")
+    episode = make.episode(drama, number=1)
+
+    monkeypatch.setenv("BUNNY_MODE", "real")
+    monkeypatch.setattr(bunny_module, "create_stream_video", lambda title: "guid-landed")
+    monkeypatch.setattr(bunny_module, "tus_headers", lambda video_id, *, ttl=3600: {"Tus-Resumable": "1.0.0"})
+    monkeypatch.setattr(
+        bunny_module,
+        "stream_video",
+        lambda video_id: {
+            "status": 0,
+            "encodeProgress": 0,
+            "length": 0,
+            "storageSize": 0,
+            "hasOriginal": True,
+            "availableResolutions": None,
+        },
+    )
+
+    created = _upload_session(client, headers, episode.id)
+    assert created.status_code == 200, created.text
+    video_id = created.json()["video_id"]
+
+    failed = client.post(
+        f"/admin/v1/episodes/{episode.id}/upload-failed",
+        json={"video_id": video_id, "reason": "dialog closed while encoding"},
+        headers=headers,
+    )
+    assert failed.status_code == 200, failed.text
+    assert failed.json()["status"] == "transcoding"
+    assert failed.json()["updated"] is False
+    assert failed.json()["ignored"] == "bytes already at bunny"
+
+    session.expire_all()
+    assert session.get(Episode, episode.id).status == "transcoding"
+    upload = session.scalar(select(MediaUpload).where(MediaUpload.video_id == video_id))
+    assert upload is not None and upload.status == "created"

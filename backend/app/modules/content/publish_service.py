@@ -25,7 +25,7 @@ from app.modules.playback.service import bump_generation
 from app.modules.social.models import Comment, PushRecord
 from app.modules.wallet.models import CoinLedgerEntry, Entitlement
 
-GROUP_LIMIT = 20
+GROUP_LIMIT = 100
 
 
 class PublishError(Exception):
