@@ -612,12 +612,25 @@ def cmd_r2(args: argparse.Namespace) -> int:
     digest = tree_digest(entries)
     total_size = sum(len(data) for _, data in entries)
 
+    # Guard: the H5 build must never be promoted into the marketing-site bucket.
+    target_bucket = (args.bucket or os.environ.get("R2_BUCKET") or DEFAULT_BUCKET).strip()
+    h5_bucket = (os.environ.get("R2_H5_BUCKET") or "minitv-h5").strip()
+    dist_parts = [part.lower() for part in Path(args.dist).parts]
+    source_parts = [part.lower() for part in Path(source).parts] if source else []
+    looks_like_h5 = "h5" in dist_parts or "h5" in source_parts
+    if looks_like_h5 and target_bucket != h5_bucket:
+        raise ReleaseError(
+            f"拒绝发布：这次要传的是 H5 构建（{args.dist}），但目标桶是 {target_bucket}。\n"
+            f"H5 站点是独立桶 {h5_bucket}，误发到营销站桶会直接覆盖官网根目录。\n"
+            f"正确命令：python3 scripts/release.py r2 --bucket {h5_bucket} --dist {args.dist} ..."
+        )
+
     if args.dry_run:
         version = next_version()
         print("📋 dry-run 发布计划（不创建 tag、不上传、不写记录）")
         print(f"   预览版本号: {version}（正式执行时重算）")
         print(f"   文件数量:   {len(entries)}（{human_size(total_size)}）")
-        print(f"   目标桶:     {os.environ.get('R2_BUCKET') or DEFAULT_BUCKET}")
+        print(f"   目标桶:     {target_bucket}")
         print(f"   版本目录:   releases/{version}/")
         promote_prefix = (args.prefix or "").strip("/")
         promote_where = f"{promote_prefix}/" if promote_prefix else "桶根目录"
