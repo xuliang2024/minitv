@@ -182,22 +182,25 @@ function FeedSlot({
           <span className="rail-label">{t(locale, "share")}</span>
         </button>
       </div>
-      <div className="meta">
-        <h2>{drama.title}</h2>
-        <div className="line">
-          <span className="ep-chip">{t(locale, "episode_chip", { number: episode.episode_number })}</span>
-          <span>{tags}</span>
-        </div>
-      </div>
-      <button className="select-pill" onClick={() => onOpenDrama(drama.id)}>
-        <IconEpisodes size={15} />
-        <span>{t(locale, "select")}</span>
-      </button>
       {finished && (
-        <button className="select-pill" style={{ bottom: 132, background: "var(--red)", color: "#fff" }} onClick={() => onOpenDrama(drama.id)}>
-          {t(locale, "all_episodes", { count: drama.published_episode_count })}
+        <button className="next-cta" onClick={() => onOpenDrama(drama.id)}>
+          <IconEpisodes size={16} />
+          <span>{t(locale, "all_episodes", { count: drama.published_episode_count })}</span>
         </button>
       )}
+      <div className="meta-row">
+        <div className="meta">
+          <h2>{drama.title}</h2>
+          <div className="line">
+            <span className="ep-chip">{t(locale, "episode_chip", { number: episode.episode_number })}</span>
+            {tags && <span className="meta-tags">{tags}</span>}
+          </div>
+        </div>
+        <button className="select-pill" onClick={() => onOpenDrama(drama.id)}>
+          <IconEpisodes size={15} />
+          <span>{t(locale, "select")}</span>
+        </button>
+      </div>
     </div>
   );
 }
