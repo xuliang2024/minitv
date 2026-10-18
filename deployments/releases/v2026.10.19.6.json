@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.6",
+  "target": "r2",
+  "status": "published",
+  "sha": "88ef024648bb6c2f94f18487bcb58dbc1b147971",
+  "short_sha": "88ef0246",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.6/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "750ebdc610cd4880d63e3cf9e67834ca05a56f193faed82df91ce6060b656cab",
+  "files": [
+    {
+      "path": "assets/index-CqY83ONS.js",
+      "size": 785640
+    },
+    {
+      "path": "assets/index-zXK9zXBH.css",
+      "size": 26087
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T07:41:19+08:00",
+  "finished_at": "2026-10-19T07:41:41+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 88879,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "登录模块：邮箱验证码 + Google 入口；我页账户中心",
+  "dirty": false
+}
