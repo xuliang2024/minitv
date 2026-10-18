@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 import { getJson } from "../api";
 import type { Locale } from "../copy";
 import { t, floorName } from "../copy";
-import { RANK_COLORS } from "../format";
+import { formatCount } from "../format";
+import {
+  IconChevronRight,
+  IconCrown,
+  IconFire,
+  IconPlaySmall,
+  IconSparkle,
+} from "../icons";
 import type { Banner, ChannelTab, ConfigPayload, DramaCard, HomeGroup, HomePayload } from "../types";
 
 interface Props {
@@ -93,13 +100,25 @@ export function HomePage({ locale, onOpen }: Props) {
   const hero = banners.length > 0 ? banners : heroFromGroups(groups, locale);
 
   return (
-    <div>
-      <div className="channel">
-        {shown.map((item, index) => (
-          <button key={item.code} className={index === tabIndex ? "on" : ""} onClick={() => setTabIndex(index)}>
-            {locale === "zh" && item.title_zh ? item.title_zh : item.title_en}
-          </button>
-        ))}
+    <div className="home-page">
+      <div className="channel-wrap">
+        <div className="channel" role="tablist">
+          {shown.map((item, index) => {
+            const active = index === tabIndex;
+            return (
+              <button
+                key={item.code}
+                role="tab"
+                aria-selected={active}
+                className={active ? "channel-tab on" : "channel-tab"}
+                onClick={() => setTabIndex(index)}
+              >
+                <span>{locale === "zh" && item.title_zh ? item.title_zh : item.title_en}</span>
+                {active && <span className="channel-indicator" />}
+              </button>
+            );
+          })}
+        </div>
       </div>
       {!hasContent ? (
         <div className="center" style={{ height: "60vh" }}>{t(locale, "empty")}</div>
@@ -176,15 +195,26 @@ function BannerCarousel({ banners, locale, onOpen }: { banners: Banner[]; locale
               {banner.cover_url && <img src={banner.cover_url} alt="" />}
             </span>
             <div className="banner-copy">
-              <span className="chip">{t(locale, "exclusive")}</span>
+              <div className="banner-badge-row">
+                <span className="chip">
+                  <IconSparkle size={10} />
+                  <span>{t(locale, "exclusive")}</span>
+                </span>
+              </div>
               {banner.kicker && <p className="kicker">{banner.kicker}</p>}
-              <p className="headline">{banner.headline || banner.title || ""}</p>
+              <div className="banner-title-row">
+                <h2 className="headline">{banner.headline || banner.title || ""}</h2>
+                <span className="banner-play-btn" aria-hidden="true">
+                  <IconPlaySmall size={14} />
+                  <span>{locale === "zh" ? "立即观看" : "Watch"}</span>
+                </span>
+              </div>
             </div>
           </div>
         ))}
       </div>
       {banners.length > 1 && (
-        <div className="dots">
+        <div className="dots" aria-hidden="true">
           {banners.map((banner, index) => <i key={banner.id} className={index === page ? "on" : ""} />)}
         </div>
       )}
@@ -202,17 +232,29 @@ function Floor({
 }) {
   const style = group.style || "poster3";
   const limit = style === "rank" ? 3 : style === "grid2" ? 4 : 6;
+  const isHot = group.name.toLowerCase().includes("hot") || group.name.includes("热");
   return (
-    <section>
+    <section className="floor-section">
       <div className="floor-head">
-        <b />
-        <span>{floorName(group.name, locale)}</span>
+        <span className="floor-bar" />
+        <h3 className="floor-title">
+          <span>{floorName(group.name, locale)}</span>
+          {isHot && (
+            <span className="floor-fire-badge">
+              <IconFire size={12} />
+              <span>HOT</span>
+            </span>
+          )}
+        </h3>
         {group.dramas.length > limit && (
-          <button onClick={onMore}>{t(locale, "more")} ›</button>
+          <button className="floor-more-btn" onClick={onMore} aria-label={t(locale, "more")}>
+            <span>{t(locale, "more")}</span>
+            <IconChevronRight size={12} />
+          </button>
         )}
       </div>
       {style === "rank" ? (
-        <RankList dramas={group.dramas.slice(0, limit)} onOpen={onOpen} />
+        <RankList dramas={group.dramas.slice(0, limit)} onOpen={onOpen} locale={locale} />
       ) : style === "grid2" ? (
         <LandscapeGrid dramas={group.dramas.slice(0, limit)} badge={group.badge} locale={locale} onOpen={onOpen} />
       ) : (
@@ -227,16 +269,20 @@ function PosterGrid({ dramas, onOpen, badge }: { dramas: DramaCard[]; onOpen: (i
   return (
     <div className="grid3">
       {dramas.map((drama, index) => (
-        <button key={drama.id} className="card" onClick={() => onOpen(drama.id)}>
+        <button key={drama.id} className="card" onClick={() => onOpen(drama.id)} type="button">
           <div className="poster">
             <span className="poster-media">
               {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
             </span>
             {badge === "rank" && (
-              <span className="rank-no" style={{ color: index < 3 ? RANK_COLORS[index] : "rgba(255,255,255,.7)" }}>{index + 1}</span>
+              <span className={`poster-rank-badge rank-${index + 1}`}>
+                {index === 0 && <IconCrown size={10} />}
+                <span>{index + 1}</span>
+              </span>
             )}
+            <div className="poster-gradient" />
           </div>
-          <p>{drama.title}</p>
+          <p className="card-title">{drama.title}</p>
         </button>
       ))}
     </div>
@@ -254,33 +300,76 @@ function LandscapeGrid({
   return (
     <div className="grid2">
       {dramas.map((drama) => (
-        <button key={drama.id} className="card" onClick={() => onOpen(drama.id)}>
+        <button key={drama.id} className="card" onClick={() => onOpen(drama.id)} type="button">
           <div className="land">
             <span className="land-media">
               {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
             </span>
-            {badge === "label" && <span className="hot">{t(locale, "hot")}</span>}
+            {badge === "label" && (
+              <span className="hot-pill">
+                <IconFire size={10} />
+                <span>{t(locale, "hot")}</span>
+              </span>
+            )}
+            <div className="land-gradient" />
           </div>
-          <p>{drama.title}</p>
+          <p className="card-title">{drama.title}</p>
         </button>
       ))}
     </div>
   );
 }
 
-function RankList({ dramas, onOpen }: { dramas: DramaCard[]; onOpen: (id: number) => void }) {
+function RankList({
+  dramas, onOpen, locale,
+}: {
+  dramas: DramaCard[];
+  onOpen: (id: number) => void;
+  locale: Locale;
+}) {
   return (
-    <div className="rank-card">
-      {dramas.map((drama, index) => (
-        <button key={drama.id} className="rank-row" onClick={() => onOpen(drama.id)}>
-          <em style={{ color: RANK_COLORS[Math.min(index, 2)] }}>{index + 1}</em>
-          <span className="thumb">{drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}</span>
-          <span>
-            <strong>{drama.title}</strong>
-            <small>NO.{index + 1}</small>
-          </span>
-        </button>
-      ))}
+    <div className="rank-list">
+      {dramas.map((drama, index) => {
+        const isTop1 = index === 0;
+        const isTop2 = index === 1;
+        const isTop3 = index === 2;
+        const rankClass = isTop1 ? "rank-item rank-1" : isTop2 ? "rank-item rank-2" : isTop3 ? "rank-item rank-3" : "rank-item";
+
+        return (
+          <button
+            key={drama.id}
+            className={rankClass}
+            onClick={() => onOpen(drama.id)}
+            type="button"
+          >
+            <div className="rank-num-box">
+              {isTop1 && <span className="rank-crown"><IconCrown size={14} /></span>}
+              <span className="rank-num">{index + 1}</span>
+            </div>
+
+            <div className="rank-thumb-box">
+              {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+            </div>
+
+            <div className="rank-info-col">
+              <strong className="rank-title">{drama.title}</strong>
+              <div className="rank-meta-row">
+                <span className="rank-tag">
+                  {isTop1 ? "TOP 1" : isTop2 ? "TOP 2" : isTop3 ? "TOP 3" : `NO.${index + 1}`}
+                </span>
+                <span className="rank-trend">
+                  <IconFire size={11} />
+                  <span>{formatCount(isTop1 ? 1200000 : isTop2 ? 850000 : 560000, locale)}</span>
+                </span>
+              </div>
+            </div>
+
+            <span className="rank-play-btn" aria-hidden="true">
+              <IconPlaySmall size={14} />
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

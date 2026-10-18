@@ -189,3 +189,43 @@ export function IconChevronUp({ size = 16 }: { size?: number }) {
     </svg>
   );
 }
+
+export function IconChevronRight({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
+}
+
+export function IconFire({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 23c4.97 0 9-3.8 9-8.5 0-3.32-2.12-6.22-3.82-7.85-.62-.59-1.63-.19-1.7.67-.14 1.83-1.03 3.68-2.48 4.68-.2.14-.48.06-.57-.16-.62-1.46-1.57-4.13-1.43-7.84.03-.78-.71-1.37-1.45-1.12C5.9 4.2 3 8.87 3 14.5 3 19.2 7.03 23 12 23z" />
+    </svg>
+  );
+}
+
+export function IconCrown({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M2.5 19h19a1 1 0 0 1 1 1v1.5a.5.5 0 0 1-.5.5h-20a.5.5 0 0 1-.5-.5V20a1 1 0 0 1 1-1zm1.2-14.2a1.2 1.2 0 1 1 2 1.3L3.8 17h16.4l-1.9-10.9a1.2 1.2 0 1 1 2-1.3l2.8 11.2a1 1 0 0 1-.97 1.24H1.87a1 1 0 0 1-.97-1.24l2.8-11.2zm8.3-2.3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm0 4.2l3 7.8H9l3-7.8z" />
+    </svg>
+  );
+}
+
+export function IconPlaySmall({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ transform: "translateX(1px)" }}>
+      <polygon points="6 4 19 12 6 20" />
+    </svg>
+  );
+}
+
+export function IconSparkle({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 0l2.8 9.2L24 12l-9.2 2.8L12 24l-2.8-9.2L0 12l9.2-2.8L12 0z" />
+    </svg>
+  );
+}

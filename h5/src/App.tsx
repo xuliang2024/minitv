@@ -39,7 +39,14 @@ export function App() {
     <div className="app">
       {!playing && (
         <header className="topbar">
-          {searching ? null : tab === "home" ? <div className="brand"><i>M</i>iniTV</div> : <h1>{t(locale, TABS.find((item) => item.id === tab)!.key)}</h1>}
+          {searching ? null : tab === "home" ? (
+            <div className="brand" role="heading" aria-level={1}>
+              <span className="brand-m">M</span>
+              <span className="brand-rest">iniTV</span>
+            </div>
+          ) : (
+            <h1>{t(locale, TABS.find((item) => item.id === tab)!.key)}</h1>
+          )}
           <span style={{ flex: 1 }} />
           <button className="icon-btn" onClick={switchLocale}>{locale === "zh" ? "EN" : "中"}</button>
           {!searching && (
