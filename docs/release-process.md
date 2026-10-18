@@ -72,9 +72,17 @@ python3 scripts/release.py r2 --dist admin/dist --source admin --prefix admin \
 独立 H5 用单独的桶 `minitv-h5`，不和官网、管理后台共用 `minitv-web`：
 
 ```bash
-cd h5 && VITE_API_BASE=https://api.minitv.us npm run build
+cd h5 && npm run build   # h5/.env.production 已固定 VITE_API_BASE=https://api.minitv.us
 python3 scripts/release.py r2 --dist h5/dist --source h5 --bucket minitv-h5 \
   --verify-url https://h5.minitv.us --note "H5"
+```
+
+⚠️ `--bucket minitv-h5` 不能漏。漏了会退化成 `minitv-web` 并把 H5 构建**覆盖到官网根目录**（2026-10-19 踩过一次，靠 `release.py rollback r2 --to <上一版>` 恢复）。现在 `release.py` 已加护栏：`dist`/`source` 路径含 `h5` 而目标桶不是 `minitv-h5` 时直接拒绝发布。
+
+⚠️ 生产构建必须带 `VITE_API_BASE`，否则打出来的是同源 `/v1` 请求，R2 静态站没有反代，接口全 404（首屏直接 "Could not load"）。`h5/.env.production` 已提交并固定该变量；shell 内联的 `VITE_API_BASE=` 仍然优先，本地联调可临时覆盖。自检：
+
+```bash
+grep -c "api.minitv.us" h5/dist/assets/*.js   # 必须 ≥ 1
 ```
 
 `h5.minitv.us` 已挂到该桶（2026-10-17）。根路径 Rewrite 规则 id `c6d51b1aa07b43eda518c23e92d78d36`：`http.host eq "h5.minitv.us" and path eq "/"` → `/index.html`。桶公开策略是 `CnamesOnly`，允许列表只有 `h5.minitv.us`。允许列表要这样写，`access` 放 query、域名放 `cname`，放 JSON body 不会生效：
