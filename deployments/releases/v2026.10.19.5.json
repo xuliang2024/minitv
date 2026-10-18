@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.5",
+  "target": "server",
+  "status": "published",
+  "sha": "236478b81073ef01b8701e0fe5f4fed91a0efb0d",
+  "short_sha": "236478b8",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T07:35:49+08:00",
+  "finished_at": "2026-10-19T07:36:03+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 87001,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "账号登录：统一邮箱认证 + providers + 播放社交字段（--allow-dirty：仓库存在其他会话未提交改动，本次仅提交 auth 相关文件）",
+  "dirty": true
+}
