@@ -3,6 +3,7 @@ import { getJson } from "../api";
 import type { Locale } from "../copy";
 import { t, floorName } from "../copy";
 import { formatCount } from "../format";
+import { IMG, thumb } from "../img";
 import {
   IconChevronRight,
   IconCrown,
@@ -177,7 +178,7 @@ function BannerCarousel({ banners, locale, onOpen }: { banners: Banner[]; locale
           setPage(Math.round(el.scrollLeft / el.clientWidth));
         }}
       >
-        {banners.map((banner) => (
+        {banners.map((banner, index) => (
           <div
             key={banner.id}
             className="banner-slide"
@@ -192,7 +193,14 @@ function BannerCarousel({ banners, locale, onOpen }: { banners: Banner[]; locale
             }}
           >
             <span className="banner-media">
-              {banner.cover_url && <img src={banner.cover_url} alt="" />}
+              {banner.cover_url && (
+                <img
+                  src={thumb(banner.cover_url, IMG.banner, 80)}
+                  alt=""
+                  loading={index === 0 ? "eager" : "lazy"}
+                  decoding="async"
+                />
+              )}
             </span>
             <div className="banner-copy">
               <div className="banner-badge-row">
@@ -272,7 +280,15 @@ function PosterGrid({ dramas, onOpen, badge }: { dramas: DramaCard[]; onOpen: (i
         <button key={drama.id} className="card" onClick={() => onOpen(drama.id)} type="button">
           <div className="poster">
             <span className="poster-media">
-              {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+              {drama.cover_url && (
+                <img
+                  className="cover"
+                  src={thumb(drama.cover_url, IMG.card)}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
+              )}
             </span>
             {badge === "rank" && (
               <span className={`poster-rank-badge rank-${index + 1}`}>
@@ -303,7 +319,15 @@ function LandscapeGrid({
         <button key={drama.id} className="card" onClick={() => onOpen(drama.id)} type="button">
           <div className="land">
             <span className="land-media">
-              {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+              {drama.cover_url && (
+                <img
+                  className="cover"
+                  src={thumb(drama.cover_url, IMG.landscape)}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
+              )}
             </span>
             {badge === "label" && (
               <span className="hot-pill">
@@ -348,7 +372,15 @@ function RankList({
             </div>
 
             <div className="rank-thumb-box">
-              {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+              {drama.cover_url && (
+                <img
+                  className="cover"
+                  src={thumb(drama.cover_url, IMG.rank)}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
+              )}
             </div>
 
             <div className="rank-info-col">

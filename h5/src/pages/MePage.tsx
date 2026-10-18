@@ -3,6 +3,7 @@ import { getFavorites } from "../api";
 import { useAuth } from "../auth/AuthProvider";
 import type { Locale } from "../copy";
 import { t } from "../copy";
+import { IMG, thumb } from "../img";
 import { IconBack, IconChevronRight } from "../icons";
 import type { FavoritesPayload } from "../types";
 
@@ -53,7 +54,7 @@ export function MePage({ locale, onOpen }: { locale: Locale; onOpen: (id: number
     <div className="me">
       <div className="me-hero">
         <div className="me-avatar">
-          {user.avatar_url ? <img src={user.avatar_url} alt="" /> : initial}
+          {user.avatar_url ? <img src={thumb(user.avatar_url, IMG.avatar)} alt="" /> : initial}
         </div>
         <h2>{user.display_name || user.email}</h2>
         {user.email && <p>{user.email}</p>}
@@ -124,7 +125,15 @@ function FavoritesView({
             <button key={drama.id} className="card" onClick={() => onOpen(drama.id)} type="button">
               <div className="poster">
                 <span className="poster-media">
-                  {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+                  {drama.cover_url && (
+                    <img
+                      className="cover"
+                      src={thumb(drama.cover_url, IMG.card)}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  )}
                 </span>
                 <div className="poster-gradient" />
               </div>

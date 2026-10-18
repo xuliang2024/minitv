@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthProvider";
 import type { Locale } from "../copy";
 import { t } from "../copy";
 import { formatCount } from "../format";
+import { IMG, thumb } from "../img";
 import { toast } from "../ui/toast";
 import { IconComment, IconEpisodes, IconHeart, IconShare } from "../icons";
 import { EpisodeView } from "../player/EpisodeView";
@@ -160,7 +161,15 @@ function FeedSlot({
       <div className="scrim" />
       <div className="rail">
         <div className="avatar" onClick={() => onOpenDrama(drama.id)} role="button" tabIndex={0}>
-          {drama.cover_url && <img className="cover" src={drama.cover_url} alt="" />}
+          {drama.cover_url && (
+            <img
+              className="cover"
+              src={thumb(drama.cover_url, IMG.avatar)}
+              alt=""
+              loading="lazy"
+              decoding="async"
+            />
+          )}
         </div>
         <button
           type="button"
