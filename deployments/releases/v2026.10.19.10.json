@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.10",
+  "target": "r2",
+  "status": "published",
+  "sha": "e955639e8b710203373636bb9f764673e305ea56",
+  "short_sha": "e955639e",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.10/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "d226e7a234f4a7da0ba31a3b1c26e7369c61957c6215d9bc6c9b4f9dc8366a4e",
+  "files": [
+    {
+      "path": "assets/index-BtWX_0lg.css",
+      "size": 27169
+    },
+    {
+      "path": "assets/index-q_2fNQfr.js",
+      "size": 789194
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T07:58:41+08:00",
+  "finished_at": "2026-10-19T07:58:48+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 99531,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "图片按场景请求 Bunny 缩略图（banner 960 / 卡片 480 / 横图 720 / 榜单 180），首屏体积约降至 1/4",
+  "dirty": true
+}
