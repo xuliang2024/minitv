@@ -6,10 +6,14 @@ import { formatCount } from "../format";
 import {
   IconBack,
   IconChevronUp,
+  IconClose,
   IconComment,
   IconEpisodes,
   IconHeart,
+  IconMoreDots,
+  IconQuality,
   IconShare,
+  IconSpeed,
   IconStar,
 } from "../icons";
 import { EpisodeView } from "../player/EpisodeView";
@@ -22,6 +26,7 @@ interface Props {
 }
 
 const RANGE = 30;
+const SPEED_OPTIONS = [0.75, 1.0, 1.25, 1.5, 2.0];
 
 /** The drama's own page: every episode, opened at the resume point. Finishing one jumps to the next. */
 export function PlayPage({ dramaId, locale, onBack }: Props) {
@@ -29,10 +34,34 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
   const [error, setError] = useState(false);
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
-  const [sheet, setSheet] = useState<"episodes" | "synopsis" | null>(null);
+  const [sheet, setSheet] = useState<"episodes" | "synopsis" | "settings" | null>(null);
   const [liked, setLiked] = useState(false);
   const [favorited, setFavorited] = useState(false);
+  const [speed, setSpeed] = useState<number>(() => {
+    const saved = localStorage.getItem("minitv_speed");
+    return saved ? parseFloat(saved) : 1.0;
+  });
+  const [quality, setQuality] = useState<string>(() => {
+    return localStorage.getItem("minitv_quality") || "Auto";
+  });
+  const [availableQualities, setAvailableQualities] = useState<string[]>([
+    "Auto",
+    "1080P",
+    "720P",
+    "480P",
+    "360P",
+  ]);
   const startY = useRef(0);
+
+  const changeSpeed = (s: number) => {
+    setSpeed(s);
+    localStorage.setItem("minitv_speed", String(s));
+  };
+
+  const changeQuality = (q: string) => {
+    setQuality(q);
+    localStorage.setItem("minitv_quality", q);
+  };
 
   const load = () => {
     setError(false);
@@ -87,6 +116,13 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
                   resumeSeconds={episode.progress_seconds}
                   active
                   playable
+                  playbackSpeed={speed}
+                  quality={quality}
+                  onQualitiesChange={(levels) => {
+                    if (levels && levels.length > 0) {
+                      setAvailableQualities(levels);
+                    }
+                  }}
                   onFinished={() => go(position + 1)}
                 />
               )
@@ -99,6 +135,15 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
           <IconBack size={20} />
         </button>
         <span className="back-title">{t(locale, "episode_short", { number: current.episode_number })}</span>
+        <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          className="icon-btn setting-btn"
+          onClick={() => setSheet("settings")}
+          aria-label={t(locale, "playback_settings")}
+        >
+          <IconMoreDots size={20} />
+        </button>
       </div>
       <div className="scrim" />
       <div className="rail">
@@ -171,7 +216,21 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
         <span style={{ flex: 1, textAlign: "left" }}>{t(locale, "all_episodes_bar", { count: payload.items.length })}</span>
         <IconChevronUp size={16} />
       </button>
-      {sheet && (
+      {sheet === "settings" && (
+        <>
+          <button className="sheet-mask" onClick={() => setSheet(null)} />
+          <PlaybackSettingsSheet
+            locale={locale}
+            speed={speed}
+            onSpeedChange={changeSpeed}
+            quality={quality}
+            onQualityChange={changeQuality}
+            availableQualities={availableQualities}
+            onClose={() => setSheet(null)}
+          />
+        </>
+      )}
+      {sheet && sheet !== "settings" && (
         <>
           <button className="sheet-mask" onClick={() => setSheet(null)} />
           <EpisodeSheet
@@ -184,6 +243,86 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
           />
         </>
       )}
+    </div>
+  );
+}
+
+function PlaybackSettingsSheet({
+  locale,
+  speed,
+  onSpeedChange,
+  quality,
+  onQualityChange,
+  availableQualities,
+  onClose,
+}: {
+  locale: Locale;
+  speed: number;
+  onSpeedChange: (s: number) => void;
+  quality: string;
+  onQualityChange: (q: string) => void;
+  availableQualities: string[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="sheet settings-sheet" role="dialog" aria-modal="true" aria-label={t(locale, "playback_settings")}>
+      <div className="sheet-handle" />
+      <header className="settings-header">
+        <h3>{t(locale, "playback_settings")}</h3>
+        <button type="button" className="close-btn" onClick={onClose} aria-label={t(locale, "close")}>
+          <IconClose size={18} />
+        </button>
+      </header>
+
+      <div className="settings-body">
+        {/* 倍速调节 */}
+        <div className="settings-group">
+          <div className="group-title">
+            <span className="group-icon"><IconSpeed size={18} /></span>
+            <span className="group-label">{t(locale, "speed")}</span>
+            <span className="group-current">{speed === 1.0 ? "1.0x" : `${speed}x`}</span>
+          </div>
+          <div className="pills-grid">
+            {SPEED_OPTIONS.map((val) => {
+              const active = Math.abs(val - speed) < 0.01;
+              return (
+                <button
+                  key={val}
+                  type="button"
+                  className={active ? "setting-pill on" : "setting-pill"}
+                  onClick={() => onSpeedChange(val)}
+                >
+                  {val === 1.0 ? "1.0x" : `${val}x`}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 分辨率/清晰度调节 */}
+        <div className="settings-group">
+          <div className="group-title">
+            <span className="group-icon"><IconQuality size={18} /></span>
+            <span className="group-label">{t(locale, "quality")}</span>
+            <span className="group-current">{quality === "Auto" ? t(locale, "auto_quality") : quality}</span>
+          </div>
+          <div className="pills-grid qualities">
+            {availableQualities.map((item) => {
+              const active = item.toLowerCase() === quality.toLowerCase();
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  className={active ? "setting-pill on" : "setting-pill"}
+                  onClick={() => onQualityChange(item)}
+                >
+                  {item === "Auto" ? t(locale, "auto_quality") : item}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

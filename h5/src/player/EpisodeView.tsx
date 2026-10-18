@@ -11,6 +11,9 @@ interface Props {
   active: boolean;
   /** When false the view never asks for a URL (locked episodes). */
   playable: boolean;
+  playbackSpeed?: number;
+  quality?: string;
+  onQualitiesChange?: (qualities: string[]) => void;
   onFinished?: () => void;
 }
 
@@ -19,13 +22,26 @@ interface Props {
  * start / 15s progress / complete. Analytics failures never stop playback.
  * Tokens live five minutes, so a URL fetched with the list would already be dead.
  */
-export function EpisodeView({ dramaId, episodeId, resumeSeconds = 0, active, playable, onFinished }: Props) {
+export function EpisodeView({
+  dramaId,
+  episodeId,
+  resumeSeconds = 0,
+  active,
+  playable,
+  playbackSpeed = 1.0,
+  quality = "Auto",
+  onQualitiesChange,
+  onFinished,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const handleRef = useRef<PlayerHandle | null>(null);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [failed, setFailed] = useState(false);
   const onFinishedRef = useRef(onFinished);
   onFinishedRef.current = onFinished;
+  const onQualitiesChangeRef = useRef(onQualitiesChange);
+  onQualitiesChangeRef.current = onQualitiesChange;
 
   useEffect(() => {
     if (!active || !playable) return;
@@ -61,9 +77,16 @@ export function EpisodeView({ dramaId, episodeId, resumeSeconds = 0, active, pla
           if (!cancelled && auth.allowed === false) setFailed(true);
           return;
         }
-        handle = attachHls(video, auth.url);
+        handle = attachHls(video, auth.url, (levels) => {
+          onQualitiesChangeRef.current?.(levels);
+        });
+        handleRef.current = handle;
+        if (quality) {
+          handle.setQuality(quality);
+        }
         const start = () => {
           if (resumeSeconds > 0) video.currentTime = resumeSeconds;
+          video.playbackRate = playbackSpeed;
           video.play().catch(() => setPaused(true));
           report("start", resumeSeconds);
           heartbeat = window.setInterval(() => report("progress", Math.floor(video.currentTime || 0)), 15000);
@@ -83,8 +106,21 @@ export function EpisodeView({ dramaId, episodeId, resumeSeconds = 0, active, pla
       video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("ended", finish);
       handle?.destroy();
+      handleRef.current = null;
     };
   }, [active, playable, dramaId, episodeId, resumeSeconds]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = playbackSpeed;
+  }, [playbackSpeed]);
+
+  useEffect(() => {
+    if (handleRef.current && quality) {
+      handleRef.current.setQuality(quality);
+    }
+  }, [quality]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -93,8 +129,11 @@ export function EpisodeView({ dramaId, episodeId, resumeSeconds = 0, active, pla
       video.pause();
       return;
     }
-    if (!paused) video.play().catch(() => undefined);
-  }, [active, paused]);
+    if (!paused) {
+      video.playbackRate = playbackSpeed;
+      video.play().catch(() => undefined);
+    }
+  }, [active, paused, playbackSpeed]);
 
   const toggle = () => {
     const video = videoRef.current;

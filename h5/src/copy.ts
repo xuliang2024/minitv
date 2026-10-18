@@ -23,6 +23,13 @@ const en: Record<string, string> = {
   coming: "Coming soon",
   share: "Share",
   favorite: "Favorite",
+  playback_settings: "Playback Settings",
+  speed: "Speed",
+  quality: "Quality",
+  auto_quality: "Auto",
+  sleep_timer: "Sleep Timer",
+  timer_off: "Off",
+  close: "Close",
 };
 
 const zh: Record<string, string> = {
@@ -50,6 +57,13 @@ const zh: Record<string, string> = {
   coming: "即将开放",
   share: "分享",
   favorite: "收藏",
+  playback_settings: "播放设置",
+  speed: "倍速",
+  quality: "清晰度",
+  auto_quality: "自动",
+  sleep_timer: "定时关闭",
+  timer_off: "关闭",
+  close: "关闭",
 };
 
 export type Locale = "en" | "zh";
