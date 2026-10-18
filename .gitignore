@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# public build target for the static H5 site (no secrets inside)
+!h5/.env.production
 
 # local runtimes
 .venv/
