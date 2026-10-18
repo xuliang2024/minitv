@@ -1,0 +1,19 @@
+{
+  "version": "rollback-v2026.10.17.3",
+  "action": "rollback",
+  "target": "r2",
+  "status": "published",
+  "to": "v2026.10.17.3",
+  "from_version": "v2026.10.19.1",
+  "files": 11,
+  "started_at": "2026-10-19T07:10:20+08:00",
+  "finished_at": "2026-10-19T07:10:34+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 77208,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "误将 H5 构建发布到 minitv-web 根目录，回滚官网至 v2026.10.17.3"
+}
