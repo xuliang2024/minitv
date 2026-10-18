@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.18.8",
+  "target": "r2",
+  "status": "published",
+  "sha": "70f5deb98100d0698bab90d7d577fbee68fc0400",
+  "short_sha": "70f5deb9",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.18.8/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "ddf8bfffdfbaeb1fb349bf30c9319fae57a7ae19e9a091914c94edbe2b0e2493",
+  "files": [
+    {
+      "path": "assets/index-BTB-kh_u.js",
+      "size": 774288
+    },
+    {
+      "path": "assets/index-C-yKI6KD.css",
+      "size": 21655
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-18T17:49:15+08:00",
+  "finished_at": "2026-10-18T17:49:59+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 38178,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "feat(h5): 播放详情页右上角增加播放设置按钮与倍速、分辨率切换弹窗",
+  "dirty": false
+}
