@@ -1142,7 +1142,8 @@ img { display: block; max-width: 100%; }
 .sk-card { aspect-ratio: 3 / 4; border-radius: 8px; }
 
 /* ---- auth sheet ---- */
-.auth-sheet { max-height: 88%; }
+.auth-mask { z-index: 11; }
+.auth-sheet { max-height: 88%; z-index: 12; }
 .auth-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 18px 10px;

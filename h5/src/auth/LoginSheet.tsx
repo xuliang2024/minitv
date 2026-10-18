@@ -175,7 +175,7 @@ function LoginForm({
 
   return (
     <>
-      <button className="sheet-mask" onClick={onClose} aria-label={t(locale, "close")} />
+      <button className="sheet-mask auth-mask" onClick={onClose} aria-label={t(locale, "close")} />
       <div className="sheet auth-sheet" role="dialog" aria-modal="true" aria-label={t(locale, "sign_in")} data-testid="login-sheet">
         <div className="sheet-handle" />
         <header className="auth-head">

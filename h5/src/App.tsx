@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { AuthProvider } from "./auth/AuthProvider";
+import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { LoginSheet } from "./auth/LoginSheet";
 import { loadLocale, saveLocale, t, type Locale } from "./copy";
 import { IconForYou, IconHome, IconMe, IconRewards, IconSearch } from "./icons";
@@ -33,6 +33,7 @@ export function App() {
 }
 
 function AppShell() {
+  const { loginOpen } = useAuth();
   const [locale, setLocale] = useState<Locale>(loadLocale);
   const [tab, setTab] = useState<Tab>("home");
   const [dramaId, setDramaId] = useState<number | null>(null);
@@ -82,7 +83,7 @@ function AppShell() {
           <div className="center">{t(locale, "coming")}</div>
         )}
       </main>
-      {!playing && !searching && (
+      {!playing && !searching && !loginOpen && (
         <nav className="tabs" role="tablist">
           {TABS.map((item) => {
             const active = item.id === tab;
