@@ -1,8 +1,11 @@
 import { useState, type ReactNode } from "react";
+import { AuthProvider } from "./auth/AuthProvider";
+import { LoginSheet } from "./auth/LoginSheet";
 import { loadLocale, saveLocale, t, type Locale } from "./copy";
 import { IconForYou, IconHome, IconMe, IconRewards, IconSearch } from "./icons";
 import { ForYouPage } from "./pages/ForYouPage";
 import { HomePage } from "./pages/HomePage";
+import { MePage } from "./pages/MePage";
 import { PlayPage } from "./pages/PlayPage";
 import { SearchPage } from "./pages/SearchPage";
 
@@ -22,6 +25,14 @@ const TABS: TabItem[] = [
 ];
 
 export function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  );
+}
+
+function AppShell() {
   const [locale, setLocale] = useState<Locale>(loadLocale);
   const [tab, setTab] = useState<Tab>("home");
   const [dramaId, setDramaId] = useState<number | null>(null);
@@ -65,6 +76,8 @@ export function App() {
           <HomePage locale={locale} onOpen={setDramaId} />
         ) : tab === "foryou" ? (
           <ForYouPage locale={locale} onOpenDrama={setDramaId} />
+        ) : tab === "me" ? (
+          <MePage locale={locale} />
         ) : (
           <div className="center">{t(locale, "coming")}</div>
         )}
@@ -90,6 +103,7 @@ export function App() {
           })}
         </nav>
       )}
+      <LoginSheet locale={locale} />
     </div>
   );
 }

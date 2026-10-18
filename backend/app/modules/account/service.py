@@ -104,7 +104,40 @@ def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 
+CODE_PURPOSES = ("login", "register", "bind")
+MAX_CODE_ATTEMPTS = 5
+
+
+def normalize_purpose(purpose: str) -> str:
+    """Only the three product flows may own a verification code."""
+    value = (purpose or "").strip().lower()
+    if value not in CODE_PURPOSES:
+        raise AccountError(422, "invalid purpose")
+    return value
+
+
+def _consume_code(session: Session, *, email: str, purpose: str, code: str) -> None:
+    """Verify the newest code for this email/purpose and burn it.
+
+    Shared by every flow so expiry, attempt limiting and single use cannot drift
+    between register and login.
+    """
+    row = session.scalar(
+        select(VerificationCode)
+        .where(VerificationCode.email == email, VerificationCode.purpose == purpose)
+        .order_by(VerificationCode.id.desc())
+    )
+    if row is None or row.expires_at < datetime.now(timezone.utc):
+        raise AccountError(400, "code expired")
+    if row.attempts >= MAX_CODE_ATTEMPTS or not hmac.compare_digest(row.code_hash, _hash_code(code)):
+        row.attempts += 1
+        session.commit()
+        raise AccountError(400, "invalid code")
+    session.delete(row)
+
+
 def issue_code(session: Session, *, email: str, purpose: str) -> str:
+    purpose = normalize_purpose(purpose)
     email = _normalize_email(email)
     client = get_redis()
     key = f"code_rate:{purpose}:{email}"
@@ -178,17 +211,7 @@ def _active_amount(session: Session, code: str, today: date | None = None) -> in
 
 def register(session: Session, *, email: str, code: str) -> tuple[User, str]:
     email = _normalize_email(email)
-    row = session.scalar(
-        select(VerificationCode)
-        .where(VerificationCode.email == email, VerificationCode.purpose == "register")
-        .order_by(VerificationCode.id.desc())
-    )
-    if row is None or row.expires_at < datetime.now(timezone.utc):
-        raise AccountError(400, "code expired")
-    if row.attempts >= 5 or not hmac.compare_digest(row.code_hash, _hash_code(code)):
-        row.attempts += 1
-        session.commit()
-        raise AccountError(400, "invalid code")
+    _consume_code(session, email=email, purpose="register", code=code)
     if session.scalar(select(User).where(User.email == email)):
         raise AccountError(409, "email already registered")
     user = _new_user(session, email=email, display_name=email.split("@")[0])
@@ -225,24 +248,32 @@ def _new_user(session: Session, *, email: str | None, display_name: str, avatar_
 def login_with_code(session: Session, *, email: str, code: str) -> tuple[User, str]:
     """Sign in an existing user. A missing account is a registration, not a login."""
     email = _normalize_email(email)
-    row = session.scalar(
-        select(VerificationCode)
-        .where(VerificationCode.email == email, VerificationCode.purpose == "login")
-        .order_by(VerificationCode.id.desc())
-    )
-    if row is None or row.expires_at < datetime.now(timezone.utc):
-        raise AccountError(400, "code expired")
-    if row.attempts >= 5 or not hmac.compare_digest(row.code_hash, _hash_code(code)):
-        row.attempts += 1
-        session.commit()
-        raise AccountError(400, "invalid code")
+    _consume_code(session, email=email, purpose="login", code=code)
     user = session.scalar(select(User).where(User.email == email))
     if user is None:
         raise AccountError(404, "email not registered")
-    session.delete(row)
     token = _issue_session(user)
     session.commit()
     return user, token
+
+
+def login_or_register_with_code(session: Session, *, email: str, code: str) -> tuple[User, str, bool]:
+    """One door for the client: the same code signs in, or signs up.
+
+    Registration and sign-in used to be two purposes behind two endpoints, which
+    forced the client to guess whether an email existed. Here the code already
+    proves ownership, so a missing account is simply created.
+    """
+    email = _normalize_email(email)
+    _consume_code(session, email=email, purpose="login", code=code)
+    user = session.scalar(select(User).where(User.email == email))
+    created = False
+    if user is None:
+        user = _new_user(session, email=email, display_name=email.split("@")[0])
+        created = True
+    token = _issue_session(user)
+    session.commit()
+    return user, token, created
 
 
 def login_with_google(session: Session, *, id_token: str) -> tuple[User, str, bool]:

@@ -30,6 +30,13 @@ export function setAuthToken(value: string | null) {
   else localStorage.removeItem("minitv_h5_token");
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+
+/** The session died (expired token, revoked). Let the auth layer reset to guest. */
+export function onUnauthorized(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
 async function send(method: string, path: string, body?: unknown): Promise<unknown> {
   let response: Response;
   try {
@@ -45,7 +52,20 @@ async function send(method: string, path: string, body?: unknown): Promise<unkno
   } catch {
     throw new ApiError(0, "network");
   }
-  if (!response.ok) throw new ApiError(response.status, `HTTP ${response.status}`);
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const data = (await response.json()) as { detail?: unknown };
+      if (typeof data.detail === "string") detail = data.detail;
+    } catch {
+      /* body was not JSON */
+    }
+    // A failed sign-in is a wrong code, not a dead session.
+    if (response.status === 401 && !path.startsWith("/v1/auth/") && unauthorizedHandler) {
+      unauthorizedHandler();
+    }
+    throw new ApiError(response.status, detail);
+  }
   return response.json();
 }
 
@@ -55,4 +75,46 @@ export function getJson<T>(path: string): Promise<T> {
 
 export function postJson<T>(path: string, body: unknown): Promise<T> {
   return send("POST", path, body) as Promise<T>;
+}
+
+export interface AuthProviders {
+  email: { enabled: boolean };
+  google: { enabled: boolean; client_id: string | null };
+}
+
+export interface MeProfile {
+  id: number;
+  public_id: string;
+  email: string | null;
+  display_name: string;
+  avatar_url: string;
+  coins: number;
+}
+
+export interface Session {
+  token: string;
+  user_id: number;
+  public_id: string;
+  created?: boolean;
+}
+
+/** Which sign-in methods this deployment actually supports. */
+export function getAuthProviders(): Promise<AuthProviders> {
+  return getJson<AuthProviders>("/v1/auth/providers");
+}
+
+export function sendEmailCode(email: string): Promise<{ sent: boolean }> {
+  return postJson<{ sent: boolean }>("/v1/auth/email/code", { email, purpose: "login" });
+}
+
+export function authenticateEmail(email: string, code: string): Promise<Session> {
+  return postJson<Session>("/v1/auth/email/authenticate", { email, code });
+}
+
+export function loginWithGoogle(idToken: string): Promise<Session> {
+  return postJson<Session>("/v1/auth/google", { id_token: idToken });
+}
+
+export function getMe(): Promise<MeProfile> {
+  return getJson<MeProfile>("/v1/me");
 }

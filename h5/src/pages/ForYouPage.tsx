@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJson, postJson } from "../api";
+import { useAuth } from "../auth/AuthProvider";
 import type { Locale } from "../copy";
 import { t } from "../copy";
 import { formatCount } from "../format";
@@ -113,6 +114,7 @@ function FeedSlot({
 }) {
   const [finished, setFinished] = useState(false);
   const [liked, setLiked] = useState(false);
+  const { requireAuth } = useAuth();
   const drama = item.drama;
   const episode = item.episode;
   const tags = drama.tags.map((tag) => `#${tag}`).join(" ");
@@ -124,13 +126,15 @@ function FeedSlot({
 
   const toggleLike = () => {
     const next = !liked;
-    setLiked(next);
-    postJson("/v1/reactions", {
-      target_type: "episode",
-      target_id: episode.id,
-      kind: "like",
-      remove: !next,
-    }).catch(() => undefined);
+    requireAuth(() => {
+      setLiked(next);
+      postJson("/v1/reactions", {
+        target_type: "episode",
+        target_id: episode.id,
+        kind: "like",
+        remove: !next,
+      }).catch(() => setLiked(!next));
+    });
   };
 
   return (

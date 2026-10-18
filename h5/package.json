@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "verify:home": "node scripts/verify-home.mjs"
+    "verify:home": "node scripts/verify-home.mjs",
+    "verify:auth": "node scripts/verify-auth.mjs"
   },
   "dependencies": {
     "hls.js": "^1.6.16",

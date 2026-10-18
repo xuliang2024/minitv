@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getJson, postJson } from "../api";
+import { useAuth } from "../auth/AuthProvider";
 import type { Locale } from "../copy";
 import { t } from "../copy";
 import { formatCount } from "../format";
@@ -30,6 +31,7 @@ const SPEED_OPTIONS = [0.75, 1.0, 1.25, 1.5, 2.0];
 
 /** The drama's own page: every episode, opened at the resume point. Finishing one jumps to the next. */
 export function PlayPage({ dramaId, locale, onBack }: Props) {
+  const { requireAuth } = useAuth();
   const [payload, setPayload] = useState<PlayPayload | null>(null);
   const [error, setError] = useState(false);
   const [index, setIndex] = useState(0);
@@ -37,6 +39,7 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
   const [sheet, setSheet] = useState<"episodes" | "synopsis" | "settings" | null>(null);
   const [liked, setLiked] = useState(false);
   const [favorited, setFavorited] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
   const [speed, setSpeed] = useState<number>(() => {
     const saved = localStorage.getItem("minitv_speed");
     return saved ? parseFloat(saved) : 1.0;
@@ -71,6 +74,9 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
         const resumeId = data.resume?.episode_id;
         const start = data.items.findIndex((item) => item.id === resumeId);
         setIndex(start < 0 ? 0 : start);
+        setLiked(data.drama.liked);
+        setFavorited(data.drama.favorited);
+        setLikeCount(data.drama.like_count);
         setPayload(data);
       })
       .catch(() => setError(true));
@@ -88,8 +94,24 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
     setIndex(next);
     setExpanded(false);
   };
-  const react = (kind: "like" | "favorite", remove: boolean) => {
-    postJson("/v1/reactions", { target_type: "drama", target_id: dramaId, kind, remove }).catch(() => undefined);
+  const toggleReaction = (kind: "like" | "favorite") => {
+    const active = kind === "like" ? liked : favorited;
+    const next = !active;
+    const apply = (value: boolean) => {
+      if (kind === "like") {
+        setLiked(value);
+        setLikeCount((count) => Math.max(0, count + (value ? 1 : -1)));
+      } else {
+        setFavorited(value);
+      }
+    };
+    // Signed out: ask for a session, then replay this exact tap.
+    requireAuth(() => {
+      apply(next);
+      postJson("/v1/reactions", { target_type: "drama", target_id: dramaId, kind, remove: !next }).catch(() =>
+        apply(!next),
+      );
+    });
   };
 
   return (
@@ -150,15 +172,11 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
         <button
           type="button"
           className={liked ? "rail-btn on" : "rail-btn"}
-          onClick={() => {
-            const next = !liked;
-            setLiked(next);
-            react("like", !next);
-          }}
+          onClick={() => toggleReaction("like")}
           aria-label="Like"
         >
           <span className="rail-icon"><IconHeart active={liked} size={30} /></span>
-          <span className="rail-label">{formatCount(payload.drama.play_count, locale)}</span>
+          <span className="rail-label">{formatCount(likeCount, locale)}</span>
         </button>
 
         <button
@@ -174,11 +192,7 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
         <button
           type="button"
           className={favorited ? "rail-btn on" : "rail-btn"}
-          onClick={() => {
-            const next = !favorited;
-            setFavorited(next);
-            react("favorite", !next);
-          }}
+          onClick={() => toggleReaction("favorite")}
           aria-label={t(locale, "favorite")}
         >
           <span className="rail-icon"><IconStar active={favorited} size={30} /></span>

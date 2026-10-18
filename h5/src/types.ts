@@ -103,6 +103,10 @@ export interface PlayPayload {
     free_episode_count: number;
     coin_price_per_episode: number;
     play_count: number;
+    like_count: number;
+    comment_count: number;
+    liked: boolean;
+    favorited: boolean;
   };
   items: PlayEpisode[];
   resume: { episode_id: number; position_seconds: number } | null;

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -57,7 +58,7 @@ class PlaybackIn(BaseModel):
 
 class CodeIn(BaseModel):
     email: str
-    purpose: str = "register"
+    purpose: str = "login"
 
 
 class RegisterIn(BaseModel):
@@ -156,6 +157,31 @@ def email_code(body: CodeIn, db: Session = Depends(get_db)):
     except AccountError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     return {"sent": True}
+
+
+@router.get("/auth/providers")
+def auth_providers():
+    """What this deployment can actually sign in with.
+
+    The client hides anything that is off instead of rendering a button that
+    cannot work. The Google client id is served from the environment so a new
+    origin does not need an H5 rebuild.
+    """
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    return {
+        "email": {"enabled": True},
+        "google": {"enabled": bool(client_id), "client_id": client_id or None},
+    }
+
+
+@router.post("/auth/email/authenticate")
+def email_authenticate(body: LoginIn, db: Session = Depends(get_db)):
+    """Sign in with a code, creating the account on first use."""
+    try:
+        user, token, created = accounts.login_or_register_with_code(db, email=body.email, code=body.code)
+    except AccountError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {"token": token, "user_id": user.id, "public_id": user.public_id, "created": created}
 
 
 @router.post("/auth/email/register")
@@ -474,6 +500,27 @@ def drama_play(drama_id: int, user: User | None = Depends(_optional_user), db: S
         resume = {"episode_id": first["id"], "position_seconds": 0} if first else None
 
     tags = _tags_of(db, drama.id)
+    like_count = db.scalar(
+        select(func.count())
+        .select_from(Reaction)
+        .where(Reaction.target_type == "drama", Reaction.target_id == drama.id, Reaction.kind == "like")
+    ) or 0
+    comment_count = db.scalar(
+        select(func.count())
+        .select_from(Comment)
+        .where(Comment.drama_id == drama.id, Comment.status == "approved")
+    ) or 0
+    mine: set[str] = set()
+    if uid is not None:
+        mine = set(
+            db.scalars(
+                select(Reaction.kind).where(
+                    Reaction.user_id == uid,
+                    Reaction.target_type == "drama",
+                    Reaction.target_id == drama.id,
+                )
+            ).all()
+        )
     return {
         "drama": {
             "id": drama.id,
@@ -484,6 +531,10 @@ def drama_play(drama_id: int, user: User | None = Depends(_optional_user), db: S
             "free_episode_count": drama.free_episode_count,
             "coin_price_per_episode": drama.coin_price_per_episode,
             "play_count": drama.play_count,
+            "like_count": int(like_count),
+            "comment_count": int(comment_count),
+            "liked": "like" in mine,
+            "favorited": "favorite" in mine,
         },
         "items": items,
         "resume": resume,
