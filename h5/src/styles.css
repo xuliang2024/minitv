@@ -694,8 +694,8 @@ img { display: block; max-width: 100%; }
 .slot { height: 100%; flex: none; position: relative; background: #000; }
 .slot video { width: 100%; height: 100%; object-fit: cover; background: #000; }
 .scrim {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 240px; pointer-events: none;
-  background: linear-gradient(transparent, rgba(0,0,0,.7));
+  position: absolute; left: 0; right: 0; bottom: 0; height: 300px; pointer-events: none;
+  background: linear-gradient(transparent, rgba(0,0,0,.35) 42%, rgba(0,0,0,.72) 78%, rgba(0,0,0,.85));
 }
 .meta { position: absolute; left: 14px; right: 88px; bottom: 64px; }
 .play .meta { bottom: 78px; }
@@ -705,7 +705,7 @@ img { display: block; max-width: 100%; }
   position: absolute;
   left: 14px;
   right: 12px;
-  bottom: 56px;
+  bottom: 16px;
   display: flex;
   align-items: flex-end;
   gap: 10px;
@@ -768,7 +768,7 @@ img { display: block; max-width: 100%; }
 .rail {
   position: absolute;
   right: 8px;
-  bottom: 126px;
+  bottom: 96px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -852,7 +852,7 @@ img { display: block; max-width: 100%; }
   position: absolute;
   left: 14px;
   right: 14px;
-  bottom: 150px;
+  bottom: 104px;
   height: 46px;
   border: 0;
   border-radius: 23px;
