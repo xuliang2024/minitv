@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.18.7",
+  "target": "r2",
+  "status": "published",
+  "sha": "53c6f3699204491ce02db2c0821ad986ab6a9217",
+  "short_sha": "53c6f369",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.18.7/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "2f28916f415a2cf6c6ef9e32608bea279039e508197ad7949b226887204dd0b5",
+  "files": [
+    {
+      "path": "assets/index-ClIC1iNM.css",
+      "size": 19251
+    },
+    {
+      "path": "assets/index-Dzb-BVLV.js",
+      "size": 769251
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-18T08:24:12+08:00",
+  "finished_at": "2026-10-18T08:24:38+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 66452,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "fix(h5): 首页精细化视觉升级，包含品牌标、频道栏、主推Banner与短剧Top榜单",
+  "dirty": false
+}
