@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.8",
+  "target": "server",
+  "status": "published",
+  "sha": "f41b5a7a7a6628078a45c13e764fd1ca91bcfe8f",
+  "short_sha": "f41b5a7a",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T07:52:50+08:00",
+  "finished_at": "2026-10-19T07:53:04+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 96299,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "收藏列表 + 推荐流点赞闭环（--allow-dirty：仓库其余为其他会话改动）",
+  "dirty": true
+}
