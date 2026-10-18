@@ -1,3 +1,5 @@
+import type { FavoritesPayload } from "./types";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 const DEVICE_KEY = "minitv_h5_device";
@@ -117,4 +119,8 @@ export function loginWithGoogle(idToken: string): Promise<Session> {
 
 export function getMe(): Promise<MeProfile> {
   return getJson<MeProfile>("/v1/me");
+}
+
+export function getFavorites(limit = 50, offset = 0): Promise<FavoritesPayload> {
+  return getJson<FavoritesPayload>(`/v1/me/favorites?limit=${limit}&offset=${offset}`);
 }

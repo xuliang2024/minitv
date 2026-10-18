@@ -19,6 +19,7 @@ import {
 } from "../icons";
 import { EpisodeView } from "../player/EpisodeView";
 import type { PlayEpisode, PlayPayload } from "../types";
+import { toast } from "../ui/toast";
 
 interface Props {
   dramaId: number;
@@ -108,9 +109,10 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
     // Signed out: ask for a session, then replay this exact tap.
     requireAuth(() => {
       apply(next);
-      postJson("/v1/reactions", { target_type: "drama", target_id: dramaId, kind, remove: !next }).catch(() =>
-        apply(!next),
-      );
+      postJson("/v1/reactions", { target_type: "drama", target_id: dramaId, kind, remove: !next }).catch(() => {
+        apply(!next);
+        toast(t(locale, "err_reaction"));
+      });
     });
   };
 

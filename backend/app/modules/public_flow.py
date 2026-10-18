@@ -396,6 +396,47 @@ def react(body: ReactionIn, user: User = Depends(_require_user), db: Session = D
     return {"active": True}
 
 
+@router.get("/me/favorites")
+def my_favorites(
+    limit: int = 20,
+    offset: int = 0,
+    user: User = Depends(_require_user),
+    db: Session = Depends(get_db),
+):
+    """The dramas this viewer saved, newest first.
+
+    Favorites are a reactions row, but the client thinks in drama cards, so the
+    join filters out anything unpublished since it was saved.
+    """
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+    base = (
+        select(Drama)
+        .join(Reaction, Reaction.target_id == Drama.id)
+        .where(
+            Reaction.user_id == user.id,
+            Reaction.target_type == "drama",
+            Reaction.kind == "favorite",
+            Drama.status == "published",
+        )
+    )
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = db.scalars(base.order_by(Reaction.id.desc()).offset(offset).limit(limit)).all()
+    return {
+        "total": int(total),
+        "items": [
+            {
+                "id": drama.id,
+                "title": drama.title,
+                "cover_url": drama.cover_url,
+                "synopsis": drama.synopsis,
+                "play_count": drama.play_count,
+            }
+            for drama in rows
+        ],
+    }
+
+
 @router.get("/me/messages")
 def messages(user: User = Depends(_require_user), db: Session = Depends(get_db)):
     rows = db.scalars(select(InboxMessage).where(InboxMessage.user_id == user.id).order_by(InboxMessage.id.desc())).all()

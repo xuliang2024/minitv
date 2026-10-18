@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthProvider";
 import type { Locale } from "../copy";
 import { t } from "../copy";
 import { formatCount } from "../format";
+import { toast } from "../ui/toast";
 import { IconComment, IconEpisodes, IconHeart, IconShare } from "../icons";
 import { EpisodeView } from "../player/EpisodeView";
 import type { FeedItem, FeedPage } from "../types";
@@ -113,7 +114,8 @@ function FeedSlot({
   onOpenDrama: (id: number) => void;
 }) {
   const [finished, setFinished] = useState(false);
-  const [liked, setLiked] = useState(false);
+  const [liked, setLiked] = useState(item.drama.liked);
+  const [likeCount, setLikeCount] = useState(item.drama.like_count);
   const { requireAuth } = useAuth();
   const drama = item.drama;
   const episode = item.episode;
@@ -121,19 +123,27 @@ function FeedSlot({
 
   useEffect(() => {
     setFinished(false);
-    setLiked(false);
-  }, [item.item_id]);
+    setLiked(item.drama.liked);
+    setLikeCount(item.drama.like_count);
+  }, [item.item_id, item.drama.liked, item.drama.like_count]);
 
   const toggleLike = () => {
     const next = !liked;
+    const apply = (value: boolean) => {
+      setLiked(value);
+      setLikeCount((count) => Math.max(0, count + (value ? 1 : -1)));
+    };
     requireAuth(() => {
-      setLiked(next);
+      apply(next);
       postJson("/v1/reactions", {
-        target_type: "episode",
-        target_id: episode.id,
+        target_type: "drama",
+        target_id: drama.id,
         kind: "like",
         remove: !next,
-      }).catch(() => setLiked(!next));
+      }).catch(() => {
+        apply(!next);
+        toast(t(locale, "err_reaction"));
+      });
     });
   };
 
@@ -159,7 +169,7 @@ function FeedSlot({
           aria-label="Like"
         >
           <span className="rail-icon"><IconHeart active={liked} size={30} /></span>
-          <span className="rail-label">{formatCount(drama.play_count, locale)}</span>
+          <span className="rail-label">{formatCount(likeCount, locale)}</span>
         </button>
         <button
           type="button"

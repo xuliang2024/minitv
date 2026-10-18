@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from app.modules.content import service as content
 from app.modules.content.models import Drama, Episode, Tag
 from app.modules.ops.service import get_redis
+from app.modules.social.models import Reaction
 
 from . import config, ranking, signals
 
@@ -271,7 +272,7 @@ def _label(candidates: list[signals.Candidate], source: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _drama_payload(db: Session, drama: Drama, tags: list[Tag], counts: dict) -> dict:
+def _drama_payload(db: Session, drama: Drama, tags: list[Tag], counts: dict, *, like_count: int = 0, liked: bool = False) -> dict:
     return {
         "id": drama.id,
         "title": drama.title,
@@ -283,7 +284,45 @@ def _drama_payload(db: Session, drama: Drama, tags: list[Tag], counts: dict) -> 
         "free_episode_count": drama.free_episode_count,
         "coin_price_per_episode": drama.coin_price_per_episode,
         "play_count": drama.play_count,
+        "like_count": like_count,
+        "liked": liked,
     }
+
+
+def _reaction_stats(db: Session, drama_ids, user_id: int | None) -> tuple[dict[int, int], set[int]]:
+    """Like totals for the page, plus which of them this viewer already liked.
+
+    Two queries total, so a five-slot page never turns into five round trips.
+    """
+    ids = list(drama_ids)
+    if not ids:
+        return {}, set()
+    totals = {
+        int(target_id): int(total)
+        for target_id, total in db.execute(
+            select(Reaction.target_id, func.count())
+            .where(
+                Reaction.target_type == "drama",
+                Reaction.kind == "like",
+                Reaction.target_id.in_(ids),
+            )
+            .group_by(Reaction.target_id)
+        )
+    }
+    liked: set[int] = set()
+    if user_id is not None:
+        liked = {
+            int(target_id)
+            for target_id in db.scalars(
+                select(Reaction.target_id).where(
+                    Reaction.user_id == user_id,
+                    Reaction.target_type == "drama",
+                    Reaction.kind == "like",
+                    Reaction.target_id.in_(ids),
+                )
+            )
+        }
+    return totals, liked
 
 
 def _materialize(
@@ -326,6 +365,7 @@ def _materialize(
     }
     tags_by_drama = content.tags_by_drama(db, list(dramas.keys()))
     counts = _episode_counts(db, dramas.keys())
+    like_totals, my_likes = _reaction_stats(db, dramas.keys(), user_id)
 
     items: list[dict] = []
     consumed = 0
@@ -345,7 +385,12 @@ def _materialize(
             {
                 "item_id": f"d{drama.id}:e{episode.id}",
                 "drama": _drama_payload(
-                    db, drama, tags_by_drama.get(drama.id, []), counts.get(drama.id, {})
+                    db,
+                    drama,
+                    tags_by_drama.get(drama.id, []),
+                    counts.get(drama.id, {}),
+                    like_count=like_totals.get(drama.id, 0),
+                    liked=drama.id in my_likes,
                 ),
                 "episode": {
                     "id": episode.id,

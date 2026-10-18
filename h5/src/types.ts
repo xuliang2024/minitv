@@ -54,6 +54,19 @@ export interface FeedDrama {
   free_episode_count: number;
   coin_price_per_episode: number;
   play_count: number;
+  like_count: number;
+  liked: boolean;
+}
+
+export interface FavoritesPayload {
+  total: number;
+  items: Array<{
+    id: number;
+    title: string;
+    cover_url: string | null;
+    synopsis: string;
+    play_count: number;
+  }>;
 }
 
 export interface FeedEpisode {

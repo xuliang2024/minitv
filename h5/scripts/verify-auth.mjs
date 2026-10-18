@@ -83,6 +83,25 @@ function buildRoutes(calls, options) {
     if (path === "/v1/config") return json(route, 200, { tabs: [], copies: {} });
     if (path === "/v1/home/groups") return json(route, 200, homePayload);
     if (path === "/v1/dramas/7/play") return json(route, 200, playPayload);
+    if (path === "/v1/dramas/8/play") return json(route, 200, playPayload);
+    if (path === "/v1/feed") {
+      return json(
+        route,
+        200,
+        options.feed ?? {
+          session_id: "test-session",
+          page_size: 5,
+          items: [],
+          next_cursor: null,
+          has_more: false,
+          preload: { fetch_when_remaining: 2 },
+        },
+      );
+    }
+    if (path === "/v1/me/favorites") {
+      if (authorization !== `Bearer ${TOKEN}`) return json(route, 401, { detail: "login required" });
+      return json(route, 200, options.favorites ?? { total: 0, items: [] });
+    }
     if (path === "/v1/auth/providers") {
       return json(route, 200, {
         email: { enabled: true },
@@ -110,6 +129,7 @@ function buildRoutes(calls, options) {
     }
     if (path === "/v1/reactions" && method === "POST") {
       calls.reactions.push(payload);
+      if (options.reactionStatus) return json(route, options.reactionStatus, { detail: "boom" });
       return json(route, 200, { active: !payload.remove });
     }
     if (path === "/v1/playback") return json(route, 200, { allowed: false, reason: "locked" });
@@ -302,6 +322,93 @@ async function newPage(options = {}) {
     "an expired stored token is cleared on boot",
   );
   check((await page.locator(".me-hero h2").innerText()).includes("Sign in"), "expired session lands on the guest state");
+  await context.close();
+}
+
+// ---- 4. feed likes + favorites list ----
+{
+  const calls = { code: [], verify: [], reactions: [], google: [] };
+  const { context, page, errors } = await newPage();
+  await context.addInitScript((token) => localStorage.setItem("minitv_h5_token", token), TOKEN);
+  const feedDrama = { ...drama, like_count: 3, liked: true };
+  await page.route("**/v1/**", buildRoutes(calls, {
+    google: false,
+    feed: {
+      session_id: "test-session",
+      page_size: 5,
+      has_more: false,
+      next_cursor: null,
+      preload: { fetch_when_remaining: 2 },
+      items: [{
+        item_id: "d7:e70",
+        drama: feedDrama,
+        episode: { id: 70, episode_number: 1, title: "EP1", duration_seconds: 90, free: false },
+        resume_seconds: 0,
+        entry_reason: "test",
+        score: 1,
+      }],
+    },
+    favorites: {
+      total: 2,
+      items: [
+        { id: 7, title: "Mock Drama", cover_url: null, synopsis: "", play_count: 9 },
+        { id: 8, title: "Second Drama", cover_url: null, synopsis: "", play_count: 4 },
+      ],
+    },
+  }));
+
+  await page.goto(APP_URL, { waitUntil: "networkidle" });
+  await page.waitForSelector('[data-tab="foryou"]', { timeout: 15000 });
+  await page.locator('[data-tab="foryou"]').click();
+  await page.waitForSelector('.rail-btn[aria-label="Like"]', { timeout: 10000 });
+  const likeBtn = page.locator('.rail-btn[aria-label="Like"]');
+  check((await likeBtn.locator(".rail-label").innerText()).trim() === "3", "feed shows the server like count");
+  check((await likeBtn.getAttribute("class")).includes("on"), "feed restores the viewer's like state");
+  await likeBtn.click();
+  await page.waitForTimeout(350);
+  const lastReaction = calls.reactions[calls.reactions.length - 1];
+  check(
+    Boolean(lastReaction) && lastReaction.target_type === "drama" && lastReaction.target_id === 7 && lastReaction.remove === true,
+    "feed like toggles the drama reaction",
+  );
+  check((await likeBtn.locator(".rail-label").innerText()).trim() === "2", "feed like count decrements optimistically");
+  await page.screenshot({ path: `${OUT}-foryou.png` });
+
+  await page.locator('[data-tab="me"]').click();
+  await page.waitForSelector('[data-testid="me-favorites"]', { timeout: 8000 });
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="me-favorites"]')?.textContent?.includes("2"),
+    null,
+    { timeout: 5000 },
+  );
+  check((await page.locator('[data-testid="me-favorites"]').innerText()).includes("2"), "me page shows the favorite total");
+  await page.locator('[data-testid="me-favorites"]').click();
+  await page.waitForSelector(".fav-grid .card", { timeout: 8000 });
+  check((await page.locator(".fav-grid .card").count()) === 2, "favorites page lists saved dramas");
+  await page.locator(".fav-grid .card").first().click();
+  await page.waitForSelector('.rail-btn[aria-label="Like"]', { timeout: 10000 });
+  check(true, "tapping a favorite opens the drama");
+  check(errors.length === 0, `social flow has no console errors (${errors.join(" | ") || "none"})`);
+  await context.close();
+}
+
+// ---- 5. a failed reaction reverts and tells the viewer ----
+{
+  const calls = { code: [], verify: [], reactions: [], google: [] };
+  const { context, page } = await newPage();
+  await context.addInitScript((token) => localStorage.setItem("minitv_h5_token", token), TOKEN);
+  await page.route("**/v1/**", buildRoutes(calls, { google: false, reactionStatus: 500 }));
+  await page.goto(APP_URL, { waitUntil: "networkidle" });
+  await page.waitForSelector(".card", { timeout: 15000 });
+  await page.locator(".card").first().click();
+  await page.waitForSelector('.rail-btn[aria-label="Favorite"]', { timeout: 10000 });
+  await page.locator('.rail-btn[aria-label="Favorite"]').click();
+  await page.waitForSelector('[data-testid="toast"]', { timeout: 8000 });
+  check((await page.locator('[data-testid="toast"]').innerText()).includes("Could not save"), "failed reaction shows a toast");
+  check(
+    !(await page.locator('.rail-btn[aria-label="Favorite"]').getAttribute("class")).includes("on"),
+    "failed favorite rolls back",
+  );
   await context.close();
 }
 

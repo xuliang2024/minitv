@@ -135,6 +135,68 @@ def test_legacy_login_endpoint_still_refuses_unknown_email(client, outbox):
     assert response.status_code == 404
 
 
+def test_favorites_list_needs_a_session_and_skips_unpublished(client, outbox, make):
+    assert client.get("/v1/me/favorites").status_code == 401
+
+    published_a = make.drama(title="Saved A", status="published")
+    published_b = make.drama(title="Saved B", status="published")
+    draft = make.drama(title="Hidden", status="draft")
+
+    _send_code(client, "saver@example.com")
+    token = _authenticate(client, "saver@example.com", outbox[0]["code"]).json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    for drama in (published_a, draft, published_b):
+        response = client.post(
+            "/v1/reactions",
+            json={"target_type": "drama", "target_id": drama.id, "kind": "favorite", "remove": False},
+            headers=headers,
+        )
+        assert response.status_code == 200
+
+    page = client.get("/v1/me/favorites", headers=headers)
+    assert page.status_code == 200
+    body = page.json()
+    assert body["total"] == 2
+    assert [item["id"] for item in body["items"]] == [published_b.id, published_a.id]
+
+    limited = client.get("/v1/me/favorites?limit=1", headers=headers).json()
+    assert limited["total"] == 2
+    assert [item["id"] for item in limited["items"]] == [published_b.id]
+
+
+def test_feed_reports_like_count_and_viewer_state(client, outbox, make, session):
+    drama = make.drama(title="Feed Like", status="published", free=3)
+    episode = make.episode(drama, number=1, status="published")
+    episode.bunny_video_id = "feed-vid-1"
+    episode.duration_seconds = 90
+    session.commit()
+
+    guest_item = client.get("/v1/feed?limit=5").json()["items"]
+    target = next(item for item in guest_item if item["drama"]["id"] == drama.id)
+    assert target["drama"]["like_count"] == 0
+    assert target["drama"]["liked"] is False
+
+    _send_code(client, "feedfan@example.com")
+    token = _authenticate(client, "feedfan@example.com", outbox[0]["code"]).json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post(
+        "/v1/reactions",
+        json={"target_type": "drama", "target_id": drama.id, "kind": "like", "remove": False},
+        headers=headers,
+    )
+
+    signed_item = client.get("/v1/feed?limit=5", headers=headers).json()["items"]
+    mine = next(item for item in signed_item if item["drama"]["id"] == drama.id)
+    assert mine["drama"]["like_count"] == 1
+    assert mine["drama"]["liked"] is True
+
+    guest_again = client.get("/v1/feed?limit=5").json()["items"]
+    seen = next(item for item in guest_again if item["drama"]["id"] == drama.id)
+    assert seen["drama"]["like_count"] == 1
+    assert seen["drama"]["liked"] is False
+
+
 def test_reactions_need_a_session_and_feed_the_play_payload(client, outbox, make, session):
     drama = make.drama(title="Social", status="published")
     make.episode(drama, number=1, status="published")

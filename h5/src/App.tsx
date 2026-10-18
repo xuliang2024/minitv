@@ -8,6 +8,7 @@ import { HomePage } from "./pages/HomePage";
 import { MePage } from "./pages/MePage";
 import { PlayPage } from "./pages/PlayPage";
 import { SearchPage } from "./pages/SearchPage";
+import { ToastHost } from "./ui/toast";
 
 type Tab = "home" | "foryou" | "rewards" | "me";
 
@@ -78,7 +79,7 @@ function AppShell() {
         ) : tab === "foryou" ? (
           <ForYouPage locale={locale} onOpenDrama={setDramaId} />
         ) : tab === "me" ? (
-          <MePage locale={locale} />
+          <MePage locale={locale} onOpen={setDramaId} />
         ) : (
           <div className="center">{t(locale, "coming")}</div>
         )}
@@ -105,6 +106,7 @@ function AppShell() {
         </nav>
       )}
       <LoginSheet locale={locale} />
+      <ToastHost />
     </div>
   );
 }
