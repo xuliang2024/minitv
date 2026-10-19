@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.71",
+  "target": "r2",
+  "status": "published",
+  "sha": "5bc257b0d2853353c199b79c58ba6dcd109ba47e",
+  "short_sha": "5bc257b0",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.71/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "70ce226185230cb9f700033d2a1bb1129aeda9f0cc5e6f12d2776521839f4eb7",
+  "files": [
+    {
+      "path": "assets/index-DWI6gv7H.js",
+      "size": 838561
+    },
+    {
+      "path": "assets/index-O_-cXAoD.css",
+      "size": 45986
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T17:10:05+08:00",
+  "finished_at": "2026-10-19T17:10:41+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 12947,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "金币解锁分集：锁屏确认、会员入口、402 校准",
+  "dirty": false
+}
