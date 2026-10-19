@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.19.34",
+  "target": "r2",
+  "status": "published",
+  "sha": "323252cc52d0292d03754633b72e40de5af5807e",
+  "short_sha": "323252cc",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.34/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "77d5ffa18f43a8f44a705617cd3b5fe56f24eb94095436f1d3fcb148b3dafeb8",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-DWRhckP4.js",
+      "size": 1408124
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-19T11:47:46+08:00",
+  "finished_at": "2026-10-19T11:48:42+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 88303,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "会员套餐：全局计费模式切换",
+  "dirty": false
+}
