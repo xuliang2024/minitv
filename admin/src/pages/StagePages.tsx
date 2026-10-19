@@ -6,6 +6,8 @@ import {
   Button,
   Card,
   Col,
+  Descriptions,
+  Drawer,
   Form,
   Input,
   InputNumber,
@@ -28,6 +30,7 @@ import {
   CalendarOutlined,
   CheckCircleFilled,
   CheckCircleOutlined,
+  ClockCircleOutlined,
   DollarOutlined,
   EditOutlined,
   InfoCircleOutlined,
@@ -1210,9 +1213,679 @@ export function CommentsPage() {
   );
 }
 
+type OrderUserInfo = {
+  id: number;
+  public_id: string | null;
+  display_name: string;
+  email: string | null;
+  avatar_url: string;
+  region: string;
+  locale: string;
+  created_at: string;
+};
+
+type OrderPlanInfo = {
+  code: string;
+  name_en: string;
+  name_zh: string;
+  version: number | null;
+  price_cents: number | null;
+  currency: string | null;
+  benefits: { items?: string[]; best?: boolean } | null;
+};
+
+type FinanceOrder = {
+  order_no: string;
+  user_id: number;
+  amount_cents: number;
+  currency: string;
+  billing_mode: string;
+  status: string;
+  created_at: string;
+  paid_at: string | null;
+  external_txn_id: string | null;
+  user: OrderUserInfo | null;
+  plan: OrderPlanInfo | null;
+};
+
+type FinanceSummary = {
+  total_orders: number;
+  paid_orders: number;
+  refunded_orders: number;
+  created_orders: number;
+  failed_orders: number;
+  paid_cents: number;
+  refunded_cents: number;
+  pending_cents: number;
+  gross_cents: number;
+  net_cents: number;
+  today_paid_cents: number;
+  today_orders: number;
+  currency: string;
+};
+
+type FinanceOrdersPayload = {
+  items: FinanceOrder[];
+  total: number;
+  page: number;
+  page_size: number;
+  summary?: FinanceSummary;
+};
+
+type FinanceOrderDetail = FinanceOrder & {
+  user_stats: { paid_orders: number; paid_cents: number; refunded_cents: number } | null;
+  membership: {
+    active: boolean;
+    plan_code: string | null;
+    until: string | null;
+    canceling?: boolean;
+  } | null;
+};
+
+const ORDER_STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
+  paid: { label: "已支付", color: "#027a48", bg: "#edfcf2" },
+  created: { label: "待支付", color: "#b54708", bg: "#fffaeb" },
+  refunded: { label: "已退款", color: "#175cd3", bg: "#eff8ff" },
+  failed: { label: "支付失败", color: "#b42318", bg: "#fef3f2" },
+};
+
+const FINANCE_PERIOD_LABEL: Record<string, string> = {
+  weekly: "7 天",
+  monthly: "30 天",
+  yearly: "365 天",
+};
+
+const CURRENCY_SYMBOL: Record<string, string> = { USD: "$", CNY: "¥", EUR: "€", GBP: "£" };
+
+function formatAmount(cents?: number | null, currency = "USD") {
+  if (cents === null || cents === undefined) return "-";
+  const symbol = CURRENCY_SYMBOL[currency];
+  const value = (cents / 100).toFixed(2);
+  return symbol ? `${symbol}${value}` : `${value} ${currency}`;
+}
+
+function OrderStatusTag({ status }: { status: string }) {
+  const meta = ORDER_STATUS_META[status] ?? {
+    label: status,
+    color: "#667085",
+    bg: "#f2f4f7",
+  };
+  return (
+    <Tag
+      bordered={false}
+      style={{
+        background: meta.bg,
+        color: meta.color,
+        borderRadius: 4,
+        fontWeight: 500,
+        margin: 0,
+      }}
+    >
+      {meta.label}
+    </Tag>
+  );
+}
+
+/** 用户单元格：头像 + 昵称 / 邮箱 / 公开 ID，订单里最常见的识别信息一屏可见。 */
+function OrderUserCell({ order }: { order: FinanceOrder }) {
+  const account = order.user;
+  const name = account?.display_name || account?.email || `用户 #${order.user_id}`;
+  return (
+    <Space size={10} align="start">
+      <Avatar
+        size={34}
+        src={account?.avatar_url || undefined}
+        style={{ background: "#f2f4f7", color: "#667085", flexShrink: 0 }}
+      >
+        {name.slice(0, 1).toUpperCase()}
+      </Avatar>
+      <div style={{ lineHeight: 1.35, minWidth: 0 }}>
+        <div
+          style={{
+            fontWeight: 600,
+            fontSize: 13,
+            color: "#101828",
+            maxWidth: 168,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {name}
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: "#667085",
+            maxWidth: 168,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {account?.email || "未绑定邮箱"}
+        </div>
+        <div style={{ fontSize: 11, color: "#98a2b3", fontFamily: "monospace" }}>
+          ID {account?.public_id || order.user_id}
+        </div>
+      </div>
+    </Space>
+  );
+}
+
+function FinanceOrderDrawer({ order, onClose }: { order: FinanceOrder; onClose: () => void }) {
+  // 列表只带下单时快照；用户累计消费 / 会员状态再按需取一次，避免列表做重查询。
+  const [detail, setDetail] = useState<FinanceOrderDetail | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api<FinanceOrderDetail>(`/admin/v1/finance/orders/${encodeURIComponent(order.order_no)}`)
+      .then((value) => {
+        if (alive) setDetail(value);
+      })
+      .catch(() => {
+        /* 详情失败时仍展示列表已有字段 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [order.order_no]);
+
+  const account = detail?.user ?? order.user;
+  const plan = detail?.plan ?? order.plan;
+  const benefits = plan?.benefits?.items ?? [];
+  const standardPrice = plan?.price_cents;
+  const hasDiscount =
+    standardPrice !== null && standardPrice !== undefined && standardPrice !== order.amount_cents;
+  const stats = detail?.user_stats;
+  const membership = detail?.membership;
+
+  return (
+    <Drawer
+      open
+      width="min(560px, 100vw)"
+      onClose={onClose}
+      title={
+        <Space size={10}>
+          <span>订单详情</span>
+          <OrderStatusTag status={order.status} />
+        </Space>
+      }
+    >
+      <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <Card
+          variant="borderless"
+          styles={{ body: { padding: 20 } }}
+          style={{ background: "#f9fafb", borderRadius: 12 }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#667085", marginBottom: 4 }}>订单金额</div>
+              <div
+                style={{
+                  fontSize: 30,
+                  fontWeight: 700,
+                  color: order.status === "refunded" ? "#667085" : "#101828",
+                  lineHeight: 1.1,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {formatAmount(order.amount_cents, order.currency)}
+              </div>
+              <div style={{ fontSize: 12, color: "#667085", marginTop: 6 }}>
+                {order.billing_mode === "one_time" ? "一次性时长包" : "自动续费订阅"}
+                {hasDiscount ? ` · 套餐标准价 ${formatAmount(standardPrice, order.currency)}` : ""}
+              </div>
+            </div>
+            <Typography.Text
+              copyable={{ text: order.order_no, tooltips: ["复制订单号", "已复制"] }}
+              style={{ fontFamily: "monospace", fontSize: 12, color: "#475467" }}
+            >
+              {order.order_no}
+            </Typography.Text>
+          </div>
+        </Card>
+
+        <Card size="small" title="用户信息" variant="borderless" style={{ border: "1px solid #eaecf0", borderRadius: 12 }}>
+          <Space size={12} align="start" style={{ width: "100%", marginBottom: 12 }}>
+            <Avatar size={44} src={account?.avatar_url || undefined} style={{ background: "#E53B3E" }}>
+              {(account?.display_name || account?.email || String(order.user_id)).slice(0, 1).toUpperCase()}
+            </Avatar>
+            <div style={{ lineHeight: 1.4 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: "#101828" }}>
+                {account?.display_name || `用户 #${order.user_id}`}
+              </div>
+              <div style={{ fontSize: 12, color: "#667085" }}>{account?.email || "未绑定邮箱"}</div>
+              <div style={{ fontSize: 12, color: "#98a2b3", fontFamily: "monospace" }}>
+                ID {account?.public_id || order.user_id}
+              </div>
+            </div>
+          </Space>
+          <Row gutter={12} style={{ marginBottom: 12 }}>
+            <Col span={12}>
+              <div style={{ background: "#f9fafb", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#667085" }}>累计消费</div>
+                <div
+                  style={{
+                    fontSize: 17,
+                    fontWeight: 700,
+                    color: "#101828",
+                    fontVariantNumeric: "tabular-nums",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {stats ? (
+                    formatAmount(stats.paid_cents, order.currency)
+                  ) : (
+                    <span style={{ color: "#98a2b3", fontSize: 12, fontWeight: 400 }}>加载中…</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: "#98a2b3" }}>
+                  {stats
+                    ? `已支付 ${stats.paid_orders} 笔 · 退款 ${formatAmount(stats.refunded_cents, order.currency)}`
+                    : "该用户全部订单"}
+                </div>
+              </div>
+            </Col>
+            <Col span={12}>
+              <div style={{ background: "#f9fafb", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, color: "#667085" }}>当前会员</div>
+                <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.4 }}>
+                  {!membership ? (
+                    <span style={{ color: "#98a2b3", fontSize: 12, fontWeight: 400 }}>加载中…</span>
+                  ) : membership.active ? (
+                    <Space size={6}>
+                      <Tag color="green" style={{ marginInlineEnd: 0 }}>
+                        有效
+                      </Tag>
+                      <span style={{ fontSize: 12, color: "#475467", fontWeight: 400 }}>
+                        至 {formatTime(membership.until)}
+                      </span>
+                    </Space>
+                  ) : (
+                    <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                      无有效会员
+                    </Typography.Text>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: "#98a2b3" }}>
+                  {membership?.active && membership.plan_code
+                    ? `套餐 ${membership.plan_code}${membership.canceling ? " · 到期不续费" : ""}`
+                    : "未开通会员"}
+                </div>
+              </div>
+            </Col>
+          </Row>
+          <Descriptions column={1} size="small" colon={false} styles={{ label: { width: 96, color: "#667085" } }}>
+            <Descriptions.Item label="用户主键">{order.user_id}</Descriptions.Item>
+            <Descriptions.Item label="地区 / 语言">
+              {account ? `${account.region || "-"} · ${account.locale || "-"}` : "-"}
+            </Descriptions.Item>
+            <Descriptions.Item label="注册时间">
+              {account ? formatTime(account.created_at) : "-"}
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+
+        <Card size="small" title="套餐信息" variant="borderless" style={{ border: "1px solid #eaecf0", borderRadius: 12 }}>
+          <Descriptions column={1} size="small" colon={false} styles={{ label: { width: 96, color: "#667085" } }}>
+            <Descriptions.Item label="套餐名称">
+              {plan ? (
+                <Space size={8}>
+                  <span>{plan.name_zh || plan.name_en}</span>
+                  <Tag bordered={false} style={{ background: "#f2f4f7", color: "#475467", margin: 0 }}>
+                    {plan.code}
+                  </Tag>
+                </Space>
+              ) : (
+                "-"
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="套餐时长">
+              {plan ? FINANCE_PERIOD_LABEL[plan.code] ?? "-" : "-"}
+            </Descriptions.Item>
+            <Descriptions.Item label="版本 / 计费">
+              {plan
+                ? `${plan.version ? `v${plan.version}` : "-"} · ${
+                    order.billing_mode === "one_time" ? "一次性" : "自动续费"
+                  }`
+                : "-"}
+            </Descriptions.Item>
+            <Descriptions.Item label="套餐标准价">
+              {plan ? formatAmount(plan.price_cents, plan.currency ?? order.currency) : "-"}
+            </Descriptions.Item>
+          </Descriptions>
+          {benefits.length ? (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: "#667085", marginBottom: 6 }}>下单时权益快照</div>
+              <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                {benefits.map((item) => (
+                  <div key={item} style={{ fontSize: 12, color: "#475467" }}>
+                    <CheckCircleOutlined style={{ color: "#12b76a", marginRight: 6 }} />
+                    {item}
+                  </div>
+                ))}
+              </Space>
+            </div>
+          ) : null}
+        </Card>
+
+        <Card size="small" title="订单与支付" variant="borderless" style={{ border: "1px solid #eaecf0", borderRadius: 12 }}>
+          <Descriptions column={1} size="small" colon={false} styles={{ label: { width: 96, color: "#667085" } }}>
+            <Descriptions.Item label="订单号">
+              <Typography.Text copyable style={{ fontFamily: "monospace", fontSize: 12 }}>
+                {order.order_no}
+              </Typography.Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="支付状态">
+              <OrderStatusTag status={order.status} />
+            </Descriptions.Item>
+            <Descriptions.Item label="渠道流水号">
+              {order.external_txn_id ? (
+                <Typography.Text copyable style={{ fontFamily: "monospace", fontSize: 12 }}>
+                  {order.external_txn_id}
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">无（未完成支付）</Typography.Text>
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="下单时间">{formatTime(order.created_at)}</Descriptions.Item>
+            <Descriptions.Item label="支付时间">
+              {order.paid_at ? (
+                <span style={{ color: "#027a48" }}>{formatTime(order.paid_at)}</span>
+              ) : (
+                <Typography.Text type="secondary">未支付</Typography.Text>
+              )}
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+      </Space>
+    </Drawer>
+  );
+}
+
 export function FinancePage() {
-  const { data } = useLoad<{ items: any[] }>("/admin/v1/finance/orders", { items: [] });
-  return <Table rowKey="order_no" dataSource={data.items} pagination={false} scroll={{ x: 720 }} columns={[{ title: "订单号", dataIndex: "order_no" }, { title: "用户", dataIndex: "user_id" }, { title: "金额（分）", dataIndex: "amount_cents" }, { title: "状态", dataIndex: "status" }, { title: "时间", dataIndex: "created_at", render: (v: string) => formatTime(v) }]} />;
+  const [keyword, setKeyword] = useState("");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [mode, setMode] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [detail, setDetail] = useState<FinanceOrder | null>(null);
+
+  // 输入停顿 300ms 再查；筛选条件变化时回到第一页，避免停在空页。
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(keyword.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [keyword]);
+
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (status) params.set("status", status);
+  if (mode) params.set("billing_mode", mode);
+  params.set("page", String(page));
+  params.set("page_size", String(pageSize));
+
+  const { data, reload, loading } = useLoad<FinanceOrdersPayload>(
+    `/admin/v1/finance/orders?${params.toString()}`,
+    { items: [], total: 0, page: 1, page_size: 20 },
+  );
+  const summary = data.summary;
+  const paidRate =
+    summary && summary.total_orders
+      ? `${((summary.paid_orders / summary.total_orders) * 100).toFixed(1)}%`
+      : "0%";
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }} data-testid="finance-page">
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} xl={6}>
+          <KpiCard
+            title="净收入"
+            value={formatAmount(summary?.net_cents ?? 0)}
+            hint={
+              <span style={{ fontSize: 12, color: "#667085" }}>
+                成交 {formatAmount(summary?.gross_cents ?? 0)} · 退款{" "}
+                {formatAmount(summary?.refunded_cents ?? 0)}
+              </span>
+            }
+            icon={<DollarOutlined />}
+            color="#027a48"
+            bg="#ecfdf3"
+          />
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <KpiCard
+            title="已支付订单"
+            value={`${summary?.paid_orders ?? 0}`}
+            hint={
+              <span style={{ fontSize: 12, color: "#667085" }}>
+                共 {summary?.total_orders ?? 0} 笔 · 支付率 {paidRate}
+              </span>
+            }
+            icon={<ShoppingCartOutlined />}
+            color="#175cd3"
+            bg="#eff8ff"
+          />
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <KpiCard
+            title="今日成交"
+            value={formatAmount(summary?.today_paid_cents ?? 0)}
+            hint={
+              <span style={{ fontSize: 12, color: "#667085" }}>
+                今日新增 {summary?.today_orders ?? 0} 笔订单
+              </span>
+            }
+            icon={<RiseOutlined />}
+            color="#5925dc"
+            bg="#f4f3ff"
+          />
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <KpiCard
+            title="待支付 / 已退款"
+            value={`${summary?.created_orders ?? 0} / ${summary?.refunded_orders ?? 0}`}
+            hint={
+              <span style={{ fontSize: 12, color: "#667085" }}>
+                待支付 {formatAmount(summary?.pending_cents ?? 0)} · 退款{" "}
+                {formatAmount(summary?.refunded_cents ?? 0)}
+              </span>
+            }
+            icon={<ClockCircleOutlined />}
+            color="#b54708"
+            bg="#fffaeb"
+          />
+        </Col>
+      </Row>
+
+      <Card
+        title="订单明细"
+        styles={{ body: { paddingTop: 16 } }}
+        extra={
+          <Space wrap size={8}>
+            <Segmented
+              size="small"
+              value={status}
+              onChange={(value) => {
+                setStatus(String(value));
+                setPage(1);
+              }}
+              options={[
+                { label: `全部 ${summary?.total_orders ?? 0}`, value: "" },
+                { label: `已支付 ${summary?.paid_orders ?? 0}`, value: "paid" },
+                { label: `待支付 ${summary?.created_orders ?? 0}`, value: "created" },
+                { label: `已退款 ${summary?.refunded_orders ?? 0}`, value: "refunded" },
+                { label: `失败 ${summary?.failed_orders ?? 0}`, value: "failed" },
+              ]}
+            />
+            <Select
+              size="small"
+              value={mode}
+              style={{ width: 120 }}
+              onChange={(value) => {
+                setMode(value);
+                setPage(1);
+              }}
+              options={[
+                { label: "全部计费", value: "" },
+                { label: "自动续费", value: "subscription" },
+                { label: "一次性", value: "one_time" },
+              ]}
+            />
+            <Input.Search
+              allowClear
+              size="small"
+              placeholder="订单号 / 邮箱 / 用户 ID"
+              style={{ width: 260 }}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onSearch={(value) => {
+                setQuery(value.trim());
+                setPage(1);
+              }}
+            />
+            <Button size="small" icon={<ReloadOutlined />} onClick={() => reload()} loading={loading}>
+              刷新
+            </Button>
+          </Space>
+        }
+      >
+        <Table<FinanceOrder>
+          rowKey="order_no"
+          dataSource={data.items}
+          loading={loading}
+          size="middle"
+          scroll={{ x: 1120 }}
+          locale={{ emptyText: query ? `没有匹配「${query}」的订单` : "暂无订单" }}
+          pagination={{
+            current: data.page ?? page,
+            pageSize: data.page_size ?? pageSize,
+            total: data.total ?? 0,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: (total) => `共 ${total} 笔订单`,
+            onChange: (nextPage, nextSize) => {
+              setPage(nextPage);
+              setPageSize(nextSize);
+            },
+          }}
+          columns={[
+            {
+              title: "订单号",
+              dataIndex: "order_no",
+              width: 210,
+              render: (value: string, order) => (
+                <div style={{ lineHeight: 1.45 }}>
+                  <Typography.Text
+                    copyable={{ text: value }}
+                    style={{ fontFamily: "monospace", fontSize: 12, color: "#344054" }}
+                  >
+                    {value}
+                  </Typography.Text>
+                  <div style={{ fontSize: 11, color: "#98a2b3" }}>
+                    {order.external_txn_id
+                      ? `流水 ${order.external_txn_id.length > 16 ? `${order.external_txn_id.slice(0, 16)}…` : order.external_txn_id}`
+                      : "无渠道流水"}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              title: "用户",
+              dataIndex: "user",
+              width: 240,
+              render: (_, order) => <OrderUserCell order={order} />,
+            },
+            {
+              title: "套餐",
+              dataIndex: "plan",
+              width: 200,
+              render: (_, order) => {
+                const plan = order.plan;
+                if (!plan) return <Typography.Text type="secondary">-</Typography.Text>;
+                return (
+                  <div style={{ lineHeight: 1.45 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: "#101828" }}>
+                      {plan.name_zh || plan.name_en}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#667085" }}>
+                      {FINANCE_PERIOD_LABEL[plan.code] ?? plan.code} ·{" "}
+                      {order.billing_mode === "one_time" ? "时长包" : "订阅"}
+                      {plan.version ? ` · v${plan.version}` : ""}
+                    </div>
+                  </div>
+                );
+              },
+            },
+            {
+              title: "金额",
+              dataIndex: "amount_cents",
+              width: 130,
+              align: "right",
+              render: (cents: number, order) => (
+                <div style={{ lineHeight: 1.45 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontVariantNumeric: "tabular-nums",
+                      color: order.status === "refunded" ? "#98a2b3" : "#101828",
+                      textDecoration: order.status === "refunded" ? "line-through" : undefined,
+                    }}
+                  >
+                    {formatAmount(cents, order.currency)}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#98a2b3" }}>
+                    {order.plan?.price_cents !== null &&
+                    order.plan?.price_cents !== undefined &&
+                    order.plan.price_cents !== cents
+                      ? `标价 ${formatAmount(order.plan.price_cents, order.currency)}`
+                      : order.currency === "USD"
+                        ? ""
+                        : order.currency}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              title: "状态",
+              dataIndex: "status",
+              width: 108,
+              render: (value: string) => <OrderStatusTag status={value} />,
+            },
+            {
+              title: "下单 / 支付",
+              dataIndex: "created_at",
+              width: 176,
+              render: (value: string, order) => (
+                <div style={{ lineHeight: 1.45, fontVariantNumeric: "tabular-nums" }}>
+                  <div style={{ fontSize: 12, color: "#344054" }}>{formatTime(value)}</div>
+                  <div style={{ fontSize: 11, color: order.paid_at ? "#027a48" : "#98a2b3" }}>
+                    {order.paid_at ? `支付 ${formatTime(order.paid_at)}` : "未支付"}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              title: "操作",
+              key: "action",
+              width: 88,
+              fixed: "right",
+              render: (_, order) => (
+                <Button type="link" size="small" onClick={() => setDetail(order)}>
+                  详情
+                </Button>
+              ),
+            },
+          ]}
+        />
+      </Card>
+
+      {detail ? <FinanceOrderDrawer order={detail} onClose={() => setDetail(null)} /> : null}
+    </Space>
+  );
 }
 
 type PlanItem = {

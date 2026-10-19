@@ -23,9 +23,10 @@ from app.modules.account.service import (
     save_reward_config,
 )
 from app.modules.analytics.service import dashboard as build_dashboard
-from app.modules.billing.models import Order, Subscription
+from app.modules.billing.models import Order, Plan, PlanVersion, Subscription
 from app.modules.billing.service import (
     BillingError,
+    active_membership,
     billing_mode,
     change_price,
     get_billing_settings,
@@ -1673,22 +1674,203 @@ def adjust(user_id: int, body: AdjustIn, db: Session = Depends(get_db), actor: A
     return {"before": before, "delta": body.delta, "after": after}
 
 
-@router.get("/finance/orders")
-def finance_orders(db: Session = Depends(get_db), user: AdminUser = Depends(require_admin)):
-    rows = db.scalars(select(Order).order_by(Order.id.desc()).limit(100)).all()
+ORDER_STATUSES = ("created", "paid", "failed", "refunded")
+ORDER_BILLING_MODES = ("subscription", "one_time")
+
+ORDER_LEDGER_JOINS = (
+    (User, User.id == Order.user_id),
+    (PlanVersion, PlanVersion.id == Order.plan_version_id),
+    (Plan, Plan.id == PlanVersion.plan_id),
+)
+
+
+def _order_payload(order: Order, account: User | None, version: PlanVersion | None, plan: Plan | None) -> dict:
+    """One order row: legacy flat fields for the dashboard + nested user/plan."""
     return {
-        "items": [
-            {
-                "order_no": row.order_no,
-                "user_id": row.user_id,
-                "amount_cents": row.amount_cents,
-                "currency": row.currency,
-                "status": row.status,
-                "created_at": row.created_at.isoformat(),
-            }
-            for row in rows
-        ]
+        "order_no": order.order_no,
+        "user_id": order.user_id,
+        "amount_cents": order.amount_cents,
+        "currency": order.currency,
+        "billing_mode": order.billing_mode,
+        "status": order.status,
+        "created_at": order.created_at.isoformat(),
+        "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+        "external_txn_id": order.external_txn_id,
+        "user": None
+        if account is None
+        else {
+            "id": account.id,
+            "public_id": account.public_id,
+            "display_name": account.display_name,
+            "email": account.email,
+            "avatar_url": account.avatar_url,
+            "region": account.region,
+            "locale": account.locale,
+            "created_at": account.created_at.isoformat(),
+        },
+        "plan": None
+        if plan is None
+        else {
+            "code": plan.code,
+            "name_en": plan.name_en,
+            "name_zh": plan.name_zh,
+            "version": None if version is None else version.version,
+            "price_cents": None if version is None else version.price_cents,
+            "currency": None if version is None else version.currency,
+            "benefits": None if version is None else (version.benefits or {}),
+        },
     }
+
+
+@router.get("/finance/orders")
+def finance_orders(
+    q: str | None = None,
+    status: str | None = None,
+    billing_mode: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_admin),
+):
+    """订单明细：下单用户 + 套餐快照 + 渠道流水，支持搜索 / 筛选 / 分页。
+
+    数据看板（/dashboard）复用本函数取最近订单，因此顶层保留 user_id /
+    amount_cents / status / created_at 这些旧字段，新增信息放在 user / plan 里。
+    """
+    conditions = []
+    needle = (q or "").strip()
+    if needle:
+        like = f"%{needle}%"
+        conditions.append(
+            or_(
+                Order.order_no.ilike(like),
+                Order.external_txn_id.ilike(like),
+                User.email.ilike(like),
+                User.display_name.ilike(like),
+                User.public_id == needle,
+            )
+        )
+    if status in ORDER_STATUSES:
+        conditions.append(Order.status == status)
+    if billing_mode in ORDER_BILLING_MODES:
+        conditions.append(Order.billing_mode == billing_mode)
+
+    joins = ORDER_LEDGER_JOINS
+    count_stmt = select(func.count(Order.id))
+    for target, onclause in joins:
+        count_stmt = count_stmt.outerjoin(target, onclause)
+    if conditions:
+        count_stmt = count_stmt.where(*conditions)
+    total = db.scalar(count_stmt) or 0
+
+    stmt = select(Order, User, PlanVersion, Plan)
+    for target, onclause in joins:
+        stmt = stmt.outerjoin(target, onclause)
+    if conditions:
+        stmt = stmt.where(*conditions)
+    rows = db.execute(
+        stmt.order_by(Order.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+
+    items = [_order_payload(*row) for row in rows]
+
+    grouped = db.execute(
+        select(
+            Order.status,
+            func.count(Order.id),
+            func.coalesce(func.sum(Order.amount_cents), 0),
+        ).group_by(Order.status)
+    ).all()
+    counts = {row[0]: {"orders": int(row[1]), "amount_cents": int(row[2])} for row in grouped}
+    paid = counts.get("paid", {"orders": 0, "amount_cents": 0})
+    refunded = counts.get("refunded", {"orders": 0, "amount_cents": 0})
+    created = counts.get("created", {"orders": 0, "amount_cents": 0})
+    failed = counts.get("failed", {"orders": 0, "amount_cents": 0})
+    total_orders = sum(item["orders"] for item in counts.values()) or 0
+
+    # 今日成交按后台统一业务日（洛杉矶时区）统计，与数据看板口径一致。
+    from app.modules.account.service import LA, la_today
+
+    day_start = datetime.combine(la_today(), datetime.min.time(), tzinfo=LA).astimezone(
+        timezone.utc
+    )
+    today_paid_cents = (
+        db.scalar(
+            select(func.coalesce(func.sum(Order.amount_cents), 0)).where(
+                Order.status == "paid", Order.paid_at >= day_start
+            )
+        )
+        or 0
+    )
+    today_orders = (
+        db.scalar(select(func.count(Order.id)).where(Order.created_at >= day_start)) or 0
+    )
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "summary": {
+            "total_orders": total_orders,
+            "paid_orders": paid["orders"],
+            "refunded_orders": refunded["orders"],
+            "created_orders": created["orders"],
+            "failed_orders": failed["orders"],
+            "paid_cents": paid["amount_cents"],
+            "refunded_cents": refunded["amount_cents"],
+            "pending_cents": created["amount_cents"],
+            # 口径：gross = 曾经收到的钱（含后来退掉的），net = 退款后真正留下的。
+            "gross_cents": paid["amount_cents"] + refunded["amount_cents"],
+            "net_cents": paid["amount_cents"],
+            "today_paid_cents": int(today_paid_cents),
+            "today_orders": int(today_orders),
+            "currency": "USD",
+        },
+    }
+
+
+@router.get("/finance/orders/{order_no}")
+def finance_order_detail(
+    order_no: str,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_admin),
+):
+    """单笔订单详情：在列表字段之外补充该用户的累计消费与当前会员状态。"""
+    stmt = select(Order, User, PlanVersion, Plan)
+    for target, onclause in ORDER_LEDGER_JOINS:
+        stmt = stmt.outerjoin(target, onclause)
+    row = db.execute(stmt.where(Order.order_no == order_no)).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="order not found")
+
+    payload = _order_payload(*row)
+    account = row[1]
+    if account is None:
+        payload["user_stats"] = None
+        payload["membership"] = None
+        return payload
+
+    paid_orders, paid_cents = db.execute(
+        select(func.count(Order.id), func.coalesce(func.sum(Order.amount_cents), 0)).where(
+            Order.user_id == account.id, Order.status == "paid"
+        )
+    ).one()
+    refunded_cents = (
+        db.scalar(
+            select(func.coalesce(func.sum(Order.amount_cents), 0)).where(
+                Order.user_id == account.id, Order.status == "refunded"
+            )
+        )
+        or 0
+    )
+    payload["user_stats"] = {
+        "paid_orders": int(paid_orders),
+        "paid_cents": int(paid_cents),
+        "refunded_cents": int(refunded_cents),
+    }
+    payload["membership"] = active_membership(db, account.id)
+    return payload
 
 
 @router.get("/finance/ledger")
@@ -1709,7 +1891,7 @@ def dashboard(
 
     target = day or la_today()
     data = build_dashboard(db, target, days=days)
-    data["recent_orders"] = finance_orders(db=db, user=user)["items"][:5]
+    data["recent_orders"] = finance_orders(page=1, page_size=5, db=db, user=user)["items"]
     return data
 
 
