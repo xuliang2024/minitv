@@ -1,0 +1,73 @@
+{
+  "version": "v2026.10.19.26",
+  "target": "r2",
+  "status": "published",
+  "sha": "688f25aef93ffbb73721da696a34b294a1441a60",
+  "short_sha": "688f25ae",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.26/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "d5efa5bc7f359d2bf3b36eb4886c64645f72389f39272e5eea3af8bc291cd93a",
+  "files": [
+    {
+      "path": "apple-touch-icon.png",
+      "size": 26122
+    },
+    {
+      "path": "assets/hls-ldmpDFfV.js",
+      "size": 594977
+    },
+    {
+      "path": "assets/main-DfzpEbYi.css",
+      "size": 22588
+    },
+    {
+      "path": "assets/main-q6shz79R.js",
+      "size": 177510
+    },
+    {
+      "path": "brand/minitv-icon.png",
+      "size": 50520
+    },
+    {
+      "path": "favicon-192.png",
+      "size": 29396
+    },
+    {
+      "path": "favicon-32.png",
+      "size": 1619
+    },
+    {
+      "path": "favicon.ico",
+      "size": 5383
+    },
+    {
+      "path": "index.html",
+      "size": 669
+    },
+    {
+      "path": "ph_feed.png",
+      "size": 470870
+    },
+    {
+      "path": "privacy.html",
+      "size": 13802
+    },
+    {
+      "path": "qr.png",
+      "size": 2174
+    }
+  ],
+  "started_at": "2026-10-19T11:13:37+08:00",
+  "finished_at": "2026-10-19T11:13:55+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 74909,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "下载卡片新增 Watch Online 入口（--allow-dirty：web/scripts 为其他会话未跟踪目录）",
+  "dirty": true
+}
