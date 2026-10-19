@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.16",
+  "target": "r2",
+  "status": "published",
+  "sha": "b643308363817314729ddfb8be15d016f441e23d",
+  "short_sha": "b6433083",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.16/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "a00eb96e0848435fefeb67bcdc2badfb336ae432557163cc30733ad8c0da0501",
+  "files": [
+    {
+      "path": "assets/index-B-GsXNi_.js",
+      "size": 813730
+    },
+    {
+      "path": "assets/index-DXWWLaR2.css",
+      "size": 36981
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T10:03:01+08:00",
+  "finished_at": "2026-10-19T10:03:29+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 46245,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "奖励页任务中心：签到卡 + 点赞/收藏/看完每日任务（进度条与领取）",
+  "dirty": false
+}
