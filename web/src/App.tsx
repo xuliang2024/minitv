@@ -68,7 +68,7 @@ const faqs = [
   },
   {
     q: "Where do I download the app?",
-    a: "MiniTV is available on the App Store and Google Play. Use the buttons below, or scan the QR code with your phone.",
+    a: "The iOS and Android apps are coming soon. Until they launch, you can watch free episodes and the full web app right here in your browser.",
   },
   {
     q: "How do coins work?",
@@ -90,6 +90,23 @@ function HomePage() {
   const [data, setData] = useState<Marketing | null>(null);
   const [error, setError] = useState("");
   const [teaser, setTeaser] = useState<PreviewDrama[]>([]);
+  // The store listings are not live yet: the badges stay, the click explains
+  // why and points people at the browser build instead.
+  const [storeNotice, setStoreNotice] = useState("");
+  const noticeTimer = useRef<number | null>(null);
+
+  const showStoreNotice = (platform: string) => {
+    setStoreNotice(`${platform} app is coming soon — watch online in your browser for now.`);
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setStoreNotice(""), 5000);
+  };
+
+  useEffect(
+    () => () => {
+      if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    },
+    [],
+  );
 
   const load = () => {
     setError("");
@@ -402,10 +419,15 @@ function HomePage() {
               <h2>Get MiniTV on your phone</h2>
               <p>
                 Install the app to unlock every episode, download shows, and manage your
-                subscription. Free previews stay right here on the web.
+                subscription. The app is coming soon — until then, free previews and the
+                full web app work right here in your browser.
               </p>
               <div className="store-buttons">
-                <a className="store-btn" href={data?.stores.ios ?? "#"}>
+                <button
+                  type="button"
+                  className="store-btn"
+                  onClick={() => showStoreNotice("The iOS")}
+                >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
                   </svg>
@@ -413,8 +435,12 @@ function HomePage() {
                     <small>Download on the</small>
                     <strong>App Store</strong>
                   </span>
-                </a>
-                <a className="store-btn" href={data?.stores.android ?? "#"}>
+                </button>
+                <button
+                  type="button"
+                  className="store-btn"
+                  onClick={() => showStoreNotice("The Android")}
+                >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M3.61 1.81 13.79 12 3.61 22.19a1 1 0 0 1-.61-.92V2.73a1 1 0 0 1 .61-.92zM14.5 12.7l2.3 2.3-10.94 6.34 8.64-8.64zm3.2-3.2 2.8 1.63a1 1 0 0 1 0 1.73l-2.8 1.63-2.5-2.49 2.5-2.5zM5.95 3.06l10.94 6.33-2.3 2.3-8.64-8.63z" />
                   </svg>
@@ -422,7 +448,7 @@ function HomePage() {
                     <small>Get it on</small>
                     <strong>Google Play</strong>
                   </span>
-                </a>
+                </button>
                 <a
                   className="store-btn store-btn-web"
                   href={WEB_APP_URL}
@@ -440,12 +466,17 @@ function HomePage() {
                   </span>
                 </a>
               </div>
+              {storeNotice && (
+                <p className="store-note" role="status" aria-live="polite">
+                  {storeNotice}
+                </p>
+              )}
             </div>
             <div className="qr-block">
               <div className="qr-tile">
-                <img src="/qr.png" alt="QR code to download the MiniTV app" />
+                <img src="/qr-web.png" alt="QR code to watch MiniTV in your browser" />
               </div>
-              <p className="qr-caption">Scan with your phone camera</p>
+              <p className="qr-caption">Scan to watch on the web</p>
             </div>
           </div>
         </div>

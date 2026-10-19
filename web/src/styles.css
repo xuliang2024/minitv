@@ -783,7 +783,12 @@ summary:focus-visible {
   border-radius: 14px;
   background: rgba(0, 0, 0, 0.35);
   color: #fff;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
   transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
@@ -817,6 +822,29 @@ summary:focus-visible {
 .store-btn-web:hover {
   border-color: rgba(229, 59, 62, 0.85);
   background: rgba(229, 59, 62, 0.2);
+}
+
+/* Click feedback for the two store badges while the apps are not shipped. */
+.store-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 8px 14px;
+  border: 1px solid rgba(229, 59, 62, 0.38);
+  border-radius: 14px;
+  background: rgba(229, 59, 62, 0.12);
+  color: #ffc0c1;
+  font-size: 13.5px;
+  line-height: 1.5;
+  animation: store-note-in 0.22s ease;
+}
+
+@keyframes store-note-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 
 .store-btn small {
