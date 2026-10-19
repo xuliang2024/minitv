@@ -199,7 +199,8 @@ def active_membership(session: Session, user_id: int) -> dict:
         "active": True,
         "plan_code": plan.code,
         "until": until.isoformat(),
-        "canceling": subscription.canceled_at is not None and sub_end is not None and sub_end > now,
+        # "Won't renew" only makes sense while a subscription is the live window.
+        "canceling": mode == "subscription" and subscription.canceled_at is not None and sub_end is not None and sub_end > now,
         "billing_mode": mode,
         "subscription_until": sub_end.isoformat() if sub_end else None,
         "pass_until": pass_end.isoformat() if pass_end else None,
@@ -706,7 +707,12 @@ def _activate_pass(session: Session, checkout: dict) -> dict:
             billing_mode="one_time",
         )
         session.add(row)
-    base = max(now, _as_aware(row.pass_end) or now)
+    # Stack on whatever is already paid for — a live subscription counts too,
+    # otherwise buying a pass mid-subscription would burn most of its days.
+    base = max(
+        [now]
+        + [end for end in (_as_aware(row.pass_end), _as_aware(row.current_period_end)) if end]
+    )
     row.pass_end = base + timedelta(days=days)
     row.billing_mode = "one_time"
     row.plan_id = plan.id
@@ -759,6 +765,9 @@ def _sync_from_subscription(session: Session, remote: dict) -> dict:
     if row is not None:
         if local_status == "canceled":
             row.canceled_at = row.canceled_at or datetime.now(timezone.utc)
+            pass_end = _as_aware(row.pass_end)
+            if pass_end is not None and pass_end > datetime.now(timezone.utc):
+                row.status = "active"  # the pass is still running
         elif remote.get("cancel_at_period_end"):
             # Scheduled to stop renewing: access lasts until current_period_end.
             row.canceled_at = row.canceled_at or datetime.now(timezone.utc)
@@ -784,10 +793,12 @@ def apply_stripe_event(session: Session, *, body: bytes, signature: str, payload
             select(Subscription).where(Subscription.stripe_subscription_id == obj.get("id"))
         )
         if row is not None:
-            row.status = "canceled"
             row.canceled_at = datetime.now(timezone.utc)
+            pass_end = _as_aware(row.pass_end)
+            still_paid = pass_end is not None and pass_end > datetime.now(timezone.utc)
+            row.status = "active" if still_paid else "canceled"
             session.commit()
-        result = {"canceled": bool(row)}
+        result = {"canceled": bool(row and row.status == "canceled")}
     else:
         result = {"ignored": event_type}
     return {"received": True, "type": event_type, **result}

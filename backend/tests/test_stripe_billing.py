@@ -346,3 +346,55 @@ def test_one_time_price_below_stripe_minimum_is_rejected(session, make):
         billing.create_checkout_session(session, user_id=user.id, email=user.email, plan_code="weekly")
     assert exc.value.status_code == 400
     assert "0.50" in exc.value.detail
+
+
+def test_pass_stacks_on_the_subscription_end(session, make):
+    """Buying a pass mid-subscription must not burn the remaining days."""
+    billing.ensure_default_plans(session)
+    user = make.user(email="both@example.com")
+    now = datetime.now(timezone.utc)
+    plan = session.scalar(select(billing.Plan).where(billing.Plan.code == "weekly"))
+    version = session.scalar(select(billing.PlanVersion).where(billing.PlanVersion.plan_id == plan.id))
+    row = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        plan_version_id=version.id,
+        status="active",
+        current_period_start=now,
+        current_period_end=now + timedelta(days=3),
+    )
+    session.add(row)
+    session.commit()
+
+    body, payload = _pass_event(user.id, "cs_pay_mix")
+    billing.apply_stripe_event(session, body=body, signature=sign(body), payload=payload)
+    session.refresh(row)
+    assert row.pass_end - row.current_period_end == timedelta(days=7)
+
+
+def test_subscription_deletion_keeps_a_running_pass(session, make):
+    billing.ensure_default_plans(session)
+    user = make.user(email="pass@example.com")
+    now = datetime.now(timezone.utc)
+    plan = session.scalar(select(billing.Plan).where(billing.Plan.code == "weekly"))
+    version = session.scalar(select(billing.PlanVersion).where(billing.PlanVersion.plan_id == plan.id))
+    row = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        plan_version_id=version.id,
+        status="active",
+        current_period_start=now - timedelta(days=7),
+        current_period_end=now - timedelta(minutes=1),
+        pass_end=now + timedelta(days=5),
+        stripe_subscription_id="sub_mix_1",
+    )
+    session.add(row)
+    session.commit()
+
+    payload = {"type": "customer.subscription.deleted", "data": {"object": {"id": "sub_mix_1"}}}
+    body = json.dumps(payload).encode()
+    billing.apply_stripe_event(session, body=body, signature=sign(body), payload=payload)
+
+    session.refresh(row)
+    assert row.status == "active"  # the pass is still running
+    assert billing.active_membership(session, user.id)["active"] is True
