@@ -1,0 +1,18 @@
+{
+  "version": "v2026.10.19.54",
+  "target": "r2",
+  "status": "failed",
+  "sha": "44de8a1639069a3542bf6d3caa855f99737ab289",
+  "short_sha": "44de8a16",
+  "started_at": "2026-10-19T15:25:33+08:00",
+  "finished_at": "2026-10-19T15:26:27+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 60863,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "自动审核：适配 codex.apiz.ai / deepseek-flash",
+  "error": "1 个文件上传失败：\n    - assets/index-CwPRqo4-.js: Remote end closed connection without response"
+}
