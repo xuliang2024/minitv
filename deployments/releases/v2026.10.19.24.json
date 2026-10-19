@@ -1,0 +1,73 @@
+{
+  "version": "v2026.10.19.24",
+  "target": "r2",
+  "status": "published",
+  "sha": "e1ff52640c16751ad2850a75d3f553a1b4f922b6",
+  "short_sha": "e1ff5264",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.24/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "23bc58208dc1debb1ef1fec186ca35019917ecde963a77ea732283d90653d841",
+  "files": [
+    {
+      "path": "apple-touch-icon.png",
+      "size": 26122
+    },
+    {
+      "path": "assets/hls-ldmpDFfV.js",
+      "size": 594977
+    },
+    {
+      "path": "assets/main-N5l7sxhu.css",
+      "size": 22355
+    },
+    {
+      "path": "assets/main-WCsMX7VI.js",
+      "size": 176958
+    },
+    {
+      "path": "brand/minitv-icon.png",
+      "size": 50520
+    },
+    {
+      "path": "favicon-192.png",
+      "size": 29396
+    },
+    {
+      "path": "favicon-32.png",
+      "size": 1619
+    },
+    {
+      "path": "favicon.ico",
+      "size": 5383
+    },
+    {
+      "path": "index.html",
+      "size": 669
+    },
+    {
+      "path": "ph_feed.png",
+      "size": 470870
+    },
+    {
+      "path": "privacy.html",
+      "size": 13802
+    },
+    {
+      "path": "qr.png",
+      "size": 2174
+    }
+  ],
+  "started_at": "2026-10-19T11:09:09+08:00",
+  "finished_at": "2026-10-19T11:09:27+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 72650,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "官网新增 H5 查看入口：导航 Watch Online + 首屏 web app 链接 + 页脚（--allow-dirty：web/scripts 为其他会话未跟踪目录）",
+  "dirty": true
+}
