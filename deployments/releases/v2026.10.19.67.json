@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.19.67",
+  "target": "r2",
+  "status": "published",
+  "sha": "aacc9660b8695c5bcda8777f22da7ac000e86c3b",
+  "short_sha": "aacc9660",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.67/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "3e00949fcf441e835e91e2cc10d9a5875c02b4dfdaec21d99936cdc0aa69b163",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-COFuDHzG.js",
+      "size": 1449928
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-19T16:26:14+08:00",
+  "finished_at": "2026-10-19T16:26:54+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 87147,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "管理后台登录页预填默认管理员账号",
+  "dirty": false
+}
