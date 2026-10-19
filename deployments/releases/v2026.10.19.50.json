@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.19.50",
+  "target": "r2",
+  "status": "published",
+  "sha": "150eb1402582107e11de6471a2d1b8398080748e",
+  "short_sha": "150eb140",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.50/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "a83db7ddd8046f54ff6f5768debec945a9ed54c84f60474968ef4aac83d7cc44",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-DpGWdH7V.js",
+      "size": 1431447
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-19T14:45:24+08:00",
+  "finished_at": "2026-10-19T14:46:50+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 45247,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "财务订单：用户/套餐/流水/汇总与详情",
+  "dirty": false
+}
