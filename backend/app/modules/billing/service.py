@@ -138,6 +138,12 @@ def change_price(session: Session, *, code: str, price_cents: int, benefits: dic
         )
     )
     session.commit()
+    # Best effort: materialize the Stripe price now so a bad key/amount shows up
+    # here instead of at the first purchase. A failure is retried on checkout.
+    try:
+        ensure_stripe_price(session, plan, version)
+    except BillingError:
+        session.rollback()
     return version
 
 

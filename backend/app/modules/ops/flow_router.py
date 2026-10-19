@@ -1448,7 +1448,11 @@ def set_price(code: str, body: PriceIn, db: Session = Depends(get_db), user: Adm
         version = change_price(db, code=code, price_cents=body.price_cents, benefits=body.benefits, actor_id=user.id)
     except BillingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    return {"version": version.version, "price_cents": version.price_cents}
+    return {
+        "version": version.version,
+        "price_cents": version.price_cents,
+        "stripe_price_id": version.stripe_price_id,
+    }
 
 
 @router.get("/comments")

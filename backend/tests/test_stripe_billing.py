@@ -165,19 +165,14 @@ def test_cancel_at_period_end_keeps_access_but_flags_canceling(session, make, mo
     assert membership["canceling"] is True
 
 
-def test_price_edit_creates_a_new_stripe_price_on_next_checkout(session, make, monkeypatch):
-    """Admin edits the price -> the next checkout provisions a matching Price.
+def test_price_edit_creates_the_stripe_price_immediately(session, make, monkeypatch):
+    """Admin edits the price -> a matching Stripe Price exists right away.
 
-    No dashboard visit: the version row remembers the id, and later checkouts
-    reuse it instead of creating one per purchase.
+    No dashboard visit: the version row remembers the id, and checkouts reuse it.
     """
     billing.ensure_default_plans(session)
     user = make.user(email="buyer@example.com")
     monkeypatch.setenv("STRIPE_PRODUCT_WEEKLY", "prod_weekly")
-    version = billing.change_price(
-        session, code="weekly", price_cents=1234, benefits={"items": ["x"], "best": False}, actor_id=1
-    )
-    assert version.stripe_price_id is None
 
     calls: list[tuple[str, dict]] = []
 
@@ -193,12 +188,17 @@ def test_price_edit_creates_a_new_stripe_price_on_next_checkout(session, make, m
 
     monkeypatch.setattr(billing, "_stripe_request", fake_request)
 
-    billing.create_checkout_session(session, user_id=user.id, email=user.email, plan_code="weekly")
+    version = billing.change_price(
+        session, code="weekly", price_cents=1234, benefits={"items": ["x"], "best": False}, actor_id=1
+    )
     session.refresh(version)
     assert version.stripe_price_id == "price_generated_1"
+    assert [path for path, _ in calls] == ["/prices"]
+
+    billing.create_checkout_session(session, user_id=user.id, email=user.email, plan_code="weekly")
     assert [path for path, _ in calls] == ["/prices", "/checkout/sessions"]
     assert calls[1][1]["line_items[0][price]"] == "price_generated_1"
 
-    # Second checkout reuses the stored price instead of creating another one.
+    # A second purchase reuses the stored price instead of creating another one.
     billing.create_checkout_session(session, user_id=user.id, email=user.email, plan_code="weekly")
     assert [path for path, _ in calls] == ["/prices", "/checkout/sessions", "/checkout/sessions"]
