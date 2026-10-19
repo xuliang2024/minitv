@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.43",
+  "target": "r2",
+  "status": "published",
+  "sha": "0ecab60d0aea78de860ee65cb98de46b4e9f8c3b",
+  "short_sha": "0ecab60d",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.43/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "d748ada721691f0392a3dae16926708bfdc81a2382ef736fbab97eab1f53234c",
+  "files": [
+    {
+      "path": "assets/index-BTVBD512.js",
+      "size": 822823
+    },
+    {
+      "path": "assets/index-k54lRxhh.css",
+      "size": 39761
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T14:04:06+08:00",
+  "finished_at": "2026-10-19T14:04:49+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 29861,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "支付失败提示最低金额原因",
+  "dirty": false
+}
