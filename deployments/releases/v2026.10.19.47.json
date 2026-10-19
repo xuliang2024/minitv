@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.47",
+  "target": "r2",
+  "status": "published",
+  "sha": "2945d7b4a56665f57f5a6f6984549f7fad84d298",
+  "short_sha": "2945d7b4",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.47/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "f22f48eaa4a867562337a83315d48bb96988be2580aa58b1d59247c0a2889025",
+  "files": [
+    {
+      "path": "assets/index-CPZtKxi0.css",
+      "size": 41039
+    },
+    {
+      "path": "assets/index-vl26Fctb.js",
+      "size": 825665
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T14:26:50+08:00",
+  "finished_at": "2026-10-19T14:27:21+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 37610,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "我页新增购买订单记录",
+  "dirty": false
+}
