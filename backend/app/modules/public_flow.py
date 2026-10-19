@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -35,6 +36,7 @@ from app.modules.ops.config_models import (
 )
 from app.modules.playback import service as playback
 from app.modules.playback.models import PlaybackEvent, PlaybackProgress
+from app.modules.social import moderation
 from app.modules.social.models import Comment, InboxMessage, Reaction
 from app.modules.wallet.models import (
     ENTITLEMENT_TYPE_COIN,
@@ -471,10 +473,28 @@ def list_comments(drama_id: int, db: Session = Depends(get_db)):
 
 @router.post("/comments")
 def create_comment(body: CommentIn, user: User = Depends(_require_user), db: Session = Depends(get_db)):
-    row = Comment(user_id=user.id, drama_id=body.drama_id, episode_id=body.episode_id, body=body.body, status="pending")
+    """Auto moderation runs inline: the poster immediately learns whether the
+    comment is live or queued, instead of every comment waiting for a human."""
+    status, result = moderation.moderate(db, body.body)
+    row = Comment(
+        user_id=user.id,
+        drama_id=body.drama_id,
+        episode_id=body.episode_id,
+        body=body.body,
+        status=status,
+        moderation_verdict=None if result is None else result.verdict,
+        moderation_score=None if result is None else result.score,
+        moderation_reason=None if result is None else result.reason,
+        moderation_model=None if result is None else result.model,
+        moderated_at=None if result is None else datetime.now(timezone.utc),
+    )
     db.add(row)
     db.commit()
-    return {"id": row.id, "status": "pending"}
+    return {
+        "id": row.id,
+        "status": status,
+        "moderation": None if result is None else result.as_dict(),
+    }
 
 
 @router.post("/reactions")

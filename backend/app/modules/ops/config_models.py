@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -167,4 +168,30 @@ class TaskClaim(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "code", "period_key", name="uq_task_claim_user_code_day"),
+    )
+
+
+class ModerationSettings(Base):
+    """Single-row config for OpenAI-backed comment pre-moderation.
+
+    The API key never lives in this table: it is read from ``OPENAI_API_KEY`` so
+    rotating it stays an environment change, not a database write. Everything
+    that operations actually tune (model, prompt, thresholds, fallback) is here.
+    """
+
+    __tablename__ = "moderation_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    base_url: Mapped[str] = mapped_column(String(200), nullable=False, default="https://api.openai.com/v1")
+    model: Mapped[str] = mapped_column(String(64), nullable=False, default="gpt-4o-mini")
+    categories: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    approve_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.75)
+    block_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.75)
+    fallback_action: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=6)
+    updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

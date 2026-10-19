@@ -17,6 +17,7 @@ import DramaEdit from "./pages/DramaEdit";
 import Tags from "./pages/Tags";
 import GroupsPage, { GroupDetailPage } from "./pages/Groups";
 import { HomeOpsPage } from "./pages/HomeOps";
+import Moderation from "./pages/Moderation";
 import Rewards from "./pages/Rewards";
 import {
   CommentsPage,
@@ -50,6 +51,7 @@ const ITEMS = [
   { key: "/home-ops", label: "首页运营" },
   { key: "/rewards", label: "金币与任务" },
   { key: "/comments", label: "评论审核" },
+  { key: "/moderation", label: "自动审核" },
   { key: "/finance", label: "财务订单" },
   { key: "/plans", label: "会员套餐" },
   { key: "/tags", label: "标签库" },
@@ -263,6 +265,7 @@ export default function App() {
               <Route path="/home-ops" element={<HomeOpsPage />} />
               <Route path="/rewards" element={<Rewards />} />
               <Route path="/comments" element={<CommentsPage />} />
+              <Route path="/moderation" element={<Moderation />} />
               <Route path="/finance" element={<FinancePage />} />
               <Route path="/plans" element={<PlansPage />} />
               <Route path="/tags" element={<Tags />} />

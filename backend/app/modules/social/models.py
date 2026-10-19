@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -36,6 +36,13 @@ class Comment(Base):
     episode_id: Mapped[int | None] = mapped_column(ForeignKey("episodes.id"), nullable=True)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    # Auto-moderation audit trail. `status` is the visibility switch; these
+    # columns record what the model said, so a human can review or appeal.
+    moderation_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)  # allow / review / block
+    moderation_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    moderation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    moderation_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    moderated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

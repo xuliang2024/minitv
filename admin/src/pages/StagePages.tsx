@@ -1195,21 +1195,130 @@ export function UsersPage() {
   );
 }
 
+const COMMENT_STATUS: Record<string, { color: string; label: string }> = {
+  approved: { color: "green", label: "已发布" },
+  pending: { color: "orange", label: "待审核" },
+  deleted: { color: "red", label: "已删除" },
+};
+
+const MODERATION_VERDICT: Record<string, { color: string; label: string }> = {
+  allow: { color: "green", label: "通过" },
+  review: { color: "orange", label: "转人工" },
+  block: { color: "red", label: "拦截" },
+};
+
 export function CommentsPage() {
   const { data, reload } = useLoad<{ items: any[] }>("/admin/v1/comments", { items: [] });
   return (
-    <Table rowKey="id" dataSource={data.items} pagination={false} scroll={{ x: 720 }} columns={[
-      { title: "内容", dataIndex: "body" },
-      { title: "剧集", dataIndex: "drama_id" },
-      { title: "用户", dataIndex: "user_id" },
-      { title: "状态", dataIndex: "status" },
-      { title: "操作", render: (_, row) => (
-        <Space>
-          <Button size="small" onClick={async () => { await api(`/admin/v1/comments/${row.id}`, { method: "POST", body: JSON.stringify({ status: "approved" }) }); reload(); }}>通过</Button>
-          <Button size="small" danger onClick={async () => { await api(`/admin/v1/comments/${row.id}`, { method: "POST", body: JSON.stringify({ status: "deleted" }) }); reload(); }}>删除</Button>
+    <Space direction="vertical" style={{ width: "100%" }} size={16}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <Space direction="vertical" size={4}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            评论审核
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            自动判定来自「自动审核」页配置的 OpenAI 模型；人工通过或删除始终优先。
+          </Typography.Text>
         </Space>
-      ) },
-    ]} />
+        <Space>
+          <Link to="/moderation">
+            <Button size="small">自动审核配置</Button>
+          </Link>
+          <Button size="small" icon={<ReloadOutlined />} onClick={() => reload()}>
+            刷新
+          </Button>
+        </Space>
+      </div>
+      <Table
+        rowKey="id"
+        dataSource={data.items}
+        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        scroll={{ x: 900 }}
+        columns={[
+          { title: "内容", dataIndex: "body" },
+          { title: "剧集", dataIndex: "drama_id", width: 90 },
+          {
+            title: "用户",
+            dataIndex: "user_id",
+            width: 90,
+            render: (value) => `#${value}`,
+          },
+          {
+            title: "状态",
+            dataIndex: "status",
+            width: 100,
+            render: (value: string) => (
+              <Tag color={COMMENT_STATUS[value]?.color ?? "default"}>
+                {COMMENT_STATUS[value]?.label ?? value}
+              </Tag>
+            ),
+          },
+          {
+            title: "自动判定",
+            width: 130,
+            render: (_, row) => {
+              if (!row.moderation_verdict) {
+                return <Typography.Text type="secondary">未经过模型</Typography.Text>;
+              }
+              const meta = MODERATION_VERDICT[row.moderation_verdict];
+              return (
+                <Tooltip
+                  title={
+                    <span>
+                      {row.moderation_reason || "模型未给出原因"}
+                      {row.moderation_score != null ? ` · 置信度 ${row.moderation_score}` : ""}
+                    </span>
+                  }
+                >
+                  <Tag color={meta?.color ?? "default"} style={{ cursor: "help" }}>
+                    {meta?.label ?? row.moderation_verdict}
+                  </Tag>
+                </Tooltip>
+              );
+            },
+          },
+          {
+            title: "时间",
+            dataIndex: "created_at",
+            width: 150,
+            render: (value: string) => (value ? new Date(value).toLocaleString() : "-"),
+          },
+          {
+            title: "操作",
+            width: 140,
+            render: (_, row) => (
+              <Space>
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    await api(`/admin/v1/comments/${row.id}`, {
+                      method: "POST",
+                      body: JSON.stringify({ status: "approved" }),
+                    });
+                    reload();
+                  }}
+                >
+                  通过
+                </Button>
+                <Button
+                  size="small"
+                  danger
+                  onClick={async () => {
+                    await api(`/admin/v1/comments/${row.id}`, {
+                      method: "POST",
+                      body: JSON.stringify({ status: "deleted" }),
+                    });
+                    reload();
+                  }}
+                >
+                  删除
+                </Button>
+              </Space>
+            ),
+          },
+        ]}
+      />
+    </Space>
   );
 }
 

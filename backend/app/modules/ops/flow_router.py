@@ -57,9 +57,11 @@ from app.modules.ops.config_models import (
     HotSearch,
     LegalPage,
     MarketingStat,
+    ModerationSettings,
     StoreLink,
     Testimonial,
 )
+from app.modules.social import moderation
 from app.modules.social.models import Comment, PushRecord
 from app.modules.ops.models import AdminUser
 from app.modules.ops.router import require_admin, require_content_writer
@@ -219,6 +221,50 @@ class UserUpdateIn(BaseModel):
 
 class CommentModIn(BaseModel):
     status: str
+
+
+class ModerationSettingsIn(BaseModel):
+    """Admin-editable policy. The API key is deliberately absent: it lives in
+    ``OPENAI_API_KEY`` so rotating it never writes to the database."""
+
+    enabled: bool
+    base_url: str = Field(default="https://api.openai.com/v1", max_length=200)
+    model: str = Field(min_length=1, max_length=64)
+    categories: list[str] = Field(default_factory=list)
+    system_prompt: str = Field(default="", max_length=8000)
+    approve_threshold: float = Field(ge=0, le=1)
+    block_threshold: float = Field(ge=0, le=1)
+    fallback_action: str = "pending"
+    timeout_seconds: int = Field(ge=1, le=30)
+
+    @field_validator("categories")
+    @classmethod
+    def _clean_categories(cls, value: list[str]) -> list[str]:
+        cleaned = []
+        for item in value:
+            text = str(item).strip().lower()[:32]
+            if text and text not in cleaned:
+                cleaned.append(text)
+        return cleaned[:20]
+
+    @field_validator("fallback_action")
+    @classmethod
+    def _known_fallback(cls, value: str) -> str:
+        if value not in moderation.FALLBACK_ACTIONS:
+            raise ValueError("fallback_action must be pending or approved")
+        return value
+
+    @field_validator("base_url")
+    @classmethod
+    def _http_url(cls, value: str) -> str:
+        text = value.strip().rstrip("/")
+        if not text.startswith(("http://", "https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return text
+
+
+class ModerationTestIn(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
 
 
 def require_admin_role(user: AdminUser = Depends(require_admin)) -> AdminUser:
@@ -1512,7 +1558,124 @@ def admin_comments(status: str | None = None, db: Session = Depends(get_db), use
     if status:
         stmt = stmt.where(Comment.status == status)
     rows = db.scalars(stmt.order_by(Comment.id.desc())).all()
-    return {"items": [{"id": row.id, "body": row.body, "status": row.status, "drama_id": row.drama_id, "user_id": row.user_id} for row in rows]}
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "body": row.body,
+                "status": row.status,
+                "drama_id": row.drama_id,
+                "episode_id": row.episode_id,
+                "user_id": row.user_id,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "moderation_verdict": row.moderation_verdict,
+                "moderation_score": row.moderation_score,
+                "moderation_reason": row.moderation_reason,
+                "moderation_model": row.moderation_model,
+            }
+            for row in rows
+        ]
+    }
+
+
+def _moderation_payload(row: ModerationSettings) -> dict:
+    return {
+        "enabled": row.enabled,
+        "base_url": row.base_url,
+        "model": row.model,
+        "categories": list(row.categories or []),
+        "system_prompt": row.system_prompt,
+        "approve_threshold": row.approve_threshold,
+        "block_threshold": row.block_threshold,
+        "fallback_action": row.fallback_action,
+        "timeout_seconds": row.timeout_seconds,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "updated_by": row.updated_by,
+        "key": moderation.key_status(),
+        "default_base_url": moderation.default_base_url(),
+        "default_categories": moderation.DEFAULT_CATEGORIES,
+        "default_prompt": moderation.DEFAULT_SYSTEM_PROMPT,
+    }
+
+
+@router.get("/moderation/settings")
+def read_moderation_settings(db: Session = Depends(get_db), user: AdminUser = Depends(require_admin)):
+    return _moderation_payload(moderation.get_settings(db))
+
+
+@router.post("/moderation/settings")
+def update_moderation_settings(
+    body: ModerationSettingsIn,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_admin_role),
+):
+    """Save the OpenAI moderation policy and record the change in audit_logs."""
+    row = moderation.get_settings(db)
+    before = {
+        "enabled": row.enabled,
+        "model": row.model,
+        "base_url": row.base_url,
+        "approve_threshold": row.approve_threshold,
+        "block_threshold": row.block_threshold,
+        "fallback_action": row.fallback_action,
+        "timeout_seconds": row.timeout_seconds,
+        "categories": list(row.categories or []),
+    }
+    row.enabled = body.enabled
+    row.base_url = body.base_url
+    row.model = body.model.strip()
+    row.categories = body.categories
+    row.system_prompt = body.system_prompt
+    row.approve_threshold = body.approve_threshold
+    row.block_threshold = body.block_threshold
+    row.fallback_action = body.fallback_action
+    row.timeout_seconds = body.timeout_seconds
+    row.updated_by = user.id
+    db.add(
+        AuditLog(
+            actor_type="admin",
+            actor_id=user.id,
+            action="moderation_settings_change",
+            target_type="moderation_settings",
+            target_id=row.id,
+            payload={
+                "before": before,
+                "after": {
+                    "enabled": body.enabled,
+                    "model": body.model.strip(),
+                    "base_url": body.base_url,
+                    "approve_threshold": body.approve_threshold,
+                    "block_threshold": body.block_threshold,
+                    "fallback_action": body.fallback_action,
+                    "timeout_seconds": body.timeout_seconds,
+                    "categories": body.categories,
+                },
+                "prompt_chars": len(body.system_prompt),
+            },
+        )
+    )
+    db.commit()
+    db.refresh(row)
+    return _moderation_payload(row)
+
+
+@router.post("/moderation/test")
+def test_moderation(
+    body: ModerationTestIn,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_admin),
+):
+    """Dry-run one piece of text against the saved policy. Writes nothing."""
+    settings = moderation.get_settings(db)
+    try:
+        result = moderation.classify(body.text, settings)
+    except moderation.ModerationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "enabled": settings.enabled,
+        "status": moderation.decide(result.verdict, result.score, settings),
+        "result": result.as_dict(),
+    }
 
 
 @router.post("/comments/{comment_id}")
