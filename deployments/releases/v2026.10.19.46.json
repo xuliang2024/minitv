@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.46",
+  "target": "server",
+  "status": "published",
+  "sha": "f529d7a5cbed0060c239fdb1a3be0fccc3af5cd9",
+  "short_sha": "f529d7a5",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T14:26:34+08:00",
+  "finished_at": "2026-10-19T14:26:50+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 37520,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "新增 /v1/me/orders 购买记录（--allow-dirty：其他会话改动无关）",
+  "dirty": true
+}
