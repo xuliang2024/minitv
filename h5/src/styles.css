@@ -1823,3 +1823,14 @@ img { display: block; max-width: 100%; }
   cursor: pointer;
 }
 .premium-cancel:disabled { opacity: 0.6; }
+.premium-secondary {
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px;
+  border: none;
+  background: transparent;
+  color: var(--accent, #e53b3e);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}

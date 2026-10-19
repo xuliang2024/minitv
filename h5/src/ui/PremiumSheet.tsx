@@ -137,6 +137,16 @@ export function PremiumSheet({
             <li>{t(locale, "premium_benefit_noads")}</li>
             <li>{t(locale, "premium_benefit_hd")}</li>
           </ul>
+          {mode === "one_time" && !isPass && (
+            <button
+              type="button"
+              className="premium-secondary"
+              onClick={() => setShowPlans(true)}
+              data-testid="premium-buy-pass"
+            >
+              {t(locale, "premium_buy_pass_cta")}
+            </button>
+          )}
           {isPass ? (
             <>
               <button
