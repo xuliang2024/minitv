@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.19.63",
+  "target": "r2",
+  "status": "published",
+  "sha": "d99c8c3819d08f9992bc3be47d690069c0636bad",
+  "short_sha": "d99c8c38",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.63/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "2de02453fab893df5ed3249eee7ccc15d6b0f3ed06b79a893629139736dbe960",
+  "files": [
+    {
+      "path": "assets/index-7xIuFNkl.js",
+      "size": 1449785
+    },
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-19T16:12:56+08:00",
+  "finished_at": "2026-10-19T16:13:28+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 79959,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "评论审核：默认全部 + 顶部统计（--allow-dirty：其他会话 admin 改动未提交，dist 取自 v2026.10.19.62 干净构建）",
+  "dirty": true
+}
