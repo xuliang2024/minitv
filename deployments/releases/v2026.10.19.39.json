@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.19.39",
+  "target": "r2",
+  "status": "published",
+  "sha": "d534274a7737b171b915fee0043796b5a8360a40",
+  "short_sha": "d534274a",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.39/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "eb82fbe1dc64133b06c6d291c0eeac3915b4f7423bc4ba54eb15e56b0da72a41",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-zc_ZSENI.js",
+      "size": 1408120
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-19T11:58:40+08:00",
+  "finished_at": "2026-10-19T11:59:10+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 92019,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "默认计费模式：一次性",
+  "dirty": false
+}
