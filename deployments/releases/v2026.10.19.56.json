@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.56",
+  "target": "server",
+  "status": "published",
+  "sha": "175fb8bb0afff83d8f5a1190ff1dfb66607058d5",
+  "short_sha": "175fb8bb",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T15:27:44+08:00",
+  "finished_at": "2026-10-19T15:28:02+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 61740,
+    "agent_session": null,
+    "cwd": "/private/tmp/deploy-moderation"
+  },
+  "note": "自动审核：适配 codex.apiz.ai / deepseek-flash",
+  "dirty": false
+}
