@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getJson, postJson } from "../api";
+import { getJson, postJson, type UnlockResult } from "../api";
 import { useAuth } from "../auth/AuthProvider";
 import type { Locale } from "../copy";
 import { t } from "../copy";
@@ -11,6 +11,7 @@ import {
   IconComment,
   IconEpisodes,
   IconHeart,
+  IconLock,
   IconMoreDots,
   IconQuality,
   IconShare,
@@ -20,25 +21,31 @@ import {
 import { EpisodeView } from "../player/EpisodeView";
 import type { PlayEpisode, PlayPayload } from "../types";
 import { CommentSheet } from "../ui/CommentSheet";
+import { PremiumSheet } from "../ui/PremiumSheet";
 import { toast } from "../ui/toast";
+import { UnlockSheet } from "../ui/UnlockSheet";
 
 interface Props {
   dramaId: number;
   locale: Locale;
   onBack: () => void;
+  onOpenRewards: () => void;
 }
 
 const RANGE = 30;
 const SPEED_OPTIONS = [0.75, 1.0, 1.25, 1.5, 2.0];
 
 /** The drama's own page: every episode, opened at the resume point. Finishing one jumps to the next. */
-export function PlayPage({ dramaId, locale, onBack }: Props) {
-  const { requireAuth } = useAuth();
+export function PlayPage({ dramaId, locale, onBack, onOpenRewards }: Props) {
+  const { requireAuth, user, refresh } = useAuth();
   const [payload, setPayload] = useState<PlayPayload | null>(null);
   const [error, setError] = useState(false);
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [sheet, setSheet] = useState<"episodes" | "synopsis" | "settings" | "comments" | null>(null);
+  const [unlockTarget, setUnlockTarget] = useState<PlayEpisode | null>(null);
+  const [premiumOpen, setPremiumOpen] = useState(false);
+  const unlockKeys = useRef<Map<number, string>>(new Map());
   const [commentCounts, setCommentCounts] = useState<Record<number, number>>({});
   const [liked, setLiked] = useState(false);
   const [favorited, setFavorited] = useState(false);
@@ -87,6 +94,65 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
 
   useEffect(load, [dramaId]);
 
+  const openUnlock = (episode: PlayEpisode) =>
+    requireAuth(() => {
+      const price = episode.unlock?.coin_price ?? 0;
+      // A zero price is membership-only (or a misconfigured drama): never
+      // create a coin flow for it, send the viewer to the plans instead.
+      if (price <= 0) {
+        setPremiumOpen(true);
+        return;
+      }
+      setUnlockTarget(episode);
+    });
+
+  const unlockKeyFor = (episodeId: number) => {
+    const existing = unlockKeys.current.get(episodeId);
+    if (existing) return existing;
+    const created =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    unlockKeys.current.set(episodeId, created);
+    return created;
+  };
+
+  const finishUnlock = (result: UnlockResult) => {
+    const episodeId = result.episode_id;
+    setUnlockTarget(null);
+    unlockKeys.current.delete(episodeId);
+    setPayload((prev) => {
+      if (!prev) return prev;
+      const items = prev.items.map((item) =>
+        result.status === "subscription" || item.id === episodeId
+          ? { ...item, locked: false, unlock: null }
+          : item,
+      );
+      const unlocked =
+        result.status === "subscription"
+          ? prev.entitlement.unlocked_episode_ids
+          : Array.from(new Set([...prev.entitlement.unlocked_episode_ids, episodeId]));
+      return {
+        ...prev,
+        items,
+        entitlement: {
+          member: prev.entitlement.member || result.status === "subscription",
+          unlocked_episode_ids: unlocked,
+        },
+      };
+    });
+    void refresh();
+    if (result.status === "subscription") {
+      toast(t(locale, "unlock_member_active"));
+    } else if (result.status === "already_unlocked") {
+      toast(t(locale, "unlock_already"));
+    } else {
+      toast(t(locale, "unlock_success", { balance: result.balance_after ?? 0 }));
+    }
+  };
+
+  const openPremium = () => requireAuth(() => setPremiumOpen(true));
+
   if (error) return <div className="center"><button className="retry" onClick={load}>{t(locale, "retry")}</button></div>;
   if (!payload) return <div className="center">…</div>;
   if (payload.items.length === 0) return <div className="center">{t(locale, "empty")}</div>;
@@ -121,7 +187,7 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
 
   return (
     <div
-      className="play"
+      className={current.locked ? "play locked-view" : "play"}
       onTouchStart={(event) => { startY.current = event.touches[0].clientY; }}
       onTouchEnd={(event) => {
         if (sheet) return;
@@ -135,7 +201,15 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
           <div className="slot" key={episode.id}>
             {position === index && (
               episode.locked ? (
-                <Locked episode={episode} locale={locale} />
+                <LockedEpisode
+                  episode={episode}
+                  locale={locale}
+                  signedIn={Boolean(user)}
+                  balance={user?.coins ?? 0}
+                  onUnlock={() => openUnlock(episode)}
+                  onMember={openPremium}
+                  onNeedCoins={onOpenRewards}
+                />
               ) : (
                 <EpisodeView
                   dramaId={dramaId}
@@ -274,6 +348,27 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
           />
         </>
       )}
+      {unlockTarget && (
+        <UnlockSheet
+          locale={locale}
+          episode={unlockTarget}
+          price={unlockTarget.unlock?.coin_price ?? 0}
+          balance={user?.coins ?? 0}
+          idempotencyKey={unlockKeyFor(unlockTarget.id)}
+          onClose={() => setUnlockTarget(null)}
+          onDone={finishUnlock}
+          onInsufficient={() => void refresh()}
+          onNeedCoins={() => { setUnlockTarget(null); void refresh(); onOpenRewards(); }}
+        />
+      )}
+      {premiumOpen && (
+        <PremiumSheet
+          locale={locale}
+          membership={user?.membership}
+          onChanged={() => { void refresh(); load(); }}
+          onClose={() => setPremiumOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -358,11 +453,69 @@ function PlaybackSettingsSheet({
   );
 }
 
-function Locked({ episode, locale }: { episode: PlayEpisode; locale: Locale }) {
-  const price = episode.unlock?.coin_price;
+function LockedEpisode({
+  episode,
+  locale,
+  signedIn,
+  balance,
+  onUnlock,
+  onMember,
+  onNeedCoins,
+}: {
+  episode: PlayEpisode;
+  locale: Locale;
+  signedIn: boolean;
+  balance: number;
+  onUnlock: () => void;
+  onMember: () => void;
+  onNeedCoins: () => void;
+}) {
+  const price = episode.unlock?.coin_price ?? 0;
+  const short = Math.max(0, price - balance);
+  const coinOnly = price > 0;
+
   return (
     <div className="lock">
-      <div>🔒<br />{t(locale, "locked")}{price ? ` · ${price}` : ""}</div>
+      <div className="lock-panel">
+        <div className="lock-badge"><IconLock size={30} /></div>
+        <h2>{t(locale, "unlock_title", { number: episode.episode_number })}</h2>
+        <p className="lock-sub">{t(locale, "unlock_sub")}</p>
+
+        {coinOnly && (
+          <div className="lock-price">
+            <b>{t(locale, "unlock_price", { price })}</b>
+            <span>{t(locale, "unlock_per_episode")}</span>
+          </div>
+        )}
+        {signedIn && (
+          <p className="lock-balance">{t(locale, "unlock_balance", { balance })}</p>
+        )}
+
+        {coinOnly && (
+          !signedIn ? (
+            <button type="button" className="lock-cta" onClick={onUnlock} data-testid="lock-login">
+              {t(locale, "unlock_login_cta")}
+            </button>
+          ) : short > 0 ? (
+            <button type="button" className="lock-cta ghost" onClick={onNeedCoins} data-testid="lock-need-coins">
+              {t(locale, "unlock_short_cta", { short })}
+            </button>
+          ) : (
+            <button type="button" className="lock-cta" onClick={onUnlock} data-testid="lock-unlock">
+              {t(locale, "unlock_cta", { price })}
+            </button>
+          )
+        )}
+
+        <button
+          type="button"
+          className={coinOnly ? "lock-member" : "lock-cta"}
+          onClick={onMember}
+          data-testid="lock-member"
+        >
+          {coinOnly ? t(locale, "unlock_member_cta") : t(locale, "premium_strip_cta")}
+        </button>
+      </div>
     </div>
   );
 }

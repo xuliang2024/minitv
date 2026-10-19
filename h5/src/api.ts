@@ -22,9 +22,12 @@ export function deviceId(): string {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Parsed response body (e.g. the {need, have} object behind a 402). */
+  data: unknown;
+  constructor(status: number, message: string, data: unknown = null) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -47,7 +50,12 @@ export function onUnauthorized(handler: (() => void) | null) {
   unauthorizedHandler = handler;
 }
 
-async function send(method: string, path: string, body?: unknown): Promise<unknown> {
+async function send(
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -56,6 +64,7 @@ async function send(method: string, path: string, body?: unknown): Promise<unkno
         "Content-Type": "application/json",
         "X-Device-Id": deviceId(),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -64,8 +73,10 @@ async function send(method: string, path: string, body?: unknown): Promise<unkno
   }
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
+    let payload: unknown = null;
     try {
       const data = (await response.json()) as { detail?: unknown };
+      payload = data;
       if (typeof data.detail === "string") detail = data.detail;
     } catch {
       /* body was not JSON */
@@ -74,7 +85,7 @@ async function send(method: string, path: string, body?: unknown): Promise<unkno
     if (response.status === 401 && !path.startsWith("/v1/auth/") && unauthorizedHandler) {
       unauthorizedHandler();
     }
-    throw new ApiError(response.status, detail);
+    throw new ApiError(response.status, detail, payload);
   }
   return response.json();
 }
@@ -220,6 +231,24 @@ export function claimTask(code: string): Promise<TaskClaimResult> {
 
 export function updateMe(body: { display_name?: string; bio?: string }): Promise<{ ok: boolean }> {
   return send("PATCH", "/v1/me", body) as Promise<{ ok: boolean }>;
+}
+
+export interface UnlockResult {
+  status: "unlocked" | "already_unlocked" | "subscription";
+  source: "coin" | "subscription";
+  episode_id: number;
+  balance_after: number | null;
+  replayed?: boolean;
+}
+
+/**
+ * Spend coins on one episode. The key makes retries safe: reuse the same value
+ * for a retry, and mint a new one for a different episode or a fresh intent.
+ */
+export function unlockEpisode(episodeId: number, idempotencyKey: string): Promise<UnlockResult> {
+  return send("POST", "/v1/unlock", { episode_id: episodeId }, {
+    "Idempotency-Key": idempotencyKey,
+  }) as Promise<UnlockResult>;
 }
 
 export interface Plan {

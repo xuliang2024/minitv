@@ -312,6 +312,16 @@ export function IconCoin({ size = 20 }: { size?: number }) {
   );
 }
 
+export function IconLock({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4.2" y="10.2" width="15.6" height="10.4" rx="2.6" />
+      <path d="M8 10.2V7.6a4 4 0 0 1 8 0v2.6" />
+      <circle cx="12" cy="15.3" r="1.2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function IconCalendarCheck({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

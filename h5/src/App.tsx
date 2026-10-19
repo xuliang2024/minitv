@@ -90,7 +90,12 @@ function AppShell() {
       )}
       <main className={playing || tab === "foryou" ? "stage bleed" : "stage"}>
         {playing ? (
-          <PlayPage dramaId={dramaId} locale={locale} onBack={() => setDramaId(null)} />
+          <PlayPage
+            dramaId={dramaId}
+            locale={locale}
+            onBack={() => setDramaId(null)}
+            onOpenRewards={() => { setDramaId(null); setTab("rewards"); }}
+          />
         ) : searching ? (
           <SearchPage locale={locale} onBack={() => setSearching(false)} onOpen={(id) => { setSearching(false); setDramaId(id); }} />
         ) : tab === "home" ? (
