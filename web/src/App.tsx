@@ -329,8 +329,8 @@ function HomePage() {
               <span className="eyebrow">Premium</span>
               <h2>Pick how you unlock</h2>
               <p className="section-sub">
-                Same three plans as in the app. Prices are charged through the App Store
-                or Google Play.
+                Same three plans everywhere. Subscribe on the web with a card (secure
+                checkout by Stripe) or in the app through the App Store or Google Play.
               </p>
             </div>
           </div>
@@ -365,9 +365,9 @@ function HomePage() {
                           ? "btn btn-primary btn-block plan-cta"
                           : "btn btn-ghost btn-block plan-cta"
                       }
-                      href="#download"
+                      href="https://h5.minitv.us"
                     >
-                      Get the app
+                      Subscribe on the web
                     </a>
                   </article>
                 ))}
