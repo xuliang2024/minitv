@@ -152,14 +152,14 @@ counts = dict(
 | 配置项 | 默认 | 说明 |
 |---|---|---|
 | 启用 | 关闭 | 关闭时全部走人工，行为与以前一致 |
-| 模型 | `gpt-4o-mini` | 兼容 OpenAI 协议的接口都可填 |
-| Base URL | `https://api.openai.com/v1` | 中转地址同样可用 |
+| 模型 | `deepseek-flash` | 推理模型，token 预算至少 900，否则会截断 |
+| Base URL | `https://codex.apiz.ai/v1` | 任意 OpenAI 兼容中转都可用 |
 | 审核维度 | 色情/暴力/仇恨/骚扰/广告/隐私/违法 | 写入提示词的 `{categories}` |
 | 系统提示词 | 内置 | 要求返回 `verdict / score / reason` |
 | 自动通过阈值 | 0.75 | `allow` 且置信度达标 → `approved` |
 | 自动拦截阈值 | 0.75 | `block` 且置信度达标 → `deleted` |
 | 失败降级 | `pending` | 超时/限流/密钥失效时落到 `pending` |
-| 超时 | 6s | 单次模型调用上限，不拖住发评论 |
+| 超时 | 20s | 单次模型调用上限；deepseek-flash 实测 2–3s |
 
 判定映射：
 

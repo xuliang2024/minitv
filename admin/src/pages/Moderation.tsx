@@ -81,10 +81,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const MODEL_OPTIONS = [
+  { value: "deepseek-flash" },
   { value: "gpt-4o-mini" },
   { value: "gpt-4.1-mini" },
   { value: "gpt-4o" },
-  { value: "gpt-4.1" },
 ];
 
 const VERDICT_META: Record<string, { color: string; label: string }> = {
@@ -258,7 +258,7 @@ export default function Moderation() {
                 >
                   <AutoComplete
                     options={MODEL_OPTIONS}
-                    placeholder="gpt-4o-mini"
+                    placeholder="deepseek-flash"
                     filterOption={(input, option) =>
                       String(option?.value ?? "").includes(input.toLowerCase())
                     }
@@ -275,7 +275,7 @@ export default function Moderation() {
                   ]}
                   extra="兼容 OpenAI 协议的中转地址也可以；末尾不要带 /chat/completions"
                 >
-                  <Input placeholder="https://api.openai.com/v1" />
+                  <Input placeholder="https://codex.apiz.ai/v1" />
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>
