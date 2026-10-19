@@ -102,6 +102,12 @@ export interface MeProfile {
   follower_count: number;
   received_likes: number;
   reminder_opt_in: boolean;
+  membership?: {
+    active: boolean;
+    plan_code: string | null;
+    until: string | null;
+    canceling: boolean;
+  };
 }
 
 export interface Session {
@@ -209,4 +215,35 @@ export function claimTask(code: string): Promise<TaskClaimResult> {
 
 export function updateMe(body: { display_name?: string; bio?: string }): Promise<{ ok: boolean }> {
   return send("PATCH", "/v1/me", body) as Promise<{ ok: boolean }>;
+}
+
+export interface Plan {
+  code: string;
+  name_en: string;
+  name_zh: string;
+  price_cents: number;
+  currency: string;
+  version: number;
+  version_id: number;
+  benefits: { items?: string[]; best?: boolean };
+}
+
+export interface PlansPayload {
+  items: Plan[];
+}
+
+export interface CheckoutResult {
+  url: string;
+  session_id: string;
+  order_no: string;
+}
+
+/** Weekly / monthly / yearly plans, priced by the backend. */
+export function getPlans(): Promise<PlansPayload> {
+  return getJson<PlansPayload>("/v1/plans");
+}
+
+/** Create a Stripe Checkout session and send the browser to it. */
+export function startCheckout(planCode: string): Promise<CheckoutResult> {
+  return postJson<CheckoutResult>("/v1/billing/checkout", { plan_code: planCode });
 }

@@ -32,10 +32,11 @@ import type {
   LedgerEntry,
 } from "../types";
 import { Sheet } from "../ui/Sheet";
+import { PremiumSheet } from "../ui/PremiumSheet";
 import { toast } from "../ui/toast";
 
 type MeTab = "history" | "favorites" | "likes";
-type SheetId = "edit" | "ledger" | "messages" | "settings";
+type SheetId = "edit" | "ledger" | "messages" | "settings" | "premium";
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 const CHECKIN_KEY = "minitv_h5_checkin";
@@ -261,6 +262,40 @@ export function MePage({
         </div>
       )}
 
+      {user?.membership?.active ? (
+        <div className="me-premium active" data-testid="me-premium-active">
+          <span className="me-premium-crown">★</span>
+          <span className="me-premium-copy">
+            <b>{t(locale, "premium_active")}</b>
+            <i>
+              {t(locale, "premium_active_until", {
+                date: user.membership.until
+                  ? new Date(user.membership.until).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })
+                  : "—",
+              })}
+            </i>
+          </span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="me-premium"
+          onClick={() => requireAuth(() => setSheet("premium"))}
+          data-testid="me-premium"
+        >
+          <span className="me-premium-crown">★</span>
+          <span className="me-premium-copy">
+            <b>{t(locale, "premium_strip_title")}</b>
+            <i>{t(locale, "premium_strip_sub")}</i>
+          </span>
+          <span className="me-premium-go">{t(locale, "premium_strip_cta")}</span>
+        </button>
+      )}
+
       <div className="me-quick">
         <button type="button" className="me-quick-item" onClick={() => openTab("history")}>
           <span className="me-quick-icon">
@@ -388,6 +423,9 @@ export function MePage({
       )}
       {sheet === "messages" && (
         <MessagesSheet locale={locale} onClose={() => setSheet(null)} onRead={handleRead} />
+      )}
+      {sheet === "premium" && (
+        <PremiumSheet locale={locale} onClose={() => setSheet(null)} />
       )}
       {sheet === "settings" && (
         <SettingsSheet

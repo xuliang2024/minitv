@@ -248,6 +248,7 @@ def oauth(provider: str):
 @router.get("/me")
 def me(user: User = Depends(_require_user), db: Session = Depends(get_db)):
     wallet = db.get(WalletAccount, user.id)
+    membership = billing.active_membership(db, user.id)
     return {
         "id": user.id,
         "public_id": user.public_id,
@@ -264,6 +265,7 @@ def me(user: User = Depends(_require_user), db: Session = Depends(get_db)):
         "received_likes": user.received_likes,
         "coins": 0 if wallet is None else wallet.balance,
         "reminder_opt_in": user.reminder_opt_in,
+        "membership": membership,
     }
 
 
@@ -362,6 +364,42 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
 def cancel(user: User = Depends(_require_user), db: Session = Depends(get_db)):
     billing.cancel_subscription(db, user.id)
     return {"ok": True}
+
+
+class CheckoutIn(BaseModel):
+    plan_code: str
+    success_url: str | None = None
+    cancel_url: str | None = None
+
+
+@router.post("/billing/checkout")
+def checkout(body: CheckoutIn, user: User = Depends(_require_user), db: Session = Depends(get_db)):
+    """Start a Stripe Checkout for one of the plans and hand back the URL."""
+    try:
+        return billing.create_checkout_session(
+            db,
+            user_id=user.id,
+            email=user.email,
+            plan_code=body.plan_code,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+        )
+    except BillingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/billing/stripe/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    body = await request.body()
+    signature = request.headers.get("Stripe-Signature", "")
+    try:
+        payload = json.loads(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid payload") from exc
+    try:
+        return billing.apply_stripe_event(db, body=body, signature=signature, payload=payload)
+    except BillingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("/config")

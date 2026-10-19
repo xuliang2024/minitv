@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { LoginSheet } from "./auth/LoginSheet";
 import { loadLocale, saveLocale, t, type Locale } from "./copy";
@@ -9,7 +9,7 @@ import { MePage } from "./pages/MePage";
 import { PlayPage } from "./pages/PlayPage";
 import { RewardsPage } from "./pages/RewardsPage";
 import { SearchPage } from "./pages/SearchPage";
-import { ToastHost } from "./ui/toast";
+import { toast, ToastHost } from "./ui/toast";
 
 type Tab = "home" | "foryou" | "rewards" | "me";
 
@@ -35,11 +35,28 @@ export function App() {
 }
 
 function AppShell() {
-  const { loginOpen } = useAuth();
+  const { loginOpen, refresh } = useAuth();
   const [locale, setLocale] = useState<Locale>(loadLocale);
   const [tab, setTab] = useState<Tab>("home");
   const [dramaId, setDramaId] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
+
+  // Stripe sends the browser back here after Checkout. Clean the flag out of the
+  // URL and re-read /v1/me so the "Premium active" strip appears immediately.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("checkout");
+    if (!result) return;
+    params.delete("checkout");
+    const query = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    if (result === "success") {
+      setTab("me");
+      void refresh();
+      toast(t(locale, "premium_paid"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const changeLocale = (next: Locale) => {
     saveLocale(next);

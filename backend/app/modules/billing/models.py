@@ -75,6 +75,9 @@ class Subscription(Base):
     current_period_start: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     current_period_end: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     canceled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stripe_price_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
