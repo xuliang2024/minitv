@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.32",
+  "target": "server",
+  "status": "published",
+  "sha": "9abd67f1901ce23249f68074978651a8271460ed",
+  "short_sha": "9abd67f1",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T11:37:10+08:00",
+  "finished_at": "2026-10-19T11:37:23+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 84478,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "后台改价即时生成 Stripe 价格（--allow-dirty：其他会话改动无关）",
+  "dirty": true
+}
