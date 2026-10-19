@@ -53,6 +53,7 @@ class PlanVersion(Base):
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     benefits: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # entitlement snapshot
     note: Mapped[str] = mapped_column(Text, nullable=False, default="")  # price change reason, audited
+    stripe_price_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

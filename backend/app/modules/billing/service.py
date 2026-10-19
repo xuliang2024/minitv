@@ -219,6 +219,12 @@ PRICE_ENV = {
     "monthly": "STRIPE_PRICE_MONTHLY",
     "yearly": "STRIPE_PRICE_YEARLY",
 }
+PRODUCT_ENV = {
+    "weekly": "STRIPE_PRODUCT_WEEKLY",
+    "monthly": "STRIPE_PRODUCT_MONTHLY",
+    "yearly": "STRIPE_PRODUCT_YEARLY",
+}
+INTERVAL_OF = {"weekly": "week", "monthly": "month", "yearly": "year"}
 PLAN_BY_PRICE: dict[str, str] = {}
 
 
@@ -285,6 +291,39 @@ def _latest_version(session: Session, plan: Plan) -> PlanVersion:
     return version
 
 
+def ensure_stripe_price(session: Session, plan: Plan, version: PlanVersion) -> str:
+    """The Stripe price that matches this plan version.
+
+    Prices are immutable in Stripe, so a price edit means "create a new Price".
+    Doing that here (instead of in the dashboard) lets the admin page be the one
+    place a price changes; the first checkout after an edit provisions it.
+    """
+    if version.stripe_price_id:
+        return version.stripe_price_id
+    env_price = os.environ.get(PRICE_ENV.get(plan.code, ""), "").strip()
+    if version.version == 1 and env_price:
+        # Bootstrap: version 1 was created alongside a dashboard price.
+        version.stripe_price_id = env_price
+        session.commit()
+        return env_price
+    product = os.environ.get(PRODUCT_ENV.get(plan.code, ""), "").strip()
+    if not product:
+        raise BillingError(503, f"stripe product for {plan.code} is not configured")
+    price = _stripe_request(
+        "/prices",
+        {
+            "product": product,
+            "unit_amount": version.price_cents,
+            "currency": (version.currency or "USD").lower(),
+            "recurring[interval]": INTERVAL_OF.get(plan.code, "month"),
+            "nickname": f"{plan.name_en} v{version.version} ${version.price_cents / 100:.2f}",
+        },
+    )
+    version.stripe_price_id = price["id"]
+    session.commit()
+    return version.stripe_price_id
+
+
 def create_checkout_session(
     session: Session,
     *,
@@ -302,7 +341,7 @@ def create_checkout_session(
     base = os.environ.get("H5_PUBLIC_BASE_URL", "https://h5.minitv.us").rstrip("/")
     data = {
         "mode": "subscription",
-        "line_items[0][price]": price_id_for(plan_code),
+        "line_items[0][price]": ensure_stripe_price(session, plan, version),
         "line_items[0][quantity]": "1",
         "success_url": success_url or f"{base}/?checkout=success",
         "cancel_url": cancel_url or f"{base}/?checkout=cancel",
@@ -485,6 +524,14 @@ def _sync_from_subscription(session: Session, remote: dict) -> dict:
         user_id = existing.user_id
     if not user_id:
         raise BillingError(400, "subscription is missing our user id")
+
+    if plan_code is None and price_id:
+        # Prices created by ensure_stripe_price are only known to the DB.
+        owner = session.scalar(
+            select(PlanVersion).where(PlanVersion.stripe_price_id == price_id)
+        )
+        if owner is not None:
+            plan_code = session.scalar(select(Plan.code).where(Plan.id == owner.plan_id))
 
     status = remote.get("status")
     local_status = "active" if status in {"active", "trialing", "past_due"} else "canceled"
