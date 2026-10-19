@@ -1,0 +1,73 @@
+{
+  "version": "v2026.10.19.25",
+  "target": "r2",
+  "status": "published",
+  "sha": "303e333bd178e333c930756347e7e579d829a386",
+  "short_sha": "303e333b",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.25/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "d94f484e0b53384013d21f1f7bdd18e49f464d11d203ec5b50a386834be5e73c",
+  "files": [
+    {
+      "path": "apple-touch-icon.png",
+      "size": 26122
+    },
+    {
+      "path": "assets/hls-ldmpDFfV.js",
+      "size": 594977
+    },
+    {
+      "path": "assets/main-CEaPOGKB.js",
+      "size": 177031
+    },
+    {
+      "path": "assets/main-N5l7sxhu.css",
+      "size": 22355
+    },
+    {
+      "path": "brand/minitv-icon.png",
+      "size": 50520
+    },
+    {
+      "path": "favicon-192.png",
+      "size": 29396
+    },
+    {
+      "path": "favicon-32.png",
+      "size": 1619
+    },
+    {
+      "path": "favicon.ico",
+      "size": 5383
+    },
+    {
+      "path": "index.html",
+      "size": 669
+    },
+    {
+      "path": "ph_feed.png",
+      "size": 470870
+    },
+    {
+      "path": "privacy.html",
+      "size": 13802
+    },
+    {
+      "path": "qr.png",
+      "size": 2174
+    }
+  ],
+  "started_at": "2026-10-19T11:09:52+08:00",
+  "finished_at": "2026-10-19T11:10:16+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 72995,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "会员区改为网页订阅（Stripe Checkout）；--allow-dirty：web/scripts 为其他会话未跟踪文件",
+  "dirty": true
+}
