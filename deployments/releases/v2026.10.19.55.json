@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.19.55",
+  "target": "r2",
+  "status": "published",
+  "sha": "9993821a010f52f506256a2b995516df38e3156d",
+  "short_sha": "9993821a",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.55/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "c0e552eebf78f37bd99e054910e10e057ba092d92704f8245824b530d82200b2",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-CwPRqo4-.js",
+      "size": 1445506
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-19T15:26:34+08:00",
+  "finished_at": "2026-10-19T15:27:32+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 61253,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "自动审核：适配 codex.apiz.ai / deepseek-flash（重试）",
+  "dirty": false
+}
