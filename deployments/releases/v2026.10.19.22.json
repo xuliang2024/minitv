@@ -1,0 +1,73 @@
+{
+  "version": "v2026.10.19.22",
+  "target": "r2",
+  "status": "published",
+  "sha": "dc832f36366ee808f0ee2bf883e0729d6ce24e81",
+  "short_sha": "dc832f36",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.22/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "93a73b835db8d3ee07d49ca4c92fdaf62efc8e8a84197eba1826fb52ab4b34e2",
+  "files": [
+    {
+      "path": "apple-touch-icon.png",
+      "size": 26122
+    },
+    {
+      "path": "assets/hls-ldmpDFfV.js",
+      "size": 594977
+    },
+    {
+      "path": "assets/main-BbQnurGG.js",
+      "size": 176353
+    },
+    {
+      "path": "assets/main-ZnoGF62b.css",
+      "size": 21975
+    },
+    {
+      "path": "brand/minitv-icon.png",
+      "size": 50520
+    },
+    {
+      "path": "favicon-192.png",
+      "size": 29396
+    },
+    {
+      "path": "favicon-32.png",
+      "size": 1619
+    },
+    {
+      "path": "favicon.ico",
+      "size": 5383
+    },
+    {
+      "path": "index.html",
+      "size": 669
+    },
+    {
+      "path": "ph_feed.png",
+      "size": 470870
+    },
+    {
+      "path": "privacy.html",
+      "size": 13802
+    },
+    {
+      "path": "qr.png",
+      "size": 2174
+    }
+  ],
+  "started_at": "2026-10-19T11:04:51+08:00",
+  "finished_at": "2026-10-19T11:05:32+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 70406,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "修复官网首屏 Could not load MiniTV：构建固定 API 基址 api.minitv.us（dist 取自 commit dc832f3 的隔离 worktree，未包含其他会话 web 改动）",
+  "dirty": true
+}
