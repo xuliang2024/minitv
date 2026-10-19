@@ -59,9 +59,7 @@ export function SiteFooter() {
             <a href="/terms" onClick={(event) => event.preventDefault()}>
               Terms
             </a>
-            <a href="/privacy" onClick={(event) => event.preventDefault()}>
-              Privacy
-            </a>
+            <a href="/privacy.html">Privacy</a>
             <a href="/cookies" onClick={(event) => event.preventDefault()}>
               Cookie Settings
             </a>
