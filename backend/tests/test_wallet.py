@@ -84,7 +84,8 @@ def test_unlock_success_writes_ledger_and_entitlement(make, session):
     assert entries[0].amount == -60
     assert entries[0].balance_after == 40
     assert entries[0].biz_type == "unlock"
-    assert entries[0].biz_key == "k-ok"
+    assert entries[0].biz_key.startswith(f"u{user.id}:")
+    assert entries[0].biz_key != "k-ok"  # client keys are never stored raw
     assert entries[0].episode_id == episode.id
 
     entitlement = session.query(Entitlement).one()
@@ -179,3 +180,73 @@ def test_idempotency_key_unique_in_database(make, session):
     with pytest.raises(IntegrityError):
         session.commit()
     session.rollback()
+
+
+# ---- guard rails: only published, priced content is purchasable ----
+
+
+def test_unpublished_episode_cannot_be_unlocked(make, session):
+    user = make.user(coins=100)
+    drama = make.drama(status="published", price=60)
+    episode = make.episode(drama, number=5, status="in_review")
+
+    with pytest.raises(wallet_service.EpisodeNotFoundError):
+        wallet_service.unlock_episode(
+            session, user_id=user.id, episode_id=episode.id, idempotency_key="k-unpublished"
+        )
+
+    assert session.get(WalletAccount, user.id).balance == 100
+    assert session.query(CoinLedgerEntry).count() == 0
+    assert session.query(Entitlement).count() == 0
+
+
+def test_episode_of_unpublished_drama_cannot_be_unlocked(make, session):
+    user = make.user(coins=100)
+    drama = make.drama(status="draft", price=60)
+    episode = make.episode(drama, number=5, status="published")
+
+    with pytest.raises(wallet_service.EpisodeNotFoundError):
+        wallet_service.unlock_episode(
+            session, user_id=user.id, episode_id=episode.id, idempotency_key="k-draft-drama"
+        )
+
+    assert session.get(WalletAccount, user.id).balance == 100
+    assert session.query(CoinLedgerEntry).count() == 0
+
+
+def test_zero_price_episode_is_not_purchasable(make, session):
+    user = make.user(coins=100)
+    drama = make.drama(status="published", price=0)
+    episode = make.episode(drama, number=5, status="published")
+
+    with pytest.raises(wallet_service.EpisodeNotPurchasableError):
+        wallet_service.unlock_episode(
+            session, user_id=user.id, episode_id=episode.id, idempotency_key="k-free-price"
+        )
+
+    assert session.get(WalletAccount, user.id).balance == 100
+    assert session.query(CoinLedgerEntry).count() == 0
+    assert session.query(Entitlement).count() == 0
+
+
+# ---- guard rails: a client key is scoped to the account that sent it ----
+
+
+def test_same_key_from_two_users_is_isolated(make, session):
+    first_user = make.user(email="a@example.com", coins=100)
+    second_user = make.user(email="b@example.com", coins=100)
+    episode = _published_priced_episode(make, price=60)
+
+    first = wallet_service.unlock_episode(
+        session, user_id=first_user.id, episode_id=episode.id, idempotency_key="shared-key"
+    )
+    second = wallet_service.unlock_episode(
+        session, user_id=second_user.id, episode_id=episode.id, idempotency_key="shared-key"
+    )
+
+    assert first.status == "unlocked" and first.replayed is False
+    assert second.status == "unlocked" and second.replayed is False
+    assert session.get(WalletAccount, first_user.id).balance == 40
+    assert session.get(WalletAccount, second_user.id).balance == 40
+    assert session.query(CoinLedgerEntry).count() == 2
+    assert session.query(Entitlement).count() == 2

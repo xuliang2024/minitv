@@ -9,6 +9,7 @@ writes behind.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
@@ -36,6 +37,10 @@ class EpisodeNotFoundError(UnlockError):
     pass
 
 
+class EpisodeNotPurchasableError(UnlockError):
+    """The drama has no usable coin price (0 / negative means not for sale)."""
+
+
 class InsufficientCoinsError(UnlockError):
     def __init__(self, need: int, have: int):
         self.need = need
@@ -55,21 +60,34 @@ class UnlockResult:
 def unlock_episode(
     session: Session, *, user_id: int, episode_id: int, idempotency_key: str
 ) -> UnlockResult:
+    # Keys are client-generated, so scope them to the caller: a key reused by a
+    # different account must never replay someone else's outcome.
+    scoped_key = _scoped_key(user_id, idempotency_key)
+
     # 1. idempotent replay: return the first outcome untouched
     record = session.scalar(
-        select(IdempotencyRecord).where(IdempotencyRecord.idempotency_key == idempotency_key)
+        select(IdempotencyRecord).where(IdempotencyRecord.idempotency_key == scoped_key)
     )
     if record is not None:
         payload = dict(record.response_payload)
         payload["replayed"] = True
         return UnlockResult(**payload)
 
-    # 2. resolve episode + price
+    # 2. resolve episode + price; only published content is purchasable
     episode = session.get(Episode, episode_id)
-    if episode is None:
+    drama = None if episode is None else session.get(Drama, episode.drama_id)
+    if (
+        episode is None
+        or drama is None
+        or episode.status != "published"
+        or drama.status != "published"
+    ):
         raise EpisodeNotFoundError(f"episode {episode_id} not found")
-    drama = session.get(Drama, episode.drama_id)
     price = drama.coin_price_per_episode
+    if price <= 0:
+        # A zero price would write amount=0 and violate the ledger constraint.
+        # Such content is membership-only (or misconfigured); never charge it.
+        raise EpisodeNotPurchasableError(f"episode {episode_id} has no coin price")
 
     # 3. member priority: an active subscription never creates a coin flow
     # Subscription period or one-time pass, whichever ends last.
@@ -77,7 +95,7 @@ def unlock_episode(
         result = UnlockResult(
             status="subscription", source="subscription", episode_id=episode_id, balance_after=None
         )
-        _record_idempotency(session, idempotency_key, result)
+        _record_idempotency(session, scoped_key, result)
         session.commit()
         return result
 
@@ -96,7 +114,7 @@ def unlock_episode(
             episode_id=episode_id,
             balance_after=_balance_of(session, user_id),
         )
-        _record_idempotency(session, idempotency_key, result)
+        _record_idempotency(session, scoped_key, result)
         session.commit()
         return result
 
@@ -114,7 +132,7 @@ def unlock_episode(
             amount=-price,
             balance_after=wallet.balance,
             biz_type="unlock",
-            biz_key=idempotency_key,
+            biz_key=scoped_key,
             episode_id=episode_id,
         )
     )
@@ -126,9 +144,15 @@ def unlock_episode(
     result = UnlockResult(
         status="unlocked", source="coin", episode_id=episode_id, balance_after=wallet.balance
     )
-    _record_idempotency(session, idempotency_key, result)
+    _record_idempotency(session, scoped_key, result)
     session.commit()
     return result
+
+
+def _scoped_key(user_id: int, idempotency_key: str) -> str:
+    """Per-user storage key: keeps client keys from leaking across accounts."""
+    digest = hashlib.sha256(idempotency_key.encode()).hexdigest()
+    return f"u{user_id}:{digest}"
 
 
 def _balance_of(session: Session, user_id: int) -> int:

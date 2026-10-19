@@ -44,7 +44,12 @@ from app.modules.wallet.models import (
     Entitlement,
     WalletAccount,
 )
-from app.modules.wallet.service import EpisodeNotFoundError, InsufficientCoinsError, unlock_episode
+from app.modules.wallet.service import (
+    EpisodeNotFoundError,
+    EpisodeNotPurchasableError,
+    InsufficientCoinsError,
+    unlock_episode,
+)
 
 router = APIRouter(prefix="/v1", tags=["public-flow"])
 
@@ -170,6 +175,8 @@ def unlock(body: UnlockIn, request: Request, user: User = Depends(_require_user)
         result = unlock_episode(db, user_id=user.id, episode_id=body.episode_id, idempotency_key=key)
     except InsufficientCoinsError as exc:
         raise HTTPException(status_code=402, detail={"need": exc.need, "have": exc.have}) from exc
+    except EpisodeNotPurchasableError as exc:
+        raise HTTPException(status_code=409, detail="episode is not purchasable") from exc
     except EpisodeNotFoundError as exc:
         raise HTTPException(status_code=404, detail="episode not found") from exc
     return result.__dict__

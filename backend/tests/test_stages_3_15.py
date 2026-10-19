@@ -180,6 +180,7 @@ def test_image_token_does_not_verify_as_video():
 def test_unlock_is_idempotent_and_refuses_negative_balance(make, session, client, monkeypatch):
     headers = _ops(make, client)
     drama, episode = _publish_free_episode(make, client, headers)
+    session.expire_all()  # the admin publish ran in another session
     paid = make.episode(drama, number=3, status="published")
     paid.bunny_video_id = "paid-video"
     session.commit()
@@ -235,6 +236,7 @@ def test_member_does_not_spend_coins_and_cancel_keeps_ledger(make, session, clie
     headers = _ops(make, client)
     ensure_default_plans(session)
     drama, _free = _publish_free_episode(make, client, headers)
+    session.expire_all()  # the admin publish ran in another session
     paid = make.episode(drama, number=4, status="published")
     user = make.user(email="member@example.com", coins=80)
     make.subscription(user, active=True)
