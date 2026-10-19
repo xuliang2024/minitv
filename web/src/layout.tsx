@@ -2,6 +2,9 @@
  * marketing site goes through this constant so the URL is never typed twice. */
 export const WEB_APP_URL = "https://h5.minitv.us";
 
+/** Operator console. Linked from the footer so the public nav stays clean. */
+export const ADMIN_URL = "https://admin.minitv.us";
+
 type NavItem = { label: string; href: string; external?: boolean };
 
 const nav: NavItem[] = [
@@ -87,7 +90,19 @@ export function SiteFooter() {
         </div>
         <div className="footer-bottom">
           <span>© {new Date().getFullYear()} MiniTV. All rights reserved.</span>
-          <span>Prices shown in USD. Subscriptions are billed in the app.</span>
+          <div className="footer-bottom-meta">
+            <span>Prices shown in USD. Subscriptions are billed in the app.</span>
+            <a
+              className="footer-admin"
+              href={ADMIN_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="MiniTV admin console"
+            >
+              Admin
+              <span aria-hidden="true">↗</span>
+            </a>
+          </div>
         </div>
       </div>
     </footer>

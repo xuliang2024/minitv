@@ -942,6 +942,37 @@ summary:focus-visible {
   font-size: 13px;
 }
 
+.footer-bottom-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+}
+
+/* Small, deliberately quiet operator entry — not part of the public nav. */
+.footer-admin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  transition: color 0.16s ease, border-color 0.16s ease;
+}
+
+.footer-admin span {
+  font-size: 11px;
+  line-height: 1;
+  transform: translateY(-1px);
+  opacity: 0.75;
+}
+
+.footer-admin:hover,
+.footer-admin:focus-visible {
+  color: var(--text-soft);
+  border-bottom-color: var(--border-strong);
+}
+
 /* ---------- states ---------- */
 
 .error-banner {
