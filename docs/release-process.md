@@ -56,7 +56,16 @@ python3 scripts/release.py r2 --dist web/dist --note "官网首版"
 
 `minitv.us` 已配置（ruleset `67dfb14054bc4c4bac4355e83a58b259`，规则 id `63bbd494400d40af903c0dbea1580585`）。缺这条规则时根路径返回 R2 404 页。
 
-`admin.minitv.us` 同样已配置（2026-10-14）：R2 自定义域名挂在 `minitv-web` 桶，根路径 Rewrite 到 `/admin/index.html`（CMS 静态页发布在桶内 `/admin/` 前缀）。`api.minitv.us` 为 A 记录指向服务器 `YOUR_SERVER_IP`（Cloudflare 代理）。
+`admin.minitv.us` 同样已配置（2026-10-14）：R2 自定义域名挂在 `minitv-web` 桶，根路径 Rewrite 到 `/admin/index.html`（CMS 静态页发布在桶内 `/admin/` 前缀）。
+
+**管理后台是 BrowserRouter 单页应用**，所以 2026-10-19 把这条规则从「仅 `/`」扩成「SPA 深链兜底」，否则直接打开 / 刷新 `admin.minitv.us/login`、`/dramas` 会命中桶里不存在的对象、返回 R2 的 `Error 404 Object not found`：
+
+- 规则 id `4aa2cb6b52c04254b9376e08bff8a099`，描述 `Rewrite admin.minitv.us SPA deep links to /admin/index.html (R2 CMS)`
+- 表达式：`(http.host eq "admin.minitv.us" and not starts_with(http.request.uri.path, "/admin/") and not (http.request.uri.path contains "."))`
+- 动作：rewrite path → `/admin/index.html`
+- 含义：`/admin/**` 静态资源原样放行；带 `.` 的路径（favicon.ico 等）不兜底，保持真实 404；其余无扩展名路径一律交给前端路由。
+
+`api.minitv.us` 为 A 记录指向服务器 `YOUR_SERVER_IP`（Cloudflare 代理）。
 
 管理后台用同一个 R2 命令，但提升到桶内前缀，不覆盖官网根目录：
 
