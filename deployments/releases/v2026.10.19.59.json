@@ -1,0 +1,18 @@
+{
+  "version": "v2026.10.19.59",
+  "target": "r2",
+  "status": "failed",
+  "sha": "0ffbc51088391628291f7e8b990450df4be6a245",
+  "short_sha": "0ffbc510",
+  "started_at": "2026-10-19T15:50:21+08:00",
+  "finished_at": "2026-10-19T15:51:04+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 71263,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "评论审核：状态筛选/联表/分页",
+  "error": "1 个文件上传失败：\n    - assets/index-vB_0oDOV.js: Remote end closed connection without response"
+}
