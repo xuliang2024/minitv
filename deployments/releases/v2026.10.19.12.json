@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.12",
+  "target": "r2",
+  "status": "published",
+  "sha": "d3db500147f553b590c5f99e540f07017634e957",
+  "short_sha": "d3db5001",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.12/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "5ca49b0b06fb7fb37dc5b3b35c21a87b567745104cea7c5332a2d73adc4aa94e",
+  "files": [
+    {
+      "path": "assets/index-BtWX_0lg.css",
+      "size": 27169
+    },
+    {
+      "path": "assets/index-DW8dKNgH.js",
+      "size": 789191
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T08:15:24+08:00",
+  "finished_at": "2026-10-19T08:15:34+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 6644,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "首页榜单卡热度改用后端真实 play_count（--allow-dirty：工作区有其他会话未提交改动；构建取自干净 worktree）",
+  "dirty": true
+}
