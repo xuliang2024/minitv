@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.33",
+  "target": "server",
+  "status": "published",
+  "sha": "d137d3aa62bf6c0271b263fabc5f809308735991",
+  "short_sha": "d137d3aa",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T11:47:14+08:00",
+  "finished_at": "2026-10-19T11:47:28+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 88058,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "全局计费模式：订阅/一次性切换（--allow-dirty：其他会话改动无关）",
+  "dirty": true
+}
