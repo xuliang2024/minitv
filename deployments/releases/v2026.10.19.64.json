@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.64",
+  "target": "server",
+  "status": "published",
+  "sha": "2037e36c6bdb514f6b3868464307c5e2bf376f26",
+  "short_sha": "2037e36c",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T16:13:43+08:00",
+  "finished_at": "2026-10-19T16:14:01+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 80281,
+    "agent_session": null,
+    "cwd": "/private/tmp/deploy-async"
+  },
+  "note": "评论异步审核：worker/迁移",
+  "dirty": false
+}
