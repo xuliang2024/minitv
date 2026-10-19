@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.70",
+  "target": "server",
+  "status": "published",
+  "sha": "15ddfa48230708450ba1e66a3bbb9c4a743750a5",
+  "short_sha": "15ddfa48",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T17:09:39+08:00",
+  "finished_at": "2026-10-19T17:10:00+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 12652,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "金币解锁：后端发布状态/0 价/幂等键作用域（仅 backend；其余未提交文件属并行会话）",
+  "dirty": true
+}
