@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.40",
+  "target": "r2",
+  "status": "published",
+  "sha": "36efd190b82914a4ed18f972cc22f828784a5ef5",
+  "short_sha": "36efd190",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.40/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "5f96b7a85d6c5d61edfe167158f00c109cf8894688f3dd28e6549c41adbbc810",
+  "files": [
+    {
+      "path": "assets/index-CjVnBwbt.js",
+      "size": 822576
+    },
+    {
+      "path": "assets/index-k54lRxhh.css",
+      "size": 39761
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T11:59:22+08:00",
+  "finished_at": "2026-10-19T11:59:40+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 92276,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "默认一次性模式的前端默认态",
+  "dirty": false
+}
