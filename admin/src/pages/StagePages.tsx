@@ -1254,7 +1254,7 @@ export function PlansPage() {
   );
   const [editing, setEditing] = useState<PlanItem | null>(null);
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<BillingMode>("subscription");
+  const [mode, setMode] = useState<BillingMode>("one_time");
   const [pendingMode, setPendingMode] = useState<BillingMode | null>(null);
   const [switching, setSwitching] = useState(false);
   const [form] = Form.useForm<{ price: number; benefits: string; best: boolean }>();

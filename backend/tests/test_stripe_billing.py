@@ -39,6 +39,7 @@ def sign(body: bytes, timestamp: int | None = None) -> str:
 
 def test_checkout_creates_a_pending_order(session, make, monkeypatch):
     billing.ensure_default_plans(session)
+    billing.set_billing_mode(session, "subscription", 0)
     user = make.user(email="buyer@example.com")
 
     def fake_request(path, data=None, method="POST"):
@@ -64,6 +65,7 @@ def test_webhook_rejects_a_forged_signature(session):
 
 def test_checkout_completed_activates_membership(session, make, monkeypatch):
     billing.ensure_default_plans(session)
+    billing.set_billing_mode(session, "subscription", 0)
     user = make.user(email="buyer@example.com")
     now = int(time.time())
 
@@ -173,6 +175,7 @@ def test_price_edit_creates_the_stripe_price_immediately(session, make, monkeypa
     No dashboard visit: the version row remembers the id, and checkouts reuse it.
     """
     billing.ensure_default_plans(session)
+    billing.set_billing_mode(session, "subscription", 0)
     user = make.user(email="buyer@example.com")
     monkeypatch.setenv("STRIPE_PRODUCT_WEEKLY", "prod_weekly")
 
@@ -310,3 +313,8 @@ def test_one_time_pass_cannot_be_canceled(session, make):
     with pytest.raises(billing.BillingError) as exc:
         billing.cancel_subscription(session, user.id)
     assert exc.value.status_code == 400
+
+
+def test_default_mode_is_one_time(session):
+    billing.ensure_default_plans(session)
+    assert billing.billing_mode(session) == "one_time"

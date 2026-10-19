@@ -98,7 +98,7 @@ BILLING_MODES = ("subscription", "one_time")
 def get_billing_settings(session: Session) -> BillingSettings:
     row = session.get(BillingSettings, 1)
     if row is None:
-        row = BillingSettings(id=1, billing_mode="subscription")
+        row = BillingSettings(id=1, billing_mode="one_time")
         session.add(row)
         session.commit()
     return row

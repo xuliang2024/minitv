@@ -132,7 +132,7 @@ class BillingSettings(Base):
     __tablename__ = "billing_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    billing_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="subscription")
+    billing_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="one_time")
     updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

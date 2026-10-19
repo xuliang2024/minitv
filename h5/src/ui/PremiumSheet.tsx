@@ -42,7 +42,7 @@ export function PremiumSheet({
   onClose: () => void;
 }) {
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [mode, setMode] = useState<BillingMode>("subscription");
+  const [mode, setMode] = useState<BillingMode>("one_time");
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [showPlans, setShowPlans] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
