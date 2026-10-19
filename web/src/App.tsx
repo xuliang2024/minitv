@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { fetchMarketing, fetchPreviewCatalog, Marketing, Plan, PreviewDrama } from "./api";
-import { SiteFooter, SiteHeader } from "./layout";
+import { SiteFooter, SiteHeader, WEB_APP_URL } from "./layout";
 import PreviewPage from "./preview";
 import { parseRoute, Route, scrollToRoute } from "./routes";
 import { PosterImage, formatPlays } from "./ui";
@@ -143,6 +143,12 @@ function HomePage() {
                 See plans
               </a>
             </div>
+            <p className="hero-web-link">
+              Prefer the browser?{" "}
+              <a href={WEB_APP_URL} target="_blank" rel="noopener noreferrer">
+                Open the web app ↗
+              </a>
+            </p>
             {stats.length > 0 && (
               <ul className="hero-meta">
                 {rating && (

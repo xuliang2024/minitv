@@ -129,11 +129,27 @@ summary:focus-visible {
   text-decoration: none;
   font-size: 14.5px;
   font-weight: 500;
+  white-space: nowrap;
   transition: color 0.18s ease;
 }
 
 .site-nav a:hover {
   color: #fff;
+}
+
+/* External entry (the H5 web app) — the arrow marks that the click leaves
+   the marketing site instead of scrolling to a section. */
+.site-nav-external {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.site-nav .nav-ext {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.65;
+  transform: translateY(-1px);
 }
 
 /* ---------- buttons ---------- */
@@ -250,6 +266,22 @@ summary:focus-visible {
   list-style: none;
   color: var(--muted);
   font-size: 14px;
+}
+
+.hero-web-link {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.hero-web-link a {
+  color: var(--accent-bright);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.hero-web-link a:hover {
+  color: #fff;
 }
 
 .hero-meta li {
@@ -1567,11 +1599,15 @@ summary:focus-visible {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
+  /* Brand + seven nav items + CTA stop fitting here; the header keeps its
+     single CTA and the watch entry stays reachable from the hero link. */
   .site-nav {
     display: none;
   }
+}
 
+@media (max-width: 900px) {
   .hero {
     padding-top: 52px;
   }

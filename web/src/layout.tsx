@@ -1,10 +1,17 @@
-const nav: [string, string][] = [
-  ["home", "Home"],
-  ["shows", "Shows"],
-  ["preview", "Free Preview"],
-  ["premium", "Premium"],
-  ["about", "About"],
-  ["download", "Download App"],
+/** Full web app (the H5 build on its own domain). Anything that leaves the
+ * marketing site goes through this constant so the URL is never typed twice. */
+export const WEB_APP_URL = "https://h5.minitv.us";
+
+type NavItem = { label: string; href: string; external?: boolean };
+
+const nav: NavItem[] = [
+  { label: "Home", href: "#home" },
+  { label: "Shows", href: "#shows" },
+  { label: "Free Preview", href: "#preview" },
+  { label: "Watch Online", href: WEB_APP_URL, external: true },
+  { label: "Premium", href: "#premium" },
+  { label: "About", href: "#about" },
+  { label: "Download App", href: "#download" },
 ];
 
 export function SiteHeader() {
@@ -16,9 +23,19 @@ export function SiteHeader() {
           MiniTV
         </a>
         <nav className="site-nav" aria-label="Main">
-          {nav.map(([id, label]) => (
-            <a key={id} href={`#${id}`}>
-              {label}
+          {nav.map((item) => (
+            <a
+              key={item.label}
+              href={item.href}
+              className={item.external ? "site-nav-external" : undefined}
+              {...(item.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+            >
+              {item.label}
+              {item.external && (
+                <span className="nav-ext" aria-hidden="true">
+                  ↗
+                </span>
+              )}
             </a>
           ))}
         </nav>
@@ -46,6 +63,9 @@ export function SiteFooter() {
             <h4>Product</h4>
             <a href="#shows">Shows</a>
             <a href="#preview">Free Preview</a>
+            <a href={WEB_APP_URL} target="_blank" rel="noopener noreferrer">
+              Watch Online ↗
+            </a>
             <a href="#premium">Premium</a>
             <a href="#download">Download App</a>
           </div>
