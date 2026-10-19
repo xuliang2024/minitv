@@ -438,3 +438,23 @@ def test_one_time_checkout_reuses_or_creates_a_stripe_customer(session, make, mo
     billing.create_checkout_session(session, user_id=fresh.id, email=fresh.email, plan_code="weekly")
     assert seen[1]["customer_creation"] == "always"
     assert seen[1]["customer_email"] == "fresh@example.com"
+
+
+def test_order_history_lists_purchases_newest_first(session, make):
+    billing.ensure_default_plans(session)
+    user = make.user(email="orders@example.com")
+    other = make.user(email="other@example.com")
+
+    for index, session_id in enumerate(("cs_hist_1", "cs_hist_2"), start=1):
+        body, payload = _pass_event(user.id, session_id)
+        billing.apply_stripe_event(session, body=body, signature=sign(body), payload=payload)
+        if index == 1:
+            time.sleep(0.01)
+
+    data = billing.list_user_orders(session, user.id)
+    assert data["has_more"] is False
+    assert len(data["items"]) == 2
+    assert data["items"][0]["paid_at"] >= data["items"][1]["paid_at"]
+    assert all(item["status"] == "paid" and item["billing_mode"] == "one_time" for item in data["items"])
+
+    assert billing.list_user_orders(session, other.id)["items"] == []

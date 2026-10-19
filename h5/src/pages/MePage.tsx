@@ -21,6 +21,7 @@ import {
   IconCopy,
   IconGear,
   IconHistory,
+  IconReceipt,
   IconStar,
 } from "../icons";
 import { IMG, thumb } from "../img";
@@ -33,10 +34,11 @@ import type {
 } from "../types";
 import { Sheet } from "../ui/Sheet";
 import { PremiumSheet } from "../ui/PremiumSheet";
+import { OrdersSheet } from "../ui/OrdersSheet";
 import { toast } from "../ui/toast";
 
 type MeTab = "history" | "favorites" | "likes";
-type SheetId = "edit" | "ledger" | "messages" | "settings" | "premium";
+type SheetId = "edit" | "ledger" | "messages" | "settings" | "premium" | "orders";
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 const CHECKIN_KEY = "minitv_h5_checkin";
@@ -350,6 +352,19 @@ export function MePage({
         </button>
       </div>
 
+      <button
+        type="button"
+        className="me-link-row"
+        onClick={() => requireAuth(() => setSheet("orders"))}
+        data-testid="me-orders"
+      >
+        <span className="me-link-icon">
+          <IconReceipt size={18} />
+        </span>
+        <span className="me-link-label">{t(locale, "me_orders")}</span>
+        <span className="me-link-hint">{t(locale, "me_orders_hint")}</span>
+      </button>
+
       <div className="me-tabs" ref={contentRef}>
         <div className="me-tabs-list" role="tablist" aria-label={t(locale, "nav.me")}>
           {(["history", "favorites", "likes"] as MeTab[]).map((item) => (
@@ -429,6 +444,7 @@ export function MePage({
       {sheet === "messages" && (
         <MessagesSheet locale={locale} onClose={() => setSheet(null)} onRead={handleRead} />
       )}
+      {sheet === "orders" && <OrdersSheet locale={locale} onClose={() => setSheet(null)} />}
       {sheet === "premium" && (
         <PremiumSheet
           locale={locale}

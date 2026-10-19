@@ -344,6 +344,17 @@ def reminder(enabled: bool, user: User = Depends(_require_user), db: Session = D
     return {"enabled": enabled}
 
 
+@router.get("/me/orders")
+def my_orders(
+    limit: int = 20,
+    offset: int = 0,
+    user: User = Depends(_require_user),
+    db: Session = Depends(get_db),
+):
+    limit = max(1, min(limit, 50))
+    return billing.list_user_orders(db, user.id, limit=limit, offset=max(0, offset))
+
+
 @router.get("/plans")
 def plans(db: Session = Depends(get_db)):
     return {"items": billing.list_current_plans(db), "billing_mode": billing.billing_mode(db)}

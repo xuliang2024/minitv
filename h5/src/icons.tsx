@@ -341,3 +341,17 @@ export function IconCopy({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+export function IconReceipt({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M9 8h6M9 12h6M9 16h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}

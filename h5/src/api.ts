@@ -257,3 +257,26 @@ export function startCheckout(planCode: string): Promise<CheckoutResult> {
 export function cancelSubscription(): Promise<{ ok: boolean }> {
   return postJson<{ ok: boolean }>("/v1/billing/cancel", {});
 }
+
+export interface OrderItem {
+  order_no: string;
+  plan_code: string;
+  plan_name_en: string;
+  plan_name_zh: string;
+  amount_cents: number;
+  currency: string;
+  billing_mode: "subscription" | "one_time";
+  status: "created" | "paid" | "failed" | "refunded";
+  paid_at: string | null;
+  created_at: string;
+}
+
+export interface OrdersPayload {
+  items: OrderItem[];
+  has_more: boolean;
+}
+
+/** Purchase history shown in the Me page. */
+export function getOrders(limit = 20, offset = 0): Promise<OrdersPayload> {
+  return getJson<OrdersPayload>(`/v1/me/orders?limit=${limit}&offset=${offset}`);
+}

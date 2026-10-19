@@ -158,6 +158,37 @@ def access_until(session: Session, user_id: int) -> datetime | None:
     return max(candidates) if candidates else None
 
 
+def list_user_orders(session: Session, user_id: int, limit: int = 20, offset: int = 0) -> dict:
+    """Purchase history for the H5 "Orders" sheet, newest first."""
+    rows = session.execute(
+        select(Order, Plan)
+        .join(PlanVersion, PlanVersion.id == Order.plan_version_id)
+        .join(Plan, Plan.id == PlanVersion.plan_id)
+        .where(Order.user_id == user_id)
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .offset(offset)
+        .limit(limit + 1)
+    ).all()
+    has_more = len(rows) > limit
+    items = []
+    for order, plan in rows[:limit]:
+        items.append(
+            {
+                "order_no": order.order_no,
+                "plan_code": plan.code,
+                "plan_name_en": plan.name_en,
+                "plan_name_zh": plan.name_zh,
+                "amount_cents": order.amount_cents,
+                "currency": order.currency,
+                "billing_mode": order.billing_mode,
+                "status": order.status,
+                "paid_at": order.paid_at.isoformat() if order.paid_at else None,
+                "created_at": order.created_at.isoformat(),
+            }
+        )
+    return {"items": items, "has_more": has_more}
+
+
 def active_membership(session: Session, user_id: int) -> dict:
     """What /v1/me shows: whichever access window ends last."""
     row = session.execute(
