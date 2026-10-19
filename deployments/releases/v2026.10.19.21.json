@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.21",
+  "target": "server",
+  "status": "published",
+  "sha": "dc832f36366ee808f0ee2bf883e0729d6ce24e81",
+  "short_sha": "dc832f36",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T11:04:44+08:00",
+  "finished_at": "2026-10-19T11:04:57+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 70358,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "Stripe 订阅接入（--allow-dirty：其他会话的 admin/app/.env.example 未提交改动与本任务无关）",
+  "dirty": true
+}
