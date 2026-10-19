@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.14",
+  "target": "r2",
+  "status": "published",
+  "sha": "7ebb68ab2c62feea4a6dfa020696af77fe1d44c2",
+  "short_sha": "7ebb68ab",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.14/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "0e37fb084695f56d5f92b8a7031ed40e73ac226f96d3639f3caf38dc19189904",
+  "files": [
+    {
+      "path": "assets/index-B_4mfbCY.css",
+      "size": 33819
+    },
+    {
+      "path": "assets/index-DEH-eePr.js",
+      "size": 807757
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T08:26:59+08:00",
+  "finished_at": "2026-10-19T08:27:13+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 11363,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "我页按设计稿重做：资料头/统计/快捷入口，历史·收藏·点赞三栏与金币/消息/设置弹层",
+  "dirty": false
+}
