@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.49",
+  "target": "server",
+  "status": "published",
+  "sha": "63d6fe1736a68c59a97815711616fcd9ab521e2e",
+  "short_sha": "63d6fe17",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T14:44:52+08:00",
+  "finished_at": "2026-10-19T14:45:10+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 45027,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "财务订单接口：用户/套餐/流水与汇总",
+  "dirty": true
+}
