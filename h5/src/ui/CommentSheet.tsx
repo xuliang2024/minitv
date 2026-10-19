@@ -81,15 +81,12 @@ export function CommentSheet({ episodeId, locale, initialCount = 0, onCountChang
         try {
           const result = await createComment(episodeId, body);
           setText("");
-          if (result.status === "approved" && result.item) {
+          // No badge, no toast: the author's view is identical to a published
+          // comment. The server decides visibility for everyone else.
+          if (result.item) {
             setItems((prev) => [result.item as CommentItem, ...prev]);
-            publish(total + 1);
+            publish(result.total ?? total + 1);
             listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-            toast(t(locale, "comment_posted"));
-          } else if (result.status === "deleted") {
-            toast(t(locale, "comment_blocked"));
-          } else {
-            toast(t(locale, "comment_pending"));
           }
         } catch (error: any) {
           toast(

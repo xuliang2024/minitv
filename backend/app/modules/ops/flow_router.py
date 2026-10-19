@@ -1622,6 +1622,7 @@ def admin_comments(
                 "moderation_score": row.moderation_score,
                 "moderation_reason": row.moderation_reason,
                 "moderation_model": row.moderation_model,
+                "moderation_state": row.moderation_state,
             }
             for row, drama_title, episode_number, display_name, email in rows
         ],
@@ -1740,8 +1741,12 @@ def moderate(comment_id: int, body: CommentModIn, db: Session = Depends(get_db),
     if body.status not in {"approved", "deleted", "pending"}:
         raise HTTPException(status_code=422, detail="bad status")
     row.status = body.status
+    # A human decision wins over a late model response: the worker's final
+    # UPDATE is guarded by moderation_state='running'.
+    if row.moderation_state in {"queued", "running"}:
+        row.moderation_state = "canceled"
     db.commit()
-    return {"status": row.status}
+    return {"status": row.status, "moderation_state": row.moderation_state}
 
 
 GENDERS = ("unspecified", "female", "male", "other")

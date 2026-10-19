@@ -204,6 +204,7 @@ export interface CommentItem {
   like_count: number;
   liked: boolean;
   mine: boolean;
+  pending?: boolean;
   user: CommentAuthor;
 }
 
@@ -217,5 +218,6 @@ export interface CommentCreateResult {
   id: number;
   status: "approved" | "pending" | "deleted";
   item: CommentItem | null;
-  moderation: { verdict: string; score: number; reason: string; model: string } | null;
+  total?: number;
+  moderation: { state?: string; verdict?: string; score?: number; reason?: string; model?: string } | null;
 }

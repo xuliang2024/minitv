@@ -6,9 +6,9 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -504,6 +504,37 @@ def _comment_payload(row: Comment, user: User | None, *, like_count: int = 0, li
     }
 
 
+def _comment_visibility(user: User | None):
+    if user is None:
+        return Comment.status == "approved"
+    return or_(
+        Comment.status == "approved",
+        and_(Comment.status == "pending", Comment.user_id == user.id),
+    )
+
+
+def _comment_total(db: Session, episode_id: int, user: User | None) -> int:
+    """Public approved count plus the viewer's own pending rows (kept in sync
+    with what the list shows, and with per-viewer comment_count)."""
+    public = db.scalar(
+        select(func.count())
+        .select_from(Comment)
+        .where(Comment.episode_id == episode_id, Comment.status == "approved")
+    ) or 0
+    own_pending = 0
+    if user is not None:
+        own_pending = db.scalar(
+            select(func.count())
+            .select_from(Comment)
+            .where(
+                Comment.episode_id == episode_id,
+                Comment.status == "pending",
+                Comment.user_id == user.id,
+            )
+        ) or 0
+    return int(public) + int(own_pending)
+
+
 @router.get("/episodes/{episode_id}/comments")
 def list_episode_comments(
     episode_id: int,
@@ -512,7 +543,12 @@ def list_episode_comments(
     user: User | None = Depends(_optional_user),
     db: Session = Depends(get_db),
 ):
-    """One episode, one thread. Only approved comments ever leave this endpoint."""
+    """One episode, one thread.
+
+    Everyone sees approved comments. A signed-in viewer additionally sees their
+    own pending rows, so posting feels instant without leaking unmoderated
+    content to anyone else.
+    """
     episode = db.get(Episode, episode_id)
     if episode is None or episode.status != "published":
         raise HTTPException(status_code=404, detail="episode not found")
@@ -521,7 +557,7 @@ def list_episode_comments(
     stmt = (
         select(Comment, User)
         .join(User, User.id == Comment.user_id)
-        .where(Comment.episode_id == episode_id, Comment.status == "approved")
+        .where(Comment.episode_id == episode_id, _comment_visibility(user))
     )
     if cursor:
         stmt = stmt.where(Comment.id < cursor)
@@ -560,11 +596,7 @@ def list_episode_comments(
                 )
             }
 
-    total = db.scalar(
-        select(func.count())
-        .select_from(Comment)
-        .where(Comment.episode_id == episode_id, Comment.status == "approved")
-    ) or 0
+    total = _comment_total(db, episode_id, user)
 
     items = []
     for comment, author in rows:
@@ -575,6 +607,7 @@ def list_episode_comments(
             liked=comment.id in liked,
         )
         item["mine"] = user is not None and comment.user_id == user.id
+        item["pending"] = comment.status == "pending"
         items.append(item)
 
     return {"items": items, "next_cursor": next_cursor, "total": int(total)}
@@ -598,10 +631,15 @@ def _published_episode_or_404(db: Session, episode_id: int) -> Episode:
 def create_episode_comment(
     episode_id: int,
     body: EpisodeCommentIn,
+    background: BackgroundTasks,
     user: User = Depends(_require_user),
     db: Session = Depends(get_db),
 ):
-    """Post into one episode's thread. Auto moderation decides visibility inline."""
+    """Post into one episode's thread and return immediately.
+
+    Visibility starts as pending: the author sees it right away, everyone else
+    sees it only after the background worker approves it.
+    """
     episode = _published_episode_or_404(db, episode_id)
     text = body.body.strip()
     if not text:
@@ -627,41 +665,48 @@ def create_episode_comment(
     if daily >= COMMENT_DAILY_LIMIT:
         raise HTTPException(status_code=429, detail="Daily comment limit reached.")
 
-    status, result = moderation.moderate(db, text)
+    queue = moderation.queue_state(db)
     row = Comment(
         user_id=user.id,
         drama_id=episode.drama_id,
         episode_id=episode.id,
         body=text,
-        status=status,
-        moderation_verdict=None if result is None else result.verdict,
-        moderation_score=None if result is None else result.score,
-        moderation_reason=None if result is None else result.reason,
-        moderation_model=None if result is None else result.model,
-        moderated_at=None if result is None else datetime.now(timezone.utc),
+        status="pending",
+        moderation_state=queue,
     )
     db.add(row)
     db.commit()
     db.refresh(row)
 
-    payload = None
-    if status == "approved":
-        payload = _comment_payload(row, user)
-        payload["mine"] = True
+    if queue:
+        # Runs after the response is sent; the sweeper retries if this process dies.
+        background.add_task(moderation.process_comment, row.id)
+
+    payload = _comment_payload(row, user)
+    payload["mine"] = True
+    payload["pending"] = True
     return {
         "id": row.id,
-        "status": status,
+        "status": "pending",
         "item": payload,
-        "moderation": None if result is None else result.as_dict(),
+        "total": _comment_total(db, episode_id, user),
+        "moderation": {"state": queue or "disabled"},
     }
 
 
 @router.post("/comments")
-def create_comment(body: CommentIn, user: User = Depends(_require_user), db: Session = Depends(get_db)):
+def create_comment(
+    body: CommentIn,
+    background: BackgroundTasks,
+    user: User = Depends(_require_user),
+    db: Session = Depends(get_db),
+):
     """Backward-compatible alias: episode is now mandatory."""
     if body.episode_id is None:
         raise HTTPException(status_code=422, detail="episode_id is required")
-    return create_episode_comment(body.episode_id, EpisodeCommentIn(body=body.body), user, db)
+    return create_episode_comment(
+        body.episode_id, EpisodeCommentIn(body=body.body), background, user, db
+    )
 
 
 @router.delete("/comments/{comment_id}")
@@ -846,6 +891,20 @@ def drama_play(drama_id: int, user: User | None = Depends(_optional_user), db: S
         if episodes
         else {}
     )
+    if uid is not None and episodes:
+        # The author's own pending rows count for them only, so the rail number
+        # matches what their comment sheet actually shows.
+        for episode_id, total in db.execute(
+            select(Comment.episode_id, func.count())
+            .where(
+                Comment.episode_id.in_([episode.id for episode in episodes]),
+                Comment.status == "pending",
+                Comment.user_id == uid,
+            )
+            .group_by(Comment.episode_id)
+        ):
+            key = int(episode_id)
+            comment_counts[key] = comment_counts.get(key, 0) + int(total)
     for episode in episodes:
         free = episode.episode_number <= drama.free_episode_count
         locked = not (free or member or episode.id in unlocked)

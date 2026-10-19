@@ -6,16 +6,21 @@ stays in the environment, so rotating it never touches the database.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 
 import httpx
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.db import get_engine, make_session_factory
 from app.modules.ops.config_models import ModerationSettings
+from app.modules.social.models import Comment
 
 logger = logging.getLogger(__name__)
 
@@ -233,3 +238,161 @@ def moderate(db: Session, text: str) -> tuple[str, ModerationResult | None]:
         fallback = settings.fallback_action if settings.fallback_action in FALLBACK_ACTIONS else "pending"
         return fallback, None
     return decide(result.verdict, result.score, settings), result
+
+
+# ---- async queue -----------------------------------------------------------
+# Submission writes status=pending and returns; this worker decides visibility.
+QUEUE_STALE_SECONDS = 300
+MAX_ATTEMPTS = 3
+WORKER_INTERVAL_SECONDS = 30
+
+_session_factory = None
+_worker_started = False
+
+
+def _sessions():
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = make_session_factory(get_engine())
+    return _session_factory
+
+
+def queue_state(db: Session) -> str | None:
+    """'queued' when this comment should be moderated in the background.
+
+    No key means every attempt would fail, so the comment goes straight to the
+    human queue instead of burning three retries.
+    """
+    settings = get_settings(db)
+    if not settings.enabled or not api_key():
+        return None
+    return "queued"
+
+
+def process_comment(comment_id: int) -> None:
+    """Claim one comment, classify it without holding a DB connection, write back.
+
+    The final UPDATE is guarded by ``moderation_state='running'`` so a human
+    decision (which sets ``canceled``) always wins over a late model response.
+    """
+    factory = _sessions()
+    stale = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=QUEUE_STALE_SECONDS)
+    with factory() as db:
+        claimed = db.execute(
+            update(Comment)
+            .where(
+                Comment.id == comment_id,
+                or_(
+                    Comment.moderation_state == "queued",
+                    and_(
+                        Comment.moderation_state == "running",
+                        Comment.moderation_claimed_at < stale,
+                    ),
+                ),
+            )
+            .values(
+                moderation_state="running",
+                moderation_claimed_at=func.now(),
+                moderation_attempts=Comment.moderation_attempts + 1,
+            )
+            .returning(Comment.body, Comment.moderation_attempts)
+        ).first()
+        db.commit()
+        if claimed is None:
+            return
+        body = claimed.body
+        attempts = claimed.moderation_attempts
+        settings = get_settings(db)
+        enabled = settings.enabled
+
+    # Session closed here: the HTTP call below must not pin a pool connection.
+    if not enabled:
+        with factory() as db:
+            db.execute(
+                update(Comment)
+                .where(Comment.id == comment_id, Comment.moderation_state == "running")
+                .values(moderation_state="canceled", moderation_claimed_at=None)
+            )
+            db.commit()
+        return
+
+    try:
+        result = classify(body, settings)
+    except ModerationError as exc:
+        logger.warning(
+            "async moderation failed (comment=%s attempt=%s): %s", comment_id, attempts, exc
+        )
+        state = "queued" if attempts < MAX_ATTEMPTS else "failed"
+        with factory() as db:
+            db.execute(
+                update(Comment)
+                .where(Comment.id == comment_id, Comment.moderation_state == "running")
+                .values(
+                    moderation_state=state,
+                    moderation_error=str(exc)[:200],
+                    moderation_claimed_at=None,
+                )
+            )
+            db.commit()
+        return
+
+    status = decide(result.verdict, result.score, settings)
+    with factory() as db:
+        db.execute(
+            update(Comment)
+            .where(Comment.id == comment_id, Comment.moderation_state == "running")
+            .values(
+                moderation_state="done",
+                moderation_verdict=result.verdict,
+                moderation_score=result.score,
+                moderation_reason=result.reason,
+                moderation_model=result.model,
+                moderated_at=func.now(),
+                moderation_error=None,
+                status=status,
+            )
+        )
+        db.commit()
+
+
+def process_pending_batch(limit: int = 10) -> int:
+    """Sweeper: pick queued comments and running rows whose worker died."""
+    factory = _sessions()
+    stale = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=QUEUE_STALE_SECONDS)
+    with factory() as db:
+        ids = list(
+            db.scalars(
+                select(Comment.id)
+                .where(
+                    or_(
+                        Comment.moderation_state == "queued",
+                        and_(
+                            Comment.moderation_state == "running",
+                            Comment.moderation_claimed_at < stale,
+                        ),
+                    )
+                )
+                .order_by(Comment.id)
+                .limit(limit)
+            )
+        )
+    for comment_id in ids:
+        process_comment(comment_id)
+    return len(ids)
+
+
+def start_moderation_worker() -> None:
+    global _worker_started
+    if _worker_started or os.environ.get("MODERATION_WORKER") == "0":
+        return
+    _worker_started = True
+    threading.Thread(target=_worker_loop, name="moderation-worker", daemon=True).start()
+
+
+def _worker_loop() -> None:
+    while True:
+        try:
+            process_pending_batch()
+        except Exception:  # noqa: BLE001 - one bad row must not kill the worker
+            logger.exception("moderation worker iteration failed")
+        time.sleep(WORKER_INTERVAL_SECONDS)

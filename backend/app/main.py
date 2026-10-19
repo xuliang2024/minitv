@@ -97,8 +97,10 @@ def _start_background_jobs() -> None:
     # Bunny because the library has no webhook and finished encodes would
     # otherwise sit on "transcoding" until someone clicks sync.
     from app.modules.ops.flow_router import start_transcode_reconciler
+    from app.modules.social.moderation import start_moderation_worker
 
     start_transcode_reconciler()
+    start_moderation_worker()
 
 
 _start_background_jobs()

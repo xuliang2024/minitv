@@ -1224,6 +1224,7 @@ type CommentRow = {
   moderation_verdict: string | null;
   moderation_score: number | null;
   moderation_reason: string | null;
+  moderation_state: string | null;
 };
 
 const COMMENT_TABS = [
@@ -1428,6 +1429,9 @@ export function CommentsPage() {
             width: 110,
             render: (_, row) => {
               if (!row.moderation_verdict) {
+                if (row.moderation_state === "queued" || row.moderation_state === "running") {
+                  return <Tag color="processing">审核中</Tag>;
+                }
                 return <Typography.Text type="secondary">未经过模型</Typography.Text>;
               }
               const meta = MODERATION_VERDICT[row.moderation_verdict];

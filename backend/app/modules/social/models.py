@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Float,
+    ForeignKey,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -43,6 +53,15 @@ class Comment(Base):
     moderation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     moderation_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     moderated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Async job state, separate from visibility: queued -> running -> done/failed/canceled.
+    moderation_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    moderation_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )
+    moderation_claimed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    moderation_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

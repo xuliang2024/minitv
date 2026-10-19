@@ -29,6 +29,8 @@ os.environ["BUNNY_MODE"] = "fake"
 # fails closed instead of calling Resend.
 os.environ["RESEND_API_KEY"] = ""
 os.environ["RESEND_FROM"] = ""
+# The sweeper must not race the per-test TRUNCATE; tests drive the worker directly.
+os.environ["MODERATION_WORKER"] = "0"
 
 from app import modules  # noqa: E402,F401  registers every ORM model
 from app.db import Base, load_env  # noqa: E402

@@ -325,11 +325,11 @@ def _reaction_stats(db: Session, drama_ids, user_id: int | None) -> tuple[dict[i
     return totals, liked
 
 
-def _comment_counts(db: Session, episode_ids) -> dict[int, int]:
+def _comment_counts(db: Session, episode_ids, user_id: int | None = None) -> dict[int, int]:
     ids = list(episode_ids)
     if not ids:
         return {}
-    return {
+    counts = {
         int(episode_id): int(total)
         for episode_id, total in db.execute(
             select(Comment.episode_id, func.count())
@@ -337,6 +337,21 @@ def _comment_counts(db: Session, episode_ids) -> dict[int, int]:
             .group_by(Comment.episode_id)
         )
     }
+    if user_id is not None:
+        # Own pending comments are visible to their author, so they count for
+        # that viewer only; nobody else's feed number moves.
+        for episode_id, total in db.execute(
+            select(Comment.episode_id, func.count())
+            .where(
+                Comment.episode_id.in_(ids),
+                Comment.status == "pending",
+                Comment.user_id == user_id,
+            )
+            .group_by(Comment.episode_id)
+        ):
+            key = int(episode_id)
+            counts[key] = counts.get(key, 0) + int(total)
+    return counts
 
 
 def _materialize(
@@ -379,7 +394,7 @@ def _materialize(
     }
     tags_by_drama = content.tags_by_drama(db, list(dramas.keys()))
     counts = _episode_counts(db, dramas.keys())
-    comment_counts = _comment_counts(db, episodes.keys())
+    comment_counts = _comment_counts(db, episodes.keys(), user_id)
     like_totals, my_likes = _reaction_stats(db, dramas.keys(), user_id)
 
     items: list[dict] = []
