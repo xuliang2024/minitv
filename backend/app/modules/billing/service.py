@@ -164,7 +164,9 @@ def list_user_orders(session: Session, user_id: int, limit: int = 20, offset: in
         select(Order, Plan)
         .join(PlanVersion, PlanVersion.id == Order.plan_version_id)
         .join(Plan, Plan.id == PlanVersion.plan_id)
-        .where(Order.user_id == user_id)
+        # Abandoned checkouts are noise in a purchase history: only money that
+        # actually moved (paid, or paid then refunded) belongs here.
+        .where(Order.user_id == user_id, Order.status.in_(("paid", "refunded")))
         .order_by(Order.created_at.desc(), Order.id.desc())
         .offset(offset)
         .limit(limit + 1)
