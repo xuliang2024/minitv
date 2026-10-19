@@ -22,6 +22,8 @@ interface AuthContextValue {
   completeLogin: (token: string) => Promise<void>;
   /** Run now when signed in; otherwise ask for a sign-in and replay afterwards. */
   requireAuth: (action: () => void) => void;
+  /** Re-read /v1/me after the profile or wallet changed. */
+  refresh: () => Promise<void>;
   logout: () => void;
 }
 
@@ -95,6 +97,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [status],
   );
 
+  const refresh = useCallback(async () => {
+    if (!authToken()) return;
+    try {
+      const me = await getMe();
+      setUser(me);
+      setStatus("user");
+    } catch {
+      reset();
+    }
+  }, [reset]);
+
   const logout = useCallback(() => {
     pending.current = null;
     reset();
@@ -112,9 +125,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       completeLogin,
       requireAuth,
+      refresh,
       logout,
     }),
-    [status, user, loginOpen, completeLogin, requireAuth, logout],
+    [status, user, loginOpen, completeLogin, requireAuth, refresh, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -40,17 +40,18 @@ function AppShell() {
   const [dramaId, setDramaId] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
 
-  const switchLocale = () => {
-    const next = locale === "zh" ? "en" : "zh";
+  const changeLocale = (next: Locale) => {
     saveLocale(next);
     setLocale(next);
   };
 
+  const switchLocale = () => changeLocale(locale === "zh" ? "en" : "zh");
+
   const playing = dramaId != null;
 
   return (
-    <div className="app">
-      {!playing && (
+    <div className="app" id="app">
+      {!playing && tab !== "me" && (
         <header className="topbar">
           {searching ? null : tab === "home" ? (
             <div className="brand" role="heading" aria-level={1}>
@@ -79,7 +80,7 @@ function AppShell() {
         ) : tab === "foryou" ? (
           <ForYouPage locale={locale} onOpenDrama={setDramaId} />
         ) : tab === "me" ? (
-          <MePage locale={locale} onOpen={setDramaId} />
+          <MePage locale={locale} onLocale={changeLocale} onOpen={setDramaId} />
         ) : (
           <div className="center">{t(locale, "coming")}</div>
         )}

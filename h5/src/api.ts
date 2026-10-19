@@ -1,4 +1,10 @@
-import type { FavoritesPayload } from "./types";
+import type {
+  FavoritesPayload,
+  HistoryPayload,
+  LedgerPayload,
+  LikesPayload,
+  MessagesPayload,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -90,7 +96,12 @@ export interface MeProfile {
   email: string | null;
   display_name: string;
   avatar_url: string;
+  bio: string;
   coins: number;
+  following_count: number;
+  follower_count: number;
+  received_likes: number;
+  reminder_opt_in: boolean;
 }
 
 export interface Session {
@@ -123,4 +134,39 @@ export function getMe(): Promise<MeProfile> {
 
 export function getFavorites(limit = 50, offset = 0): Promise<FavoritesPayload> {
   return getJson<FavoritesPayload>(`/v1/me/favorites?limit=${limit}&offset=${offset}`);
+}
+
+export function getHistory(): Promise<HistoryPayload> {
+  return getJson<HistoryPayload>("/v1/me/history");
+}
+
+export function getLikes(): Promise<LikesPayload> {
+  return getJson<LikesPayload>("/v1/me/lists/like");
+}
+
+export function getLedger(): Promise<LedgerPayload> {
+  return getJson<LedgerPayload>("/v1/me/ledger");
+}
+
+export function getMessages(): Promise<MessagesPayload> {
+  return getJson<MessagesPayload>("/v1/me/messages");
+}
+
+export function readMessages(): Promise<{ unread: number }> {
+  return postJson<{ unread: number }>("/v1/me/messages/read", {});
+}
+
+export interface CheckinResult {
+  streak: number;
+  amount: number;
+  replayed: boolean;
+  balance: number;
+}
+
+export function checkin(): Promise<CheckinResult> {
+  return postJson<CheckinResult>("/v1/me/checkin", {});
+}
+
+export function updateMe(body: { display_name?: string; bio?: string }): Promise<{ ok: boolean }> {
+  return send("PATCH", "/v1/me", body) as Promise<{ ok: boolean }>;
 }

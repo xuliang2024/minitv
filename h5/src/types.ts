@@ -60,6 +60,13 @@ export interface FeedDrama {
   liked: boolean;
 }
 
+export interface DramaLite {
+  id: number;
+  title: string;
+  cover_url: string | null;
+  episode_count: number;
+}
+
 export interface FavoritesPayload {
   total: number;
   items: Array<{
@@ -68,7 +75,50 @@ export interface FavoritesPayload {
     cover_url: string | null;
     synopsis: string;
     play_count: number;
+    episode_count: number;
   }>;
+}
+
+export interface HistoryItem {
+  episode_id: number;
+  position_seconds: number;
+  episode_number: number;
+  duration_seconds: number;
+  updated_at: string;
+  drama: DramaLite;
+}
+
+export interface HistoryPayload {
+  items: HistoryItem[];
+}
+
+export interface LikesPayload {
+  total: number;
+  items: Array<{ target_type: string; target_id: number; drama?: DramaLite }>;
+}
+
+export interface LedgerEntry {
+  amount: number;
+  balance_after: number;
+  biz_type: string;
+  created_at: string;
+}
+
+export interface LedgerPayload {
+  items: LedgerEntry[];
+}
+
+export interface InboxItem {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  read: boolean;
+}
+
+export interface MessagesPayload {
+  unread: number;
+  items: InboxItem[];
 }
 
 export interface FeedEpisode {

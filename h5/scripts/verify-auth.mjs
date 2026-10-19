@@ -14,7 +14,12 @@ const me = {
   email: EMAIL,
   display_name: "viewer",
   avatar_url: "",
+  bio: "",
   coins: 80,
+  following_count: 8,
+  follower_count: 2,
+  received_likes: 16,
+  reminder_opt_in: false,
 };
 
 const drama = {
@@ -102,6 +107,24 @@ function buildRoutes(calls, options) {
       if (authorization !== `Bearer ${TOKEN}`) return json(route, 401, { detail: "login required" });
       return json(route, 200, options.favorites ?? { total: 0, items: [] });
     }
+    if (path === "/v1/me/history") {
+      if (authorization !== `Bearer ${TOKEN}`) return json(route, 401, { detail: "login required" });
+      return json(route, 200, { items: [] });
+    }
+    if (path === "/v1/me/lists/like") {
+      if (authorization !== `Bearer ${TOKEN}`) return json(route, 401, { detail: "login required" });
+      return json(route, 200, { total: 0, items: [] });
+    }
+    if (path === "/v1/me/ledger") {
+      if (authorization !== `Bearer ${TOKEN}`) return json(route, 401, { detail: "login required" });
+      return json(route, 200, { items: [] });
+    }
+    if (path === "/v1/me/messages") {
+      if (authorization !== `Bearer ${TOKEN}`) return json(route, 401, { detail: "login required" });
+      return json(route, 200, { unread: 0, items: [] });
+    }
+    if (path === "/v1/me/messages/read") return json(route, 200, { unread: 0 });
+    if (path === "/v1/me/checkin") return json(route, 200, { streak: 1, amount: 10, replayed: false, balance: 90 });
     if (path === "/v1/auth/providers") {
       return json(route, 200, {
         email: { enabled: true },
@@ -261,6 +284,8 @@ async function newPage(options = {}) {
   check((await page.locator('[data-testid="me-coins"]').innerText()).trim() === "80", "profile shows the coin balance");
   await page.screenshot({ path: `${OUT}-me.png` });
 
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.waitForSelector('[data-testid="settings-sheet"]', { timeout: 5000 });
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.waitForSelector(".me-cta", { timeout: 5000 });
   check((await page.evaluate(() => localStorage.getItem("minitv_h5_token"))) === null, "sign out clears the token");
@@ -385,6 +410,7 @@ async function newPage(options = {}) {
   await page.locator('[data-testid="me-favorites"]').click();
   await page.waitForSelector(".fav-grid .card", { timeout: 8000 });
   check((await page.locator(".fav-grid .card").count()) === 2, "favorites page lists saved dramas");
+  await page.screenshot({ path: `${OUT}-favorites.png` });
   await page.locator(".fav-grid .card").first().click();
   await page.waitForSelector('.rail-btn[aria-label="Like"]', { timeout: 10000 });
   check(true, "tapping a favorite opens the drama");
