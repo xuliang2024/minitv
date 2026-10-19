@@ -273,7 +273,7 @@ export function MePage({
           <span className="me-premium-copy">
             <b>{t(locale, "premium_active")}</b>
             <i>
-              {t(locale, "premium_active_until", {
+              {t(locale, user.membership.canceling ? "premium_ends_on" : "premium_active_until", {
                 date: user.membership.until
                   ? new Date(user.membership.until).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
                       month: "short",
