@@ -398,3 +398,43 @@ def test_subscription_deletion_keeps_a_running_pass(session, make):
     session.refresh(row)
     assert row.status == "active"  # the pass is still running
     assert billing.active_membership(session, user.id)["active"] is True
+
+
+def test_one_time_checkout_reuses_or_creates_a_stripe_customer(session, make, monkeypatch):
+    billing.ensure_default_plans(session)
+    billing.set_billing_mode(session, "one_time", 1)
+    user = make.user(email="pass@example.com")
+    monkeypatch.setenv("STRIPE_PRODUCT_WEEKLY", "prod_weekly")
+    plan = session.scalar(select(billing.Plan).where(billing.Plan.code == "weekly"))
+    version = session.scalar(select(billing.PlanVersion).where(billing.PlanVersion.plan_id == plan.id))
+    version.stripe_one_time_price_id = "price_ot"
+    session.add(
+        Subscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            plan_version_id=version.id,
+            status="canceled",
+            current_period_start=datetime.now(timezone.utc) - timedelta(days=30),
+            current_period_end=datetime.now(timezone.utc) - timedelta(days=1),
+            stripe_customer_id="cus_existing",
+        )
+    )
+    session.commit()
+
+    seen: list[dict] = []
+
+    def fake_request(path, data=None, method="POST"):
+        seen.append(data or {})
+        return {"id": f"cs_{len(seen)}", "url": "https://checkout.stripe.com/x"}
+
+    monkeypatch.setattr(billing, "_stripe_request", fake_request)
+    billing.create_checkout_session(session, user_id=user.id, email=user.email, plan_code="weekly")
+    assert seen[0]["customer"] == "cus_existing"
+    assert "customer_email" not in seen[0]
+    assert "customer_creation" not in seen[0]
+
+    # A brand new buyer has no customer yet: let Checkout create one.
+    fresh = make.user(email="fresh@example.com")
+    billing.create_checkout_session(session, user_id=fresh.id, email=fresh.email, plan_code="weekly")
+    assert seen[1]["customer_creation"] == "always"
+    assert seen[1]["customer_email"] == "fresh@example.com"

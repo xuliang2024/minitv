@@ -493,7 +493,22 @@ def create_checkout_session(
     else:
         data["subscription_data[metadata][user_id]"] = str(user_id)
         data["subscription_data[metadata][plan_code]"] = plan_code
-    if email:
+
+    # Reuse the Stripe customer we already have (from a subscription) so passes
+    # and subscriptions live under one customer; otherwise let Checkout create one.
+    customer_id = session.scalar(
+        select(Subscription.stripe_customer_id)
+        .where(Subscription.user_id == user_id, Subscription.stripe_customer_id.is_not(None))
+        .order_by(Subscription.id.desc())
+    )
+    if mode == "one_time":
+        if customer_id:
+            data["customer"] = customer_id
+        else:
+            data["customer_creation"] = "always"
+            if email:
+                data["customer_email"] = email
+    elif email:
         data["customer_email"] = email
     checkout = _stripe_request("/checkout/sessions", data)
 
