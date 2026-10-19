@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.23",
+  "target": "r2",
+  "status": "published",
+  "sha": "71db79fa02ecd4aacc6e19087f3bde67de20ddd9",
+  "short_sha": "71db79fa",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.23/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "c9f47478613c8594caccad8876b0dd18c3afdc99b019733cdb6374679e069ec4",
+  "files": [
+    {
+      "path": "assets/index-BDazU-A0.js",
+      "size": 817763
+    },
+    {
+      "path": "assets/index-BibkZWQ-.css",
+      "size": 38641
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T11:05:58+08:00",
+  "finished_at": "2026-10-19T11:06:24+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 70919,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "会员套餐：H5 我页会员卡 + Stripe Checkout 购买",
+  "dirty": false
+}
