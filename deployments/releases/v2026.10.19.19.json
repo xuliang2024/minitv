@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.19",
+  "target": "r2",
+  "status": "published",
+  "sha": "07c11ce5356e07cd2adcf8c9c3d45d56edd209fa",
+  "short_sha": "07c11ce5",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.19/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "ff57191e5f3dd8f23f66063ad7a4f8e6672deea27dbd1f3ef637c30554fcb0d0",
+  "files": [
+    {
+      "path": "assets/index-BJN6UCxS.css",
+      "size": 36570
+    },
+    {
+      "path": "assets/index-C5EQOO5v.js",
+      "size": 813149
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T10:10:17+08:00",
+  "finished_at": "2026-10-19T10:10:34+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 49895,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "奖励页访客可见：任务卡直接展示，交互时才弹登录",
+  "dirty": false
+}
