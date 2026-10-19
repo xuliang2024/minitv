@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.31",
+  "target": "server",
+  "status": "published",
+  "sha": "43ce41bbc07e4d89a7d0f05d586aebfcd2fb575f",
+  "short_sha": "43ce41bb",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T11:35:13+08:00",
+  "finished_at": "2026-10-19T11:35:26+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 83439,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "套餐价格改由后端版本驱动，首次下单自动在 Stripe 建价（--allow-dirty：其他会话改动无关）",
+  "dirty": true
+}
