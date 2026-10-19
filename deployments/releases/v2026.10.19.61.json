@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.61",
+  "target": "server",
+  "status": "published",
+  "sha": "377bfe2de016562f7f6e9ce6e44f7ade7c408279",
+  "short_sha": "377bfe2d",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T16:10:50+08:00",
+  "finished_at": "2026-10-19T16:11:04+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 78796,
+    "agent_session": null,
+    "cwd": "/private/tmp/minitv-deploy-1019"
+  },
+  "note": "评论审核：默认全部 + 顶部状态统计（服务端 counts）",
+  "dirty": false
+}
