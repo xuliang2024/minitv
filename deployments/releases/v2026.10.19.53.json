@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.53",
+  "target": "server",
+  "status": "published",
+  "sha": "af6143635e3a20209946f44623a3f13be0a5d676",
+  "short_sha": "af614363",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T15:19:12+08:00",
+  "finished_at": "2026-10-19T15:19:30+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 58775,
+    "agent_session": null,
+    "cwd": "/private/tmp/deploy-moderation"
+  },
+  "note": "评论自动审核：配置表/接口/迁移",
+  "dirty": false
+}
