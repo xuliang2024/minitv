@@ -141,6 +141,7 @@ def test_favorites_list_needs_a_session_and_skips_unpublished(client, outbox, ma
     published_a = make.drama(title="Saved A", status="published")
     published_b = make.drama(title="Saved B", status="published")
     draft = make.drama(title="Hidden", status="draft")
+    make.episode(published_a, number=1, status="published")
 
     _send_code(client, "saver@example.com")
     token = _authenticate(client, "saver@example.com", outbox[0]["code"]).json()["token"]
@@ -159,6 +160,7 @@ def test_favorites_list_needs_a_session_and_skips_unpublished(client, outbox, ma
     body = page.json()
     assert body["total"] == 2
     assert [item["id"] for item in body["items"]] == [published_b.id, published_a.id]
+    assert [item["episode_count"] for item in body["items"]] == [0, 1]
 
     limited = client.get("/v1/me/favorites?limit=1", headers=headers).json()
     assert limited["total"] == 2
@@ -244,3 +246,72 @@ def test_reactions_need_a_session_and_feed_the_play_payload(client, outbox, make
     )
     assert removed.json() == {"active": False}
     assert client.get(f"/v1/dramas/{drama.id}/play", headers=headers).json()["drama"]["like_count"] == 0
+
+
+def test_history_returns_drama_cards(client, outbox, make, session):
+    drama = make.drama(title="Watched Drama", status="published")
+    episode = make.episode(drama, number=3, status="published")
+    episode.duration_seconds = 600
+    hidden = make.drama(title="Pulled Drama", status="draft")
+    hidden_episode = make.episode(hidden, number=1, status="published")
+    session.commit()
+
+    assert client.get("/v1/me/history").status_code == 401
+
+    _send_code(client, "watcher@example.com")
+    token = _authenticate(client, "watcher@example.com", outbox[0]["code"]).json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    me = client.get("/v1/me", headers=headers).json()
+
+    from app.modules.playback.models import PlaybackProgress
+
+    session.add(PlaybackProgress(user_id=me["id"], episode_id=episode.id, position_seconds=42))
+    session.add(PlaybackProgress(user_id=me["id"], episode_id=hidden_episode.id, position_seconds=9))
+    session.commit()
+
+    body = client.get("/v1/me/history", headers=headers).json()
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["episode_id"] == episode.id
+    assert item["episode_number"] == 3
+    assert item["position_seconds"] == 42
+    assert item["duration_seconds"] == 600
+    assert item["drama"] == {
+        "id": drama.id,
+        "title": "Watched Drama",
+        "cover_url": "",
+        "episode_count": 1,
+    }
+
+
+def test_liked_dramas_come_back_as_cards(client, outbox, make):
+    drama = make.drama(title="Liked Drama", status="published")
+    make.episode(drama, number=1, status="published")
+    make.episode(drama, number=2, status="published")
+    draft = make.drama(title="Unlisted Like", status="draft")
+
+    _send_code(client, "liker@example.com")
+    token = _authenticate(client, "liker@example.com", outbox[0]["code"]).json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    for target in (drama, draft):
+        client.post(
+            "/v1/reactions",
+            json={"target_type": "drama", "target_id": target.id, "kind": "like", "remove": False},
+            headers=headers,
+        )
+
+    body = client.get("/v1/me/lists/like", headers=headers).json()
+    assert body["total"] == 1
+    assert body["items"] == [
+        {
+            "target_type": "drama",
+            "target_id": drama.id,
+            "drama": {
+                "id": drama.id,
+                "title": "Liked Drama",
+                "cover_url": "",
+                "episode_count": 2,
+            },
+        }
+    ]

@@ -50,6 +50,28 @@ def _tags_of(db: Session, drama_id: int) -> list[Tag]:
     return content.tags_by_drama(db, [drama_id]).get(drama_id, [])
 
 
+def _episode_counts(db: Session, drama_ids: list[int]) -> dict[int, int]:
+    """Published episode count per drama: the "共 N 集" line on every card."""
+    ids = [drama_id for drama_id in set(drama_ids) if drama_id]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(Episode.drama_id, func.count())
+        .where(Episode.drama_id.in_(ids), Episode.status == "published")
+        .group_by(Episode.drama_id)
+    ).all()
+    return {int(drama_id): int(count) for drama_id, count in rows}
+
+
+def _drama_card(drama: Drama, totals: dict[int, int]) -> dict:
+    return {
+        "id": drama.id,
+        "title": drama.title,
+        "cover_url": drama.cover_url,
+        "episode_count": totals.get(drama.id, 0),
+    }
+
+
 class PlaybackIn(BaseModel):
     drama_id: int
     episode_id: int
@@ -422,6 +444,7 @@ def my_favorites(
     )
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.scalars(base.order_by(Reaction.id.desc()).offset(offset).limit(limit)).all()
+    totals = _episode_counts(db, [drama.id for drama in rows])
     return {
         "total": int(total),
         "items": [
@@ -431,6 +454,7 @@ def my_favorites(
                 "cover_url": drama.cover_url,
                 "synopsis": drama.synopsis,
                 "play_count": drama.play_count,
+                "episode_count": totals.get(drama.id, 0),
             }
             for drama in rows
         ],
@@ -678,11 +702,62 @@ def home_groups(db: Session = Depends(get_db)):
 
 @router.get("/me/history")
 def history(user: User = Depends(_require_user), db: Session = Depends(get_db)):
-    rows = db.scalars(select(PlaybackProgress).where(PlaybackProgress.user_id == user.id)).all()
-    return {"items": [{"episode_id": row.episode_id, "position_seconds": row.position_seconds} for row in rows]}
+    """Watch history as cards: newest progress first, joined to drama + episode.
+
+    The Me page paints a poster grid, so returning bare episode ids would leave
+    the client with nothing to show. Unpublished dramas are filtered out the
+    same way favorites are, and the legacy episode fields stay for old clients.
+    """
+    rows = db.execute(
+        select(PlaybackProgress, Episode, Drama)
+        .join(Episode, Episode.id == PlaybackProgress.episode_id)
+        .join(Drama, Drama.id == Episode.drama_id)
+        .where(PlaybackProgress.user_id == user.id, Drama.status == "published")
+        .order_by(PlaybackProgress.updated_at.desc())
+        .limit(60)
+    ).all()
+    totals = _episode_counts(db, [drama.id for _, _, drama in rows])
+    return {
+        "items": [
+            {
+                "episode_id": progress.episode_id,
+                "position_seconds": progress.position_seconds,
+                "episode_number": episode.episode_number,
+                "duration_seconds": episode.duration_seconds,
+                "updated_at": progress.updated_at.isoformat(),
+                "drama": _drama_card(drama, totals),
+            }
+            for progress, episode, drama in rows
+        ]
+    }
 
 
 @router.get("/me/lists/{kind}")
 def my_list(kind: str, user: User = Depends(_require_user), db: Session = Depends(get_db)):
     rows = db.scalars(select(Reaction).where(Reaction.user_id == user.id, Reaction.kind == kind)).all()
-    return {"items": [{"target_type": row.target_type, "target_id": row.target_id} for row in rows]}
+    drama_ids = [row.target_id for row in rows if row.target_type == "drama"]
+    dramas = {}
+    if drama_ids:
+        dramas = {
+            drama.id: drama
+            for drama in db.scalars(
+                select(Drama).where(Drama.id.in_(drama_ids), Drama.status == "published")
+            ).all()
+        }
+    totals = _episode_counts(db, list(dramas))
+    items = []
+    for row in rows:
+        if row.target_type == "drama":
+            drama = dramas.get(row.target_id)
+            if drama is None:  # unpublished since it was liked
+                continue
+            items.append(
+                {
+                    "target_type": row.target_type,
+                    "target_id": row.target_id,
+                    "drama": _drama_card(drama, totals),
+                }
+            )
+        else:
+            items.append({"target_type": row.target_type, "target_id": row.target_id})
+    return {"total": len(items), "items": items}
