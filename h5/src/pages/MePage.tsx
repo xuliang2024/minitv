@@ -263,7 +263,12 @@ export function MePage({
       )}
 
       {user?.membership?.active ? (
-        <div className="me-premium active" data-testid="me-premium-active">
+        <button
+          type="button"
+          className="me-premium active"
+          onClick={() => setSheet("premium")}
+          data-testid="me-premium-active"
+        >
           <span className="me-premium-crown">★</span>
           <span className="me-premium-copy">
             <b>{t(locale, "premium_active")}</b>
@@ -279,7 +284,7 @@ export function MePage({
               })}
             </i>
           </span>
-        </div>
+        </button>
       ) : (
         <button
           type="button"
@@ -425,7 +430,12 @@ export function MePage({
         <MessagesSheet locale={locale} onClose={() => setSheet(null)} onRead={handleRead} />
       )}
       {sheet === "premium" && (
-        <PremiumSheet locale={locale} onClose={() => setSheet(null)} />
+        <PremiumSheet
+          locale={locale}
+          membership={user?.membership}
+          onChanged={() => void refresh()}
+          onClose={() => setSheet(null)}
+        />
       )}
       {sheet === "settings" && (
         <SettingsSheet

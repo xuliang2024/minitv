@@ -67,12 +67,21 @@ def test_checkout_completed_activates_membership(session, make, monkeypatch):
 
     def fake_request(path, data=None, method="POST"):
         if path.startswith("/subscriptions/"):
+            # Stripe (Basil API) puts the period on the subscription item, not on
+            # the subscription itself — the shape that used to give us a zero-length
+            # window and an instantly-expired entitlement.
             return {
                 "id": "sub_test_1",
                 "customer": "cus_test_1",
-                "current_period_start": now,
-                "current_period_end": now + 7 * 86400,
-                "items": {"data": [{"price": {"id": "price_weekly"}}]},
+                "items": {
+                    "data": [
+                        {
+                            "price": {"id": "price_weekly"},
+                            "current_period_start": now,
+                            "current_period_end": now + 7 * 86400,
+                        }
+                    ]
+                },
                 "metadata": {"user_id": str(user.id), "plan_code": "weekly"},
             }
         return {"id": "cs_test_1", "url": "https://checkout.stripe.com/x", "amount_total": 999, "currency": "usd"}
@@ -101,6 +110,7 @@ def test_checkout_completed_activates_membership(session, make, monkeypatch):
     assert subscription is not None
     assert subscription.status == "active"
     assert subscription.stripe_subscription_id == "sub_test_1"
+    assert subscription.current_period_end > subscription.current_period_start
     assert billing.active_membership(session, user.id)["active"] is True
 
     order = session.scalar(select(Order).where(Order.external_txn_id == "cs_test_1"))
@@ -131,3 +141,25 @@ def test_subscription_deleted_cancels_access(session, make, monkeypatch):
     session.refresh(subscription)
     assert subscription.status == "canceled"
     assert billing.active_membership(session, user.id)["active"] is False
+
+
+def test_cancel_at_period_end_keeps_access_but_flags_canceling(session, make, monkeypatch):
+    billing.ensure_default_plans(session)
+    user = make.user(email="buyer@example.com")
+    now = int(time.time())
+    item = {"price": {"id": "price_weekly"}, "current_period_start": now, "current_period_end": now + 7 * 86400}
+    remote = {
+        "id": "sub_test_3",
+        "customer": "cus_test_3",
+        "status": "active",
+        "cancel_at_period_end": True,
+        "items": {"data": [item]},
+        "metadata": {"user_id": str(user.id), "plan_code": "weekly"},
+    }
+    payload = {"type": "customer.subscription.updated", "data": {"object": remote}}
+    body = json.dumps(payload).encode()
+    billing.apply_stripe_event(session, body=body, signature=sign(body), payload=payload)
+
+    membership = billing.active_membership(session, user.id)
+    assert membership["active"] is True
+    assert membership["canceling"] is True

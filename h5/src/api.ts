@@ -247,3 +247,8 @@ export function getPlans(): Promise<PlansPayload> {
 export function startCheckout(planCode: string): Promise<CheckoutResult> {
   return postJson<CheckoutResult>("/v1/billing/checkout", { plan_code: planCode });
 }
+
+/** Stop renewing; access stays until the end of the paid period. */
+export function cancelSubscription(): Promise<{ ok: boolean }> {
+  return postJson<{ ok: boolean }>("/v1/billing/cancel", {});
+}

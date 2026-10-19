@@ -200,6 +200,8 @@ def cancel_subscription(session: Session, user_id: int) -> None:
             {"cancel_at_period_end": "true"},
             method="POST",
         )
+        # Access continues to current_period_end; canceled_at only marks "will not renew".
+        current.canceled_at = datetime.now(timezone.utc)
         session.commit()
         return
     current.status = "canceled"
@@ -403,6 +405,24 @@ def _as_datetime(epoch: int | None, fallback: datetime | None = None) -> datetim
     return fallback or datetime.now(timezone.utc)
 
 
+def _period_bounds(remote: dict, plan_code: str | None = None) -> tuple[datetime, datetime]:
+    """Billing period of a Stripe subscription.
+
+    Stripe moved ``current_period_start/end`` from the subscription onto its
+    items (Basil API, 2025+), so the top-level fields are usually null now.
+    Read both shapes before falling back to the plan length.
+    """
+    items = (remote.get("items") or {}).get("data") or [{}]
+    item = items[0] if items else {}
+    start_epoch = remote.get("current_period_start") or item.get("current_period_start")
+    end_epoch = remote.get("current_period_end") or item.get("current_period_end")
+    start = _as_datetime(start_epoch)
+    end = _as_datetime(end_epoch, start + timedelta(days={"weekly": 7, "monthly": 30, "yearly": 365}.get(plan_code or "", 30)))
+    if end <= start:  # never hand the entitlement a zero-length window
+        end = start + timedelta(days={"weekly": 7, "monthly": 30, "yearly": 365}.get(plan_code or "", 30))
+    return start, end
+
+
 def _activate_from_checkout(session: Session, checkout: dict) -> dict:
     metadata = checkout.get("metadata") or {}
     user_id = int(metadata.get("user_id") or checkout.get("client_reference_id") or 0)
@@ -435,10 +455,9 @@ def _activate_from_checkout(session: Session, checkout: dict) -> dict:
     if subscription_id:
         remote = _stripe_request(f"/subscriptions/{subscription_id}")
         price_id = ((remote.get("items") or {}).get("data") or [{}])[0].get("price", {}).get("id")
-        period_start = _as_datetime(remote.get("current_period_start"), period_start)
-        period_end = _as_datetime(remote.get("current_period_end"), period_end)
         customer_id = remote.get("customer") or customer_id
         plan_code = (remote.get("metadata") or {}).get("plan_code") or plan_code
+        period_start, period_end = _period_bounds(remote, plan_code)
     _upsert_subscription(
         session,
         user_id=user_id,
@@ -469,8 +488,7 @@ def _sync_from_subscription(session: Session, remote: dict) -> dict:
 
     status = remote.get("status")
     local_status = "active" if status in {"active", "trialing", "past_due"} else "canceled"
-    period_start = _as_datetime(remote.get("current_period_start"))
-    period_end = _as_datetime(remote.get("current_period_end"))
+    period_start, period_end = _period_bounds(remote, plan_code)
     row = _upsert_subscription(
         session,
         user_id=user_id,
@@ -482,8 +500,14 @@ def _sync_from_subscription(session: Session, remote: dict) -> dict:
         period_start=period_start,
         period_end=period_end,
     )
-    if row is not None and local_status == "canceled":
-        row.canceled_at = row.canceled_at or datetime.now(timezone.utc)
+    if row is not None:
+        if local_status == "canceled":
+            row.canceled_at = row.canceled_at or datetime.now(timezone.utc)
+        elif remote.get("cancel_at_period_end"):
+            # Scheduled to stop renewing: access lasts until current_period_end.
+            row.canceled_at = row.canceled_at or datetime.now(timezone.utc)
+        else:
+            row.canceled_at = None
     session.commit()
     return {"user_id": user_id, "status": local_status}
 
