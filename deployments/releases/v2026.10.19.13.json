@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.13",
+  "target": "server",
+  "status": "published",
+  "sha": "0cb68ec3517c88abe32ee225b4c5ac898f433465",
+  "short_sha": "0cb68ec3",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T08:25:33+08:00",
+  "finished_at": "2026-10-19T08:25:49+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 10756,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "我页历史/点赞返回剧目卡片；--allow-dirty：app/ 图标等为其他会话未提交改动，服务端产物只含 backend/",
+  "dirty": true
+}
