@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.19.42",
+  "target": "r2",
+  "status": "published",
+  "sha": "bef9dfcdbdd4dd5e6846852aace12a98883456d1",
+  "short_sha": "bef9dfcd",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.42/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "c0e87c9e4c8891ff2450db12a5ed924a8a1aee5d4d596aefb713497e9b4dfdaa",
+  "files": [
+    {
+      "path": "assets/index-BVffxyxD.js",
+      "size": 1408417
+    },
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-19T14:02:55+08:00",
+  "finished_at": "2026-10-19T14:03:57+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 29520,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "一次性价格最低 $0.50 校验",
+  "dirty": false
+}
