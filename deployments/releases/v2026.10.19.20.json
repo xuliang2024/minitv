@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.19.20",
+  "target": "r2",
+  "status": "published",
+  "sha": "98e74ecaa089fe21f5a2c400de13f289adcb56b1",
+  "short_sha": "98e74eca",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.19.20/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "87692f54354045d4af2e7754583ceb95e9f146552bed8adceaefb4be3eab18e3",
+  "files": [
+    {
+      "path": "assets/index-9BGTGslk.js",
+      "size": 1406110
+    },
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-19T10:38:27+08:00",
+  "finished_at": "2026-10-19T10:39:00+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 60169,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "管理后台：金币与任务页面重构优化",
+  "dirty": false
+}
