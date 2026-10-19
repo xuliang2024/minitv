@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.11",
+  "target": "server",
+  "status": "published",
+  "sha": "d71c8570fb300b2f0bcbebc9708214852287a286",
+  "short_sha": "d71c8570",
+  "command": [
+    "/tmp/minitv-deploy/scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T08:14:46+08:00",
+  "finished_at": "2026-10-19T08:15:03+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 6310,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "首页榜单卡改用真实播放量：/v1/home/groups 增加 play_count（--allow-dirty：工作区有其他会话未提交改动）",
+  "dirty": true
+}
