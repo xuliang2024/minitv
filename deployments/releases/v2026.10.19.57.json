@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.57",
+  "target": "server",
+  "status": "published",
+  "sha": "1fd5ddb46f7c04b7c6cb0ca94b7b876e8b10d877",
+  "short_sha": "1fd5ddb4",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T15:49:27+08:00",
+  "finished_at": "2026-10-19T15:49:46+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 70939,
+    "agent_session": null,
+    "cwd": "/private/tmp/deploy-comments"
+  },
+  "note": "分集评论：接口/计数/迁移",
+  "dirty": false
+}
