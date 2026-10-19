@@ -1309,6 +1309,10 @@ export function PlansPage() {
       message.error("价格必须大于 0");
       return;
     }
+    if (mode === "one_time" && priceCents < 50) {
+      message.error("一次性购买的价格最低 $0.50（Stripe 限制），请调高或先切换回自动续费");
+      return;
+    }
     const items = values.benefits
       .split("\n")
       .map((line) => line.trim())
@@ -1567,13 +1571,18 @@ export function PlansPage() {
             <Form.Item
               label="套餐售价（美元）"
               name="price"
+              extra={mode === "one_time" ? "一次性购买最低 $0.50（Stripe 限制）" : undefined}
               rules={[
                 { required: true, message: "请填写价格" },
-                { type: "number", min: 0.01, message: "价格至少 $0.01" },
+                {
+                  type: "number",
+                  min: mode === "one_time" ? 0.5 : 0.01,
+                  message: mode === "one_time" ? "一次性价格至少 $0.50" : "价格至少 $0.01",
+                },
               ]}
             >
               <InputNumber
-                min={0.01}
+                min={mode === "one_time" ? 0.5 : 0.01}
                 step={0.01}
                 precision={2}
                 prefix="$"

@@ -208,6 +208,7 @@ def active_membership(session: Session, user_id: int) -> dict:
 
 def change_price(session: Session, *, code: str, price_cents: int, benefits: dict, actor_id: int) -> PlanVersion:
     plan = session.scalar(select(Plan).where(Plan.code == code))
+    ensure_chargeable(billing_mode(session), price_cents, "USD")
     if plan is None:
         raise BillingError(404, "plan not found")
     latest = session.scalar(
@@ -328,6 +329,9 @@ PRODUCT_ENV = {
     "yearly": "STRIPE_PRODUCT_YEARLY",
 }
 INTERVAL_OF = {"weekly": "week", "monthly": "month", "yearly": "year"}
+# Stripe refuses one-time Checkout sessions below 50 cents (USD). Subscriptions
+# are exempt, which is why the $0.10 test price only worked in subscription mode.
+MIN_ONE_TIME_CENTS = 50
 PLAN_BY_PRICE: dict[str, str] = {}
 
 
@@ -441,6 +445,18 @@ def ensure_stripe_price(
     return price["id"]
 
 
+def ensure_chargeable(mode: str, price_cents: int, currency: str | None) -> None:
+    if mode != "one_time":
+        return
+    if (currency or "USD").upper() != "USD":
+        return
+    if price_cents < MIN_ONE_TIME_CENTS:
+        raise BillingError(
+            400,
+            f"one-time price must be at least ${MIN_ONE_TIME_CENTS / 100:.2f} (Stripe minimum)",
+        )
+
+
 def create_checkout_session(
     session: Session,
     *,
@@ -456,6 +472,7 @@ def create_checkout_session(
     version = _latest_version(session, plan)
 
     mode = billing_mode(session)
+    ensure_chargeable(mode, version.price_cents, version.currency)
     base = os.environ.get("H5_PUBLIC_BASE_URL", "https://h5.minitv.us").rstrip("/")
     data = {
         "mode": "payment" if mode == "one_time" else "subscription",

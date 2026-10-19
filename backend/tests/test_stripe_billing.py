@@ -318,3 +318,31 @@ def test_one_time_pass_cannot_be_canceled(session, make):
 def test_default_mode_is_one_time(session):
     billing.ensure_default_plans(session)
     assert billing.billing_mode(session) == "one_time"
+
+
+def test_one_time_price_below_stripe_minimum_is_rejected(session, make):
+    billing.ensure_default_plans(session)
+    billing.set_billing_mode(session, "one_time", 1)
+    user = make.user(email="cheap@example.com")
+
+    with pytest.raises(billing.BillingError) as exc:
+        billing.change_price(
+            session, code="weekly", price_cents=20, benefits={"items": [], "best": False}, actor_id=1
+        )
+    assert exc.value.status_code == 400
+
+    # Guard also covers a version saved before the switch (v2 is $0.10).
+    version = session.scalar(
+        select(billing.PlanVersion).where(billing.PlanVersion.plan_id == 1, billing.PlanVersion.version == 2)
+    )
+    if version is None:
+        version = billing.PlanVersion(plan_id=1, version=2, price_cents=10, currency="USD", benefits={})
+        session.add(version)
+        session.commit()
+    version.price_cents = 10
+    session.commit()
+
+    with pytest.raises(billing.BillingError) as exc:
+        billing.create_checkout_session(session, user_id=user.id, email=user.email, plan_code="weekly")
+    assert exc.value.status_code == 400
+    assert "0.50" in exc.value.detail

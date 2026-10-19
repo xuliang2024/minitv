@@ -77,11 +77,13 @@ export function PremiumSheet({
       window.location.assign(result.url);
     } catch (err) {
       setBusy(null);
-      setError(
-        err instanceof ApiError && err.status === 401
-          ? t(locale, "premium_need_sign_in")
-          : t(locale, "premium_failed"),
-      );
+      if (err instanceof ApiError && err.status === 401) {
+        setError(t(locale, "premium_need_sign_in"));
+      } else if (err instanceof ApiError && err.message.includes("0.50")) {
+        setError(t(locale, "premium_min_price"));
+      } else {
+        setError(t(locale, "premium_failed"));
+      }
     }
   }
 
