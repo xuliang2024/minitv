@@ -107,6 +107,9 @@ export interface MeProfile {
     plan_code: string | null;
     until: string | null;
     canceling: boolean;
+    billing_mode?: "subscription" | "one_time" | null;
+    subscription_until?: string | null;
+    pass_until?: string | null;
   };
 }
 
@@ -226,10 +229,12 @@ export interface Plan {
   version: number;
   version_id: number;
   benefits: { items?: string[]; best?: boolean };
+  billing_mode?: "subscription" | "one_time";
 }
 
 export interface PlansPayload {
   items: Plan[];
+  billing_mode?: "subscription" | "one_time";
 }
 
 export interface CheckoutResult {

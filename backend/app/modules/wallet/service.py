@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.billing.models import Subscription
+from app.modules.billing import service as billing
 from app.modules.common.models import IdempotencyRecord
 from app.modules.content.models import Drama, Episode
 from app.modules.wallet.models import (
@@ -72,14 +72,8 @@ def unlock_episode(
     price = drama.coin_price_per_episode
 
     # 3. member priority: an active subscription never creates a coin flow
-    subscription = session.scalar(
-        select(Subscription).where(
-            Subscription.user_id == user_id,
-            Subscription.status == "active",
-            Subscription.current_period_end > datetime.now(timezone.utc),
-        )
-    )
-    if subscription is not None:
+    # Subscription period or one-time pass, whichever ends last.
+    if billing.access_until(session, user_id) is not None:
         result = UnlockResult(
             status="subscription", source="subscription", episode_id=episode_id, balance_after=None
         )

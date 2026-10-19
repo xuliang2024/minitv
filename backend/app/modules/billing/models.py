@@ -53,7 +53,8 @@ class PlanVersion(Base):
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     benefits: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # entitlement snapshot
     note: Mapped[str] = mapped_column(Text, nullable=False, default="")  # price change reason, audited
-    stripe_price_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stripe_price_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # recurring
+    stripe_one_time_price_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -79,6 +80,10 @@ class Subscription(Base):
     stripe_customer_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     stripe_price_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    billing_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="subscription")
+    # End of one-time passes; independent from current_period_end so a renewal
+    # never wipes access that was bought outright.
+    pass_end: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -105,6 +110,7 @@ class Order(Base):
     plan_version_id: Mapped[int] = mapped_column(ForeignKey("plan_versions.id"), nullable=False)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
+    billing_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="subscription")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="created")  # created / paid / failed / refunded
     external_txn_id: Mapped[str | None] = mapped_column(
         String(128), unique=True, nullable=True
@@ -118,3 +124,16 @@ class Order(Base):
     )
 
     __table_args__ = (Index("ix_orders_user_created", "user_id", "created_at"),)
+
+
+class BillingSettings(Base):
+    """Single-row global switch: how *new* purchases are billed."""
+
+    __tablename__ = "billing_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    billing_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="subscription")
+    updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

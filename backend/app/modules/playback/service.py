@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.modules.billing.models import Subscription
+from app.modules.billing import service as billing
 from app.modules.common import bunny
 from app.modules.content.models import Drama, Episode
 from app.modules.ops.service import get_redis
@@ -97,14 +97,8 @@ def verify_token(path: str, expires: int, token: str, gen: int, secret: bytes) -
 def _active_subscription(session: Session, user_id: int | None) -> bool:
     if user_id is None:
         return False
-    sub = session.scalar(
-        select(Subscription).where(
-            Subscription.user_id == user_id,
-            Subscription.status == "active",
-            Subscription.current_period_end > datetime.now(timezone.utc),
-        )
-    )
-    return sub is not None
+    # Subscription period or one-time pass, whichever ends last.
+    return billing.access_until(session, user_id) is not None
 
 
 def subscription_active(session: Session, user_id: int | None) -> bool:

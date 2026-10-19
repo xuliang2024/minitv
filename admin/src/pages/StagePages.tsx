@@ -12,6 +12,7 @@ import {
   Modal,
   Radio,
   Row,
+  Segmented,
   Select,
   Skeleton,
   Space,
@@ -1224,10 +1225,18 @@ type PlanItem = {
   benefits?: { items?: string[]; best?: boolean };
 };
 
+type BillingMode = "subscription" | "one_time";
+
 const PLAN_PERIOD: Record<string, string> = {
   weekly: "7 天",
   monthly: "30 天",
   yearly: "365 天",
+};
+
+const PLAN_UNIT: Record<string, string> = {
+  weekly: "周",
+  monthly: "月",
+  yearly: "年",
 };
 
 function centsToDollars(cents: number) {
@@ -1239,10 +1248,45 @@ function dollarsToCents(value: number) {
 }
 
 export function PlansPage() {
-  const { data, reload, loading } = useLoad<{ items: PlanItem[] }>("/admin/v1/plans", { items: [] });
+  const { data, reload, loading } = useLoad<{ items: PlanItem[]; billing_mode?: BillingMode }>(
+    "/admin/v1/plans",
+    { items: [] },
+  );
   const [editing, setEditing] = useState<PlanItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<BillingMode>("subscription");
+  const [pendingMode, setPendingMode] = useState<BillingMode | null>(null);
+  const [switching, setSwitching] = useState(false);
   const [form] = Form.useForm<{ price: number; benefits: string; best: boolean }>();
+
+  useEffect(() => {
+    if (data.billing_mode) setMode(data.billing_mode);
+  }, [data.billing_mode]);
+
+  const switchMode = async () => {
+    if (!pendingMode) return;
+    setSwitching(true);
+    try {
+      const result = await api<{ billing_mode: BillingMode; prices: { code: string; ok: boolean }[] }>(
+        "/admin/v1/billing/settings",
+        { method: "POST", body: JSON.stringify({ billing_mode: pendingMode }) },
+      );
+      setMode(result.billing_mode);
+      message.success(
+        result.billing_mode === "one_time" ? "已切换为一次性购买" : "已切换为自动续费",
+      );
+      const failed = (result.prices ?? []).filter((item) => !item.ok);
+      if (failed.length) {
+        message.warning(`部分套餐价格未生成：${failed.map((item) => item.code).join("、")}，下单时会重试`);
+      }
+      setPendingMode(null);
+      reload();
+    } catch (e) {
+      message.error(`切换失败：${errorText(e)}`);
+    } finally {
+      setSwitching(false);
+    }
+  };
 
   const openEdit = (plan: PlanItem) => {
     setEditing(plan);
@@ -1304,6 +1348,49 @@ export function PlansPage() {
           刷新
         </Button>
       </div>
+
+      <Card size="small" style={{ borderRadius: 10 }}>
+        <Space wrap size={16} align="center">
+          <Space direction="vertical" size={0} style={{ minWidth: 160 }}>
+            <Typography.Text strong>计费模式</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              全局生效，三个套餐共用
+            </Typography.Text>
+          </Space>
+          <Segmented
+            value={mode}
+            options={[
+              { label: "自动续费", value: "subscription" },
+              { label: "一次性购买", value: "one_time" },
+            ]}
+            onChange={(value) => {
+              const next = value as BillingMode;
+              if (next !== mode) setPendingMode(next);
+            }}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            切换只影响新购买，已有自动续费订阅不会停止
+          </Typography.Text>
+        </Space>
+      </Card>
+
+      <Modal
+        open={pendingMode !== null}
+        title="切换计费模式"
+        okText="确认切换"
+        cancelText="取消"
+        confirmLoading={switching}
+        onCancel={() => (switching ? undefined : setPendingMode(null))}
+        onOk={switchMode}
+      >
+        <p style={{ marginTop: 0 }}>
+          切换后，三个套餐的新购买都会变成
+          <strong>{pendingMode === "one_time" ? "一次性付款" : "自动续费订阅"}</strong>。
+        </p>
+        <p style={{ marginBottom: 0, color: "#8c8c8c" }}>
+          已有自动续费订阅仍按原周期扣费，不会因为这次切换而停止；一次性购买的时长会在剩余有效期上叠加。
+        </p>
+      </Modal>
 
       <Alert
         type="info"
@@ -1376,6 +1463,12 @@ export function PlansPage() {
                     <Tag color="default" style={{ margin: 0, borderRadius: 10, padding: "0 8px" }}>
                       {periodText}
                     </Tag>
+                    <Tag
+                      color={mode === "one_time" ? "orange" : "blue"}
+                      style={{ margin: 0, borderRadius: 10, padding: "0 8px" }}
+                    >
+                      {mode === "one_time" ? "一次性" : "自动续费"}
+                    </Tag>
                   </div>
                   <Typography.Text type="secondary" style={{ fontSize: 13 }}>
                     标识码：{plan.code}
@@ -1399,7 +1492,7 @@ export function PlansPage() {
                       ${centsToDollars(plan.price_cents)}
                     </span>
                     <span style={{ fontSize: 13, color: "#8c8c8c", marginLeft: 4 }}>
-                      / {periodText}
+                      / {mode === "one_time" ? periodText : PLAN_UNIT[plan.code] ?? periodText}
                     </span>
                   </div>
                   <Tag color="processing" style={{ borderRadius: 4, margin: 0 }}>

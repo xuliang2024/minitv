@@ -11,6 +11,8 @@ import json
 import time
 
 import pytest
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import select
 
 from app.modules.billing import service as billing
@@ -202,3 +204,109 @@ def test_price_edit_creates_the_stripe_price_immediately(session, make, monkeypa
     # A second purchase reuses the stored price instead of creating another one.
     billing.create_checkout_session(session, user_id=user.id, email=user.email, plan_code="weekly")
     assert [path for path, _ in calls] == ["/prices", "/checkout/sessions", "/checkout/sessions"]
+
+
+def test_one_time_mode_buys_without_recurring(session, make, monkeypatch):
+    """Global switch: one-time prices carry no interval and checkout uses payment."""
+    billing.ensure_default_plans(session)
+    billing.set_billing_mode(session, "one_time", 1)
+    user = make.user(email="pass@example.com")
+    monkeypatch.setenv("STRIPE_PRODUCT_WEEKLY", "prod_weekly")
+
+    calls: list[tuple[str, dict]] = []
+
+    def fake_request(path, data=None, method="POST"):
+        calls.append((path, data or {}))
+        if path == "/prices":
+            assert "recurring[interval]" not in data
+            return {"id": "price_onetime_1"}
+        return {"id": "cs_pay_1", "url": "https://checkout.stripe.com/c/pay/cs_pay_1"}
+
+    monkeypatch.setattr(billing, "_stripe_request", fake_request)
+
+    billing.create_checkout_session(session, user_id=user.id, email=user.email, plan_code="weekly")
+
+    assert [path for path, _ in calls] == ["/prices", "/checkout/sessions"]
+    assert calls[1][1]["mode"] == "payment"
+    assert calls[1][1]["line_items[0][price]"] == "price_onetime_1"
+    order = session.scalar(select(Order).where(Order.external_txn_id == "cs_pay_1"))
+    assert order.billing_mode == "one_time"
+    assert billing.billing_mode(session) == "one_time"
+
+
+def _pass_event(user_id: int, session_id: str) -> tuple[bytes, dict]:
+    payload = {
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": session_id,
+                "mode": "payment",
+                "payment_status": "paid",
+                "amount_total": 10,
+                "currency": "usd",
+                "metadata": {"user_id": str(user_id), "plan_code": "weekly"},
+            }
+        },
+    }
+    return json.dumps(payload).encode(), payload
+
+
+def test_one_time_purchases_stack_and_ignore_replays(session, make):
+    billing.ensure_default_plans(session)
+    user = make.user(email="pass@example.com")
+
+    body, payload = _pass_event(user.id, "cs_pay_1")
+    billing.apply_stripe_event(session, body=body, signature=sign(body), payload=payload)
+    row = session.scalar(select(Subscription).where(Subscription.user_id == user.id))
+    first_end = row.pass_end
+    assert first_end > billing._as_datetime(int(time.time()))
+
+    # Stripe retries the same event: no extra days.
+    billing.apply_stripe_event(session, body=body, signature=sign(body), payload=payload)
+    session.refresh(row)
+    assert row.pass_end == first_end
+
+    # A second purchase buys another 7 days on top of the remaining window.
+    body2, payload2 = _pass_event(user.id, "cs_pay_2")
+    billing.apply_stripe_event(session, body=body2, signature=sign(body2), payload=payload2)
+    session.refresh(row)
+    assert row.pass_end - first_end == timedelta(days=7)
+    assert billing.active_membership(session, user.id)["active"] is True
+
+
+def test_pass_and_subscription_use_the_later_end(session, make):
+    billing.ensure_default_plans(session)
+    user = make.user(email="both@example.com")
+    now = datetime.now(timezone.utc)
+    plan = session.scalar(select(billing.Plan).where(billing.Plan.code == "monthly"))
+    version = session.scalar(select(billing.PlanVersion).where(billing.PlanVersion.plan_id == plan.id))
+    session.add(
+        Subscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            plan_version_id=version.id,
+            status="active",
+            current_period_start=now,
+            current_period_end=now + timedelta(days=3),
+            pass_end=now + timedelta(days=10),
+        )
+    )
+    session.commit()
+
+    membership = billing.active_membership(session, user.id)
+    assert membership["active"] is True
+    assert membership["billing_mode"] == "one_time"
+    assert membership["subscription_until"] is not None
+    assert membership["pass_until"] is not None
+    assert billing.access_until(session, user.id) > now + timedelta(days=9)
+
+
+def test_one_time_pass_cannot_be_canceled(session, make):
+    billing.ensure_default_plans(session)
+    user = make.user(email="pass@example.com")
+    body, payload = _pass_event(user.id, "cs_pay_1")
+    billing.apply_stripe_event(session, body=body, signature=sign(body), payload=payload)
+
+    with pytest.raises(billing.BillingError) as exc:
+        billing.cancel_subscription(session, user.id)
+    assert exc.value.status_code == 400

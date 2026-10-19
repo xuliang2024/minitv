@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.billing.models import Order, Plan, PlanVersion, Subscription
+from app.modules.billing.models import BillingSettings, Order, Plan, PlanVersion, Subscription
 from app.modules.common.models import AuditLog
 
 DEFAULT_PLANS = [
@@ -68,6 +68,7 @@ def ensure_default_plans(session: Session) -> None:
 
 def list_current_plans(session: Session) -> list[dict]:
     plans = session.scalars(select(Plan).where(Plan.status == "active").order_by(Plan.id)).all()
+    mode = billing_mode(session)
     out = []
     for plan in plans:
         version = session.scalar(
@@ -85,30 +86,123 @@ def list_current_plans(session: Session) -> list[dict]:
                 "version": version.version,
                 "version_id": version.id,
                 "benefits": version.benefits,
+                "billing_mode": mode,
             }
         )
     return out
 
 
+BILLING_MODES = ("subscription", "one_time")
+
+
+def get_billing_settings(session: Session) -> BillingSettings:
+    row = session.get(BillingSettings, 1)
+    if row is None:
+        row = BillingSettings(id=1, billing_mode="subscription")
+        session.add(row)
+        session.commit()
+    return row
+
+
+def billing_mode(session: Session) -> str:
+    """How *new* purchases are billed. Global, one switch for every plan."""
+    return get_billing_settings(session).billing_mode
+
+
+def set_billing_mode(session: Session, mode: str, actor_id: int) -> BillingSettings:
+    if mode not in BILLING_MODES:
+        raise BillingError(400, "unknown billing mode")
+    row = get_billing_settings(session)
+    row.billing_mode = mode
+    row.updated_by = actor_id
+    session.commit()
+    return row
+
+
+def provision_prices_for_mode(session: Session, mode: str) -> list[dict]:
+    """Best effort: make sure every plan has a Stripe price of that type."""
+    out = []
+    plans = session.scalars(select(Plan).where(Plan.status == "active")).all()
+    for plan in plans:
+        version = _latest_version(session, plan)
+        try:
+            price_id = ensure_stripe_price(session, plan, version, mode)
+            out.append({"code": plan.code, "price_id": price_id, "ok": True})
+        except BillingError as exc:
+            out.append({"code": plan.code, "ok": False, "error": exc.detail})
+    return out
+
+
+def _as_aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def access_until(session: Session, user_id: int) -> datetime | None:
+    """Latest moment this user is entitled: subscription period or pass end."""
+    row = session.execute(
+        select(Subscription).where(
+            Subscription.user_id == user_id,
+            Subscription.status == "active",
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    now = datetime.now(timezone.utc)
+    candidates = [
+        end
+        for end in (_as_aware(row.current_period_end), _as_aware(row.pass_end))
+        if end is not None and end > now
+    ]
+    return max(candidates) if candidates else None
+
+
 def active_membership(session: Session, user_id: int) -> dict:
-    """What /v1/me shows: an unexpired active subscription, if any."""
+    """What /v1/me shows: whichever access window ends last."""
     row = session.execute(
         select(Subscription, Plan)
         .join(Plan, Plan.id == Subscription.plan_id)
         .where(
             Subscription.user_id == user_id,
             Subscription.status == "active",
-            Subscription.current_period_end > datetime.now(timezone.utc),
         )
     ).first()
     if row is None:
-        return {"active": False, "plan_code": None, "until": None, "canceling": False}
+        return {
+            "active": False,
+            "plan_code": None,
+            "until": None,
+            "canceling": False,
+            "billing_mode": None,
+            "subscription_until": None,
+            "pass_until": None,
+        }
     subscription, plan = row
+    now = datetime.now(timezone.utc)
+    sub_end = _as_aware(subscription.current_period_end)
+    pass_end = _as_aware(subscription.pass_end)
+    live = [end for end in (sub_end, pass_end) if end is not None and end > now]
+    if not live:
+        return {
+            "active": False,
+            "plan_code": None,
+            "until": None,
+            "canceling": False,
+            "billing_mode": None,
+            "subscription_until": sub_end.isoformat() if sub_end else None,
+            "pass_until": pass_end.isoformat() if pass_end else None,
+        }
+    until = max(live)
+    mode = "one_time" if pass_end == until and (sub_end is None or pass_end > sub_end) else "subscription"
     return {
         "active": True,
         "plan_code": plan.code,
-        "until": subscription.current_period_end.isoformat(),
-        "canceling": subscription.canceled_at is not None,
+        "until": until.isoformat(),
+        "canceling": subscription.canceled_at is not None and sub_end is not None and sub_end > now,
+        "billing_mode": mode,
+        "subscription_until": sub_end.isoformat() if sub_end else None,
+        "pass_until": pass_end.isoformat() if pass_end else None,
     }
 
 
@@ -200,6 +294,8 @@ def cancel_subscription(session: Session, user_id: int) -> None:
     )
     if current is None:
         return
+    if not current.stripe_subscription_id and current.billing_mode == "one_time":
+        raise BillingError(400, "one-time passes cannot be canceled")
     if current.stripe_subscription_id:
         _stripe_request(
             f"/subscriptions/{current.stripe_subscription_id}",
@@ -297,37 +393,51 @@ def _latest_version(session: Session, plan: Plan) -> PlanVersion:
     return version
 
 
-def ensure_stripe_price(session: Session, plan: Plan, version: PlanVersion) -> str:
-    """The Stripe price that matches this plan version.
+def ensure_stripe_price(
+    session: Session, plan: Plan, version: PlanVersion, mode: str = "subscription"
+) -> str:
+    """The Stripe price of the right *type* for this plan version.
 
-    Prices are immutable in Stripe, so a price edit means "create a new Price".
-    Doing that here (instead of in the dashboard) lets the admin page be the one
-    place a price changes; the first checkout after an edit provisions it.
+    A plan version can carry two prices: recurring (subscriptions) and one-time
+    (passes). Stripe prices are immutable and typed, so switching the global
+    billing mode means provisioning the other variant, not editing a price.
     """
-    if version.stripe_price_id:
+    if mode not in BILLING_MODES:
+        raise BillingError(400, "unknown billing mode")
+    if mode == "one_time":
+        if version.stripe_one_time_price_id:
+            return version.stripe_one_time_price_id
+    elif version.stripe_price_id:
         return version.stripe_price_id
+
     env_price = os.environ.get(PRICE_ENV.get(plan.code, ""), "").strip()
-    if version.version == 1 and env_price:
+    if mode == "subscription" and version.version == 1 and env_price:
         # Bootstrap: version 1 was created alongside a dashboard price.
         version.stripe_price_id = env_price
         session.commit()
         return env_price
+
     product = os.environ.get(PRODUCT_ENV.get(plan.code, ""), "").strip()
     if not product:
         raise BillingError(503, f"stripe product for {plan.code} is not configured")
-    price = _stripe_request(
-        "/prices",
-        {
-            "product": product,
-            "unit_amount": version.price_cents,
-            "currency": (version.currency or "USD").lower(),
-            "recurring[interval]": INTERVAL_OF.get(plan.code, "month"),
-            "nickname": f"{plan.name_en} v{version.version} ${version.price_cents / 100:.2f}",
-        },
-    )
-    version.stripe_price_id = price["id"]
+    payload = {
+        "product": product,
+        "unit_amount": version.price_cents,
+        "currency": (version.currency or "USD").lower(),
+        "nickname": (
+            f"{plan.name_en} v{version.version} ${version.price_cents / 100:.2f}"
+            + (" one-time" if mode == "one_time" else "")
+        ),
+    }
+    if mode == "subscription":
+        payload["recurring[interval]"] = INTERVAL_OF.get(plan.code, "month")
+    price = _stripe_request("/prices", payload)
+    if mode == "one_time":
+        version.stripe_one_time_price_id = price["id"]
+    else:
+        version.stripe_price_id = price["id"]
     session.commit()
-    return version.stripe_price_id
+    return price["id"]
 
 
 def create_checkout_session(
@@ -344,10 +454,11 @@ def create_checkout_session(
         raise BillingError(404, "plan not found")
     version = _latest_version(session, plan)
 
+    mode = billing_mode(session)
     base = os.environ.get("H5_PUBLIC_BASE_URL", "https://h5.minitv.us").rstrip("/")
     data = {
-        "mode": "subscription",
-        "line_items[0][price]": ensure_stripe_price(session, plan, version),
+        "mode": "payment" if mode == "one_time" else "subscription",
+        "line_items[0][price]": ensure_stripe_price(session, plan, version, mode),
         "line_items[0][quantity]": "1",
         "success_url": success_url or f"{base}/?checkout=success",
         "cancel_url": cancel_url or f"{base}/?checkout=cancel",
@@ -355,9 +466,14 @@ def create_checkout_session(
         "allow_promotion_codes": "true",
         "metadata[user_id]": str(user_id),
         "metadata[plan_code]": plan_code,
-        "subscription_data[metadata][user_id]": str(user_id),
-        "subscription_data[metadata][plan_code]": plan_code,
+        "metadata[billing_mode]": mode,
     }
+    if mode == "one_time":
+        data["payment_intent_data[metadata][user_id]"] = str(user_id)
+        data["payment_intent_data[metadata][plan_code]"] = plan_code
+    else:
+        data["subscription_data[metadata][user_id]"] = str(user_id)
+        data["subscription_data[metadata][plan_code]"] = plan_code
     if email:
         data["customer_email"] = email
     checkout = _stripe_request("/checkout/sessions", data)
@@ -368,6 +484,7 @@ def create_checkout_session(
         plan_version_id=version.id,
         amount_cents=version.price_cents,
         currency=version.currency,
+        billing_mode=mode,
         status="created",
         external_txn_id=checkout["id"],
     )
@@ -518,6 +635,74 @@ def _activate_from_checkout(session: Session, checkout: dict) -> dict:
     return {"order_no": order.order_no, "status": order.status, "user_id": user_id}
 
 
+PLAN_DAYS = {"weekly": 7, "monthly": 30, "yearly": 365}
+
+
+def _activate_pass(session: Session, checkout: dict) -> dict:
+    """One-time purchase: stack the plan's days onto whatever is left."""
+    metadata = checkout.get("metadata") or {}
+    user_id = int(metadata.get("user_id") or checkout.get("client_reference_id") or 0)
+    plan_code = metadata.get("plan_code")
+    if not user_id or not plan_code:
+        raise BillingError(400, "checkout session is missing our metadata")
+    if checkout.get("payment_status") not in (None, "paid"):
+        return {"pending": True, "session_id": checkout.get("id")}
+
+    order = session.scalar(select(Order).where(Order.external_txn_id == checkout.get("id")))
+    if order is not None and order.status == "paid":
+        # Stripe retries the same event; never add days twice.
+        return {"replayed": True, "order_no": order.order_no}
+
+    plan = session.scalar(select(Plan).where(Plan.code == plan_code))
+    if plan is None or plan.status != "active":
+        raise BillingError(404, "plan not found")
+    version = _latest_version(session, plan)
+    if order is None:
+        order = Order(
+            order_no=secrets.token_hex(8),
+            user_id=user_id,
+            plan_version_id=version.id,
+            amount_cents=int(checkout.get("amount_total") or version.price_cents),
+            currency=(checkout.get("currency") or version.currency or "usd").upper(),
+            billing_mode="one_time",
+            external_txn_id=checkout.get("id"),
+        )
+        session.add(order)
+    order.status = "paid"
+    order.paid_at = datetime.now(timezone.utc)
+    order.billing_mode = "one_time"
+
+    now = datetime.now(timezone.utc)
+    days = PLAN_DAYS.get(plan_code, 30)
+    row = session.scalar(
+        select(Subscription).where(Subscription.user_id == user_id, Subscription.status == "active")
+    )
+    if row is None:
+        row = Subscription(
+            user_id=user_id,
+            plan_id=plan.id,
+            plan_version_id=version.id,
+            status="active",
+            current_period_start=now,
+            current_period_end=now,
+            billing_mode="one_time",
+        )
+        session.add(row)
+    base = max(now, _as_aware(row.pass_end) or now)
+    row.pass_end = base + timedelta(days=days)
+    row.billing_mode = "one_time"
+    row.plan_id = plan.id
+    row.plan_version_id = version.id
+    session.commit()
+    return {
+        "order_no": order.order_no,
+        "status": "paid",
+        "user_id": user_id,
+        "days": days,
+        "pass_until": row.pass_end.isoformat(),
+    }
+
+
 def _sync_from_subscription(session: Session, remote: dict) -> dict:
     metadata = remote.get("metadata") or {}
     user_id = int(metadata.get("user_id") or 0)
@@ -569,8 +754,11 @@ def apply_stripe_event(session: Session, *, body: bytes, signature: str, payload
     verify_stripe_signature(body, signature)
     event_type = payload.get("type") or ""
     obj = (payload.get("data") or {}).get("object") or {}
-    if event_type == "checkout.session.completed":
-        result = _activate_from_checkout(session, obj)
+    if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
+        if (obj.get("mode") or "") == "payment":
+            result = _activate_pass(session, obj)
+        else:
+            result = _activate_from_checkout(session, obj)
     elif event_type in {"customer.subscription.created", "customer.subscription.updated"}:
         result = _sync_from_subscription(session, obj)
     elif event_type == "customer.subscription.deleted":

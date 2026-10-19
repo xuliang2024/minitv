@@ -13,6 +13,7 @@ import { Sheet } from "./Sheet";
 import { toast } from "./toast";
 
 type Membership = NonNullable<MeProfile["membership"]>;
+type BillingMode = "subscription" | "one_time";
 
 function formatDay(iso: string | null, locale: Locale): string {
   if (!iso) return "—";
@@ -24,9 +25,10 @@ function formatDay(iso: string | null, locale: Locale): string {
 }
 
 /**
- * Subscription upsell + account controls. Prices come from /v1/plans (the
- * backend owns them) and payment happens on Stripe Checkout — we only forward
- * the browser. With an active membership this turns into the cancel panel.
+ * Subscription / pass upsell and account controls.
+ *
+ * The backend decides whether new purchases are auto-renewing or one-time
+ * (global switch); this sheet only mirrors that. Prices come from /v1/plans.
  */
 export function PremiumSheet({
   locale,
@@ -40,22 +42,23 @@ export function PremiumSheet({
   onClose: () => void;
 }) {
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [mode, setMode] = useState<BillingMode>("subscription");
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [showPlans, setShowPlans] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const active = Boolean(membership?.active);
+  const isPass = membership?.billing_mode === "one_time";
+  const showActive = active && !showPlans;
 
   useEffect(() => {
-    if (active) {
-      setState("ready");
-      return;
-    }
     let alive = true;
     getPlans()
       .then((payload) => {
         if (!alive) return;
         setPlans(payload.items);
+        setMode(payload.billing_mode ?? "subscription");
         setState("ready");
       })
       .catch(() => {
@@ -64,7 +67,7 @@ export function PremiumSheet({
     return () => {
       alive = false;
     };
-  }, [active]);
+  }, []);
 
   async function subscribe(code: string) {
     setBusy(code);
@@ -96,13 +99,24 @@ export function PremiumSheet({
     }
   }
 
+  const unitOf = (plan: Plan) =>
+    mode === "one_time"
+      ? t(locale, `premium_span_${plan.code}`)
+      : t(locale, `premium_unit_${plan.code}`);
+
   return (
     <Sheet
-      title={active ? t(locale, "premium_title_active") : t(locale, "premium_title")}
+      title={
+        showActive
+          ? isPass
+            ? t(locale, "premium_title_pass")
+            : t(locale, "premium_title_active")
+          : t(locale, "premium_title")
+      }
       onClose={onClose}
       testId="premium-sheet"
     >
-      {active && membership ? (
+      {showActive && membership ? (
         <>
           <div className={membership.canceling ? "premium-status canceling" : "premium-status"}>
             <span className="premium-status-crown">★</span>
@@ -114,14 +128,28 @@ export function PremiumSheet({
                   : t(locale, "premium_active_until", { date: formatDay(membership.until, locale) })}
               </i>
             </div>
-            <span className="premium-status-tag">{t(locale, "premium_badge_active")}</span>
+            <span className="premium-status-tag">
+              {isPass ? t(locale, "premium_pass_badge") : t(locale, "premium_badge_active")}
+            </span>
           </div>
           <ul className="premium-benefits status">
             <li>{t(locale, "premium_benefit_all")}</li>
             <li>{t(locale, "premium_benefit_noads")}</li>
             <li>{t(locale, "premium_benefit_hd")}</li>
           </ul>
-          {membership.canceling ? (
+          {isPass ? (
+            <>
+              <button
+                type="button"
+                className="premium-cta"
+                onClick={() => setShowPlans(true)}
+                data-testid="premium-extend"
+              >
+                {t(locale, "premium_extend_cta")}
+              </button>
+              <p className="premium-note">{t(locale, "premium_extend_note")}</p>
+            </>
+          ) : membership.canceling ? (
             <p className="premium-note">{t(locale, "premium_canceled_note")}</p>
           ) : (
             <>
@@ -140,7 +168,9 @@ export function PremiumSheet({
         </>
       ) : (
         <>
-          <p className="premium-lede">{t(locale, "premium_lede")}</p>
+          <p className="premium-lede">
+            {mode === "one_time" ? t(locale, "premium_lede_onetime") : t(locale, "premium_lede")}
+          </p>
           {state === "loading" && <div className="me-sheet-loading">…</div>}
           {state === "error" && (
             <div className="me-empty small">
@@ -155,7 +185,7 @@ export function PremiumSheet({
                   <b>{locale === "zh" ? plan.name_zh || plan.name_en : plan.name_en}</b>
                   <span className="premium-price">
                     ${(plan.price_cents / 100).toFixed(2)}
-                    <i>/{t(locale, `premium_unit_${plan.code}`)}</i>
+                    <i>/{unitOf(plan)}</i>
                   </span>
                 </div>
                 <ul className="premium-benefits">
@@ -170,13 +200,19 @@ export function PremiumSheet({
                   onClick={() => subscribe(plan.code)}
                   data-testid={`premium-buy-${plan.code}`}
                 >
-                  {busy === plan.code ? t(locale, "premium_redirecting") : t(locale, "premium_cta")}
+                  {busy === plan.code
+                    ? t(locale, "premium_redirecting")
+                    : mode === "one_time"
+                      ? t(locale, "premium_buy_cta")
+                      : t(locale, "premium_cta")}
                 </button>
               </div>
             ))}
           </div>
           {error && <p className="premium-error">{error}</p>}
-          <p className="premium-note">{t(locale, "premium_note")}</p>
+          <p className="premium-note">
+            {mode === "one_time" ? t(locale, "premium_note_onetime") : t(locale, "premium_note")}
+          </p>
         </>
       )}
     </Sheet>

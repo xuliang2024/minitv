@@ -24,7 +24,15 @@ from app.modules.account.service import (
 )
 from app.modules.analytics.service import dashboard as build_dashboard
 from app.modules.billing.models import Order, Subscription
-from app.modules.billing.service import BillingError, change_price, list_current_plans
+from app.modules.billing.service import (
+    BillingError,
+    billing_mode,
+    change_price,
+    get_billing_settings,
+    list_current_plans,
+    provision_prices_for_mode,
+    set_billing_mode,
+)
 from app.modules.common import bunny
 from app.modules.common.models import AuditLog
 from app.modules.content.models import Drama, DramaHomeGroup, Episode, HomeGroup, MediaUpload
@@ -1439,7 +1447,49 @@ def reward_config(body: RewardIn, db: Session = Depends(get_db), user: AdminUser
 
 @router.get("/plans")
 def admin_plans(db: Session = Depends(get_db), user: AdminUser = Depends(require_admin)):
-    return {"items": list_current_plans(db)}
+    return {"items": list_current_plans(db), "billing_mode": billing_mode(db)}
+
+
+class BillingModeIn(BaseModel):
+    billing_mode: str
+
+
+@router.get("/billing/settings")
+def read_billing_settings(db: Session = Depends(get_db), user: AdminUser = Depends(require_admin)):
+    row = get_billing_settings(db)
+    return {
+        "billing_mode": row.billing_mode,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "updated_by": row.updated_by,
+    }
+
+
+@router.post("/billing/settings")
+def update_billing_settings(
+    body: BillingModeIn, db: Session = Depends(get_db), user: AdminUser = Depends(require_admin_role)
+):
+    """Global switch: affects new purchases only, existing subscriptions keep renewing."""
+    try:
+        row = set_billing_mode(db, body.billing_mode, user.id)
+        provisioned = provision_prices_for_mode(db, row.billing_mode)
+    except BillingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    db.add(
+        AuditLog(
+            actor_type="admin",
+            actor_id=user.id,
+            action="billing_mode_change",
+            target_type="billing_settings",
+            target_id=row.id,
+            payload={"billing_mode": row.billing_mode, "prices": provisioned},
+        )
+    )
+    db.commit()
+    return {
+        "billing_mode": row.billing_mode,
+        "prices": provisioned,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
 
 
 @router.post("/plans/{code}/price")
