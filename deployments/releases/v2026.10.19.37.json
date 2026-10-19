@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.37",
+  "target": "r2",
+  "status": "published",
+  "sha": "53d705e17532f8bbc694ceaefd76b5a6c254d674",
+  "short_sha": "53d705e1",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.37/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "dbda3926b16ce0333d7c0d265a4db89999f36760ff6a2177916f5a9e9affa8e2",
+  "files": [
+    {
+      "path": "assets/index-DbRsLOgr.js",
+      "size": 822580
+    },
+    {
+      "path": "assets/index-k54lRxhh.css",
+      "size": 39761
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T11:52:38+08:00",
+  "finished_at": "2026-10-19T11:52:52+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 90093,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "一次性时长包：订阅用户也可改买时长包",
+  "dirty": false
+}
