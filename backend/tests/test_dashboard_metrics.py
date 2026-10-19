@@ -152,8 +152,8 @@ def test_dashboard_coin_spend_unlocks_and_ops_overview(make, client, session):
         )
     )
     session.add(Entitlement(user_id=user.id, episode_id=episode.id))
-    session.add(Comment(user_id=user.id, drama_id=drama.id, body="pending please", status="pending"))
-    session.add(Comment(user_id=user.id, drama_id=drama.id, body="fine", status="approved"))
+    session.add(Comment(user_id=user.id, drama_id=drama.id, episode_id=episode.id, body="pending please", status="pending"))
+    session.add(Comment(user_id=user.id, drama_id=drama.id, episode_id=episode.id, body="fine", status="approved"))
     session.commit()
 
     board = client.get("/admin/v1/dashboard", headers=headers).json()

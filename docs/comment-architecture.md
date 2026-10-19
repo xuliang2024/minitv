@@ -175,13 +175,14 @@ block  + score >= block_threshold   → deleted
 
 ## 7. 前端挂载点
 
-| 端 | 位置 | 改动 |
+| 端 | 位置 | 状态 |
 |---|---|---|
-| H5 播放页 | 右侧 rail 气泡图标 | 由「选集」改为打开 `CommentSheet`，数字用 `comment_count` |
-| H5 选集 | 改回 `IconEpisodes`（三横线） | 图标语义归位 |
-| H5 弹层 | `h5/src/ui/CommentSheet.tsx`（新建） | 复用 `Sheet`，`createPortal` 到 `#app`，z-index 12 |
-| Flutter App | `foryou.dart:401` / `detail.dart:245` | `onComment` 真正打开评论页，不再跳详情 |
-| 后台 | `admin/src/pages/StagePages.tsx:1198` | 状态 Tab、剧名/集数/用户名联表、时间列、批量通过 |
+| H5 播放页 / For You | 右侧 rail 气泡图标 | ✅ 打开当前集 `CommentSheet`，标签用该集 `comment_count` |
+| H5 选集 | 底部 `ep-bar` / `select-pill` | ✅ 气泡不再兼任选集；选集走独立入口 |
+| H5 弹层 | `h5/src/ui/CommentSheet.tsx` | ✅ 列表 + 发表 + 点赞 + 游标加载；`createPortal` 到 `#app`，z 11/12 盖住底栏 |
+| 播放/Feed 计数 | `items[].comment_count` | ✅ 均按集聚合，一条 group by |
+| 后台 | `admin/src/pages/StagePages.tsx` | ✅ 状态 Tab、搜索、剧名/集数/用户联表、自动判定原因、服务端分页 |
+| Flutter App | `foryou.dart:401` / `detail.dart:245` | ⏳ 仍跳详情页，待 App 侧接评论页 |
 
 ## 8. 安全与边界
 

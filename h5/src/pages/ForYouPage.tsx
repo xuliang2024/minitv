@@ -5,6 +5,7 @@ import type { Locale } from "../copy";
 import { t } from "../copy";
 import { formatCount } from "../format";
 import { IMG, thumb } from "../img";
+import { CommentSheet } from "../ui/CommentSheet";
 import { toast } from "../ui/toast";
 import { IconComment, IconEpisodes, IconHeart, IconShare } from "../icons";
 import { EpisodeView } from "../player/EpisodeView";
@@ -117,6 +118,8 @@ function FeedSlot({
   const [finished, setFinished] = useState(false);
   const [liked, setLiked] = useState(item.drama.liked);
   const [likeCount, setLikeCount] = useState(item.drama.like_count);
+  const [commentOpen, setCommentOpen] = useState(false);
+  const [commentCount, setCommentCount] = useState(item.episode.comment_count ?? 0);
   const { requireAuth } = useAuth();
   const drama = item.drama;
   const episode = item.episode;
@@ -124,9 +127,11 @@ function FeedSlot({
 
   useEffect(() => {
     setFinished(false);
+    setCommentOpen(false);
     setLiked(item.drama.liked);
     setLikeCount(item.drama.like_count);
-  }, [item.item_id, item.drama.liked, item.drama.like_count]);
+    setCommentCount(item.episode.comment_count ?? 0);
+  }, [item.item_id, item.drama.liked, item.drama.like_count, item.episode.comment_count]);
 
   const toggleLike = () => {
     const next = !liked;
@@ -183,11 +188,11 @@ function FeedSlot({
         <button
           type="button"
           className="rail-btn"
-          onClick={() => onOpenDrama(drama.id)}
-          aria-label="Episodes"
+          onClick={() => setCommentOpen(true)}
+          aria-label={t(locale, "comments")}
         >
           <span className="rail-icon"><IconComment size={30} /></span>
-          <span className="rail-label">{drama.published_episode_count || t(locale, "select")}</span>
+          <span className="rail-label">{commentCount > 0 ? formatCount(commentCount, locale) : t(locale, "comment")}</span>
         </button>
         <button
           type="button"
@@ -210,6 +215,15 @@ function FeedSlot({
           <IconEpisodes size={16} />
           <span>{t(locale, "all_episodes", { count: drama.published_episode_count })}</span>
         </button>
+      )}
+      {commentOpen && (
+        <CommentSheet
+          episodeId={episode.id}
+          locale={locale}
+          initialCount={commentCount}
+          onCountChange={setCommentCount}
+          onClose={() => setCommentOpen(false)}
+        />
       )}
       <div className="meta-row">
         <div className="meta">

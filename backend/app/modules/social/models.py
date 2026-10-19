@@ -33,7 +33,7 @@ class Comment(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     drama_id: Mapped[int] = mapped_column(ForeignKey("dramas.id"), nullable=False)
-    episode_id: Mapped[int | None] = mapped_column(ForeignKey("episodes.id"), nullable=True)
+    episode_id: Mapped[int] = mapped_column(ForeignKey("episodes.id"), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     # Auto-moderation audit trail. `status` is the visibility switch; these

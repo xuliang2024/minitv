@@ -456,11 +456,12 @@ def test_register_has_no_password_and_rewards_follow_rules(make, session, client
 def test_pending_comments_stay_hidden_and_dashboard_uses_los_angeles(make, client, session):
     headers = _ops(make, client)
     drama = make.drama(title="Commented", status="published")
+    episode = make.episode(drama, number=1, status="published")
     user = make.user(email="commenter@example.com", coins=0)
     user.created_at = datetime(2026, 10, 14, 6, 30, tzinfo=timezone.utc)
     session.commit()
     from app.modules.social.models import Comment
-    session.add(Comment(user_id=user.id, drama_id=drama.id, body="secret", status="pending"))
+    session.add(Comment(user_id=user.id, drama_id=drama.id, episode_id=episode.id, body="secret", status="pending"))
     session.commit()
     listed = client.get(f"/v1/dramas/{drama.id}/comments")
     assert listed.json()["items"] == []

@@ -1553,11 +1553,44 @@ def set_price(code: str, body: PriceIn, db: Session = Depends(get_db), user: Adm
 
 
 @router.get("/comments")
-def admin_comments(status: str | None = None, db: Session = Depends(get_db), user: AdminUser = Depends(require_admin)):
-    stmt = select(Comment)
+def admin_comments(
+    status: str | None = None,
+    drama_id: int | None = None,
+    episode_id: int | None = None,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_admin),
+):
+    """Moderation queue with everything the reviewer needs in one row."""
+    page = max(1, page)
+    page_size = max(1, min(page_size, 100))
+    stmt = (
+        select(
+            Comment,
+            Drama.title,
+            Episode.episode_number,
+            User.display_name,
+            User.email,
+        )
+        .join(Drama, Drama.id == Comment.drama_id)
+        .join(Episode, Episode.id == Comment.episode_id, isouter=True)
+        .join(User, User.id == Comment.user_id)
+    )
     if status:
         stmt = stmt.where(Comment.status == status)
-    rows = db.scalars(stmt.order_by(Comment.id.desc())).all()
+    if drama_id:
+        stmt = stmt.where(Comment.drama_id == drama_id)
+    if episode_id:
+        stmt = stmt.where(Comment.episode_id == episode_id)
+    if q and q.strip():
+        stmt = stmt.where(Comment.body.ilike(f"%{q.strip()}%"))
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.execute(
+        stmt.order_by(Comment.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
     return {
         "items": [
             {
@@ -1565,16 +1598,23 @@ def admin_comments(status: str | None = None, db: Session = Depends(get_db), use
                 "body": row.body,
                 "status": row.status,
                 "drama_id": row.drama_id,
+                "drama_title": drama_title,
                 "episode_id": row.episode_id,
+                "episode_number": episode_number,
                 "user_id": row.user_id,
+                "user_display_name": display_name,
+                "user_email": email,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "moderation_verdict": row.moderation_verdict,
                 "moderation_score": row.moderation_score,
                 "moderation_reason": row.moderation_reason,
                 "moderation_model": row.moderation_model,
             }
-            for row in rows
-        ]
+            for row, drama_title, episode_number, display_name, email in rows
+        ],
+        "total": int(total),
+        "page": page,
+        "page_size": page_size,
     }
 
 

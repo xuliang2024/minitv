@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 from app.modules.content import service as content
 from app.modules.content.models import Drama, Episode, Tag
 from app.modules.ops.service import get_redis
-from app.modules.social.models import Reaction
+from app.modules.social.models import Comment, Reaction
 
 from . import config, ranking, signals
 
@@ -325,6 +325,20 @@ def _reaction_stats(db: Session, drama_ids, user_id: int | None) -> tuple[dict[i
     return totals, liked
 
 
+def _comment_counts(db: Session, episode_ids) -> dict[int, int]:
+    ids = list(episode_ids)
+    if not ids:
+        return {}
+    return {
+        int(episode_id): int(total)
+        for episode_id, total in db.execute(
+            select(Comment.episode_id, func.count())
+            .where(Comment.episode_id.in_(ids), Comment.status == "approved")
+            .group_by(Comment.episode_id)
+        )
+    }
+
+
 def _materialize(
     db: Session,
     plan: list[dict],
@@ -365,6 +379,7 @@ def _materialize(
     }
     tags_by_drama = content.tags_by_drama(db, list(dramas.keys()))
     counts = _episode_counts(db, dramas.keys())
+    comment_counts = _comment_counts(db, episodes.keys())
     like_totals, my_likes = _reaction_stats(db, dramas.keys(), user_id)
 
     items: list[dict] = []
@@ -398,6 +413,7 @@ def _materialize(
                     "title": episode.title,
                     "duration_seconds": episode.duration_seconds,
                     "free": episode.episode_number <= drama.free_episode_count,
+                    "comment_count": comment_counts.get(episode.id, 0),
                 },
                 "resume_seconds": entry["resume_seconds"],
                 "entry_reason": entry["source"],

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -467,20 +467,172 @@ def legal(slug: str, db: Session = Depends(get_db)):
 
 @router.get("/dramas/{drama_id}/comments")
 def list_comments(drama_id: int, db: Session = Depends(get_db)):
-    rows = db.scalars(select(Comment).where(Comment.drama_id == drama_id, Comment.status == "approved")).all()
+    """Legacy drama-wide list. Kept for older clients; new UI reads per episode."""
+    rows = db.scalars(
+        select(Comment)
+        .where(Comment.drama_id == drama_id, Comment.status == "approved")
+        .order_by(Comment.id.desc())
+    ).all()
     return {"items": [{"id": c.id, "body": c.body, "user_id": c.user_id} for c in rows]}
 
 
-@router.post("/comments")
-def create_comment(body: CommentIn, user: User = Depends(_require_user), db: Session = Depends(get_db)):
-    """Auto moderation runs inline: the poster immediately learns whether the
-    comment is live or queued, instead of every comment waiting for a human."""
-    status, result = moderation.moderate(db, body.body)
+COMMENT_PAGE_MAX = 50
+COMMENT_MAX_LENGTH = 500
+COMMENT_COOLDOWN_SECONDS = 30
+COMMENT_DAILY_LIMIT = 50
+
+
+def _comment_user(user: User | None) -> dict:
+    if user is None:
+        return {"public_id": "", "display_name": "Deleted user", "avatar_url": ""}
+    return {
+        "public_id": user.public_id or "",
+        "display_name": user.display_name or "MiniTV user",
+        "avatar_url": user.avatar_url or "",
+    }
+
+
+def _comment_payload(row: Comment, user: User | None, *, like_count: int = 0, liked: bool = False) -> dict:
+    return {
+        "id": row.id,
+        "body": row.body,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "like_count": int(like_count),
+        "liked": liked,
+        "mine": False,
+        "user": _comment_user(user),
+    }
+
+
+@router.get("/episodes/{episode_id}/comments")
+def list_episode_comments(
+    episode_id: int,
+    limit: int = 20,
+    cursor: int | None = None,
+    user: User | None = Depends(_optional_user),
+    db: Session = Depends(get_db),
+):
+    """One episode, one thread. Only approved comments ever leave this endpoint."""
+    episode = db.get(Episode, episode_id)
+    if episode is None or episode.status != "published":
+        raise HTTPException(status_code=404, detail="episode not found")
+
+    size = max(1, min(int(limit), COMMENT_PAGE_MAX))
+    stmt = (
+        select(Comment, User)
+        .join(User, User.id == Comment.user_id)
+        .where(Comment.episode_id == episode_id, Comment.status == "approved")
+    )
+    if cursor:
+        stmt = stmt.where(Comment.id < cursor)
+    rows = db.execute(stmt.order_by(Comment.id.desc()).limit(size + 1)).all()
+    has_more = len(rows) > size
+    rows = rows[:size]
+    # The cursor is the last row on this page, not the peeked extra one.
+    next_cursor = rows[-1][0].id if has_more and rows else None
+
+    ids = [row[0].id for row in rows]
+    like_counts: dict[int, int] = {}
+    liked: set[int] = set()
+    if ids:
+        like_counts = {
+            int(target_id): int(total)
+            for target_id, total in db.execute(
+                select(Reaction.target_id, func.count())
+                .where(
+                    Reaction.target_type == "comment",
+                    Reaction.kind == "like",
+                    Reaction.target_id.in_(ids),
+                )
+                .group_by(Reaction.target_id)
+            )
+        }
+        if user is not None:
+            liked = {
+                int(target_id)
+                for target_id in db.scalars(
+                    select(Reaction.target_id).where(
+                        Reaction.user_id == user.id,
+                        Reaction.target_type == "comment",
+                        Reaction.kind == "like",
+                        Reaction.target_id.in_(ids),
+                    )
+                )
+            }
+
+    total = db.scalar(
+        select(func.count())
+        .select_from(Comment)
+        .where(Comment.episode_id == episode_id, Comment.status == "approved")
+    ) or 0
+
+    items = []
+    for comment, author in rows:
+        item = _comment_payload(
+            comment,
+            author,
+            like_count=like_counts.get(comment.id, 0),
+            liked=comment.id in liked,
+        )
+        item["mine"] = user is not None and comment.user_id == user.id
+        items.append(item)
+
+    return {"items": items, "next_cursor": next_cursor, "total": int(total)}
+
+
+class EpisodeCommentIn(BaseModel):
+    body: str = Field(min_length=1, max_length=COMMENT_MAX_LENGTH)
+
+
+def _published_episode_or_404(db: Session, episode_id: int) -> Episode:
+    episode = db.get(Episode, episode_id)
+    if episode is None or episode.status != "published":
+        raise HTTPException(status_code=404, detail="episode not found")
+    drama = db.get(Drama, episode.drama_id)
+    if drama is None or drama.status != "published":
+        raise HTTPException(status_code=404, detail="episode not found")
+    return episode
+
+
+@router.post("/episodes/{episode_id}/comments")
+def create_episode_comment(
+    episode_id: int,
+    body: EpisodeCommentIn,
+    user: User = Depends(_require_user),
+    db: Session = Depends(get_db),
+):
+    """Post into one episode's thread. Auto moderation decides visibility inline."""
+    episode = _published_episode_or_404(db, episode_id)
+    text = body.body.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="comment is empty")
+
+    now = datetime.now(timezone.utc)
+    recent = db.scalar(
+        select(Comment.id)
+        .where(
+            Comment.user_id == user.id,
+            Comment.episode_id == episode_id,
+            Comment.created_at >= now - timedelta(seconds=COMMENT_COOLDOWN_SECONDS),
+        )
+        .limit(1)
+    )
+    if recent is not None:
+        raise HTTPException(status_code=429, detail="You are commenting too fast. Try again in a moment.")
+    daily = db.scalar(
+        select(func.count())
+        .select_from(Comment)
+        .where(Comment.user_id == user.id, Comment.created_at >= now - timedelta(days=1))
+    ) or 0
+    if daily >= COMMENT_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail="Daily comment limit reached.")
+
+    status, result = moderation.moderate(db, text)
     row = Comment(
         user_id=user.id,
-        drama_id=body.drama_id,
-        episode_id=body.episode_id,
-        body=body.body,
+        drama_id=episode.drama_id,
+        episode_id=episode.id,
+        body=text,
         status=status,
         moderation_verdict=None if result is None else result.verdict,
         moderation_score=None if result is None else result.score,
@@ -490,15 +642,52 @@ def create_comment(body: CommentIn, user: User = Depends(_require_user), db: Ses
     )
     db.add(row)
     db.commit()
+    db.refresh(row)
+
+    payload = None
+    if status == "approved":
+        payload = _comment_payload(row, user)
+        payload["mine"] = True
     return {
         "id": row.id,
         "status": status,
+        "item": payload,
         "moderation": None if result is None else result.as_dict(),
     }
 
 
+@router.post("/comments")
+def create_comment(body: CommentIn, user: User = Depends(_require_user), db: Session = Depends(get_db)):
+    """Backward-compatible alias: episode is now mandatory."""
+    if body.episode_id is None:
+        raise HTTPException(status_code=422, detail="episode_id is required")
+    return create_episode_comment(body.episode_id, EpisodeCommentIn(body=body.body), user, db)
+
+
+@router.delete("/comments/{comment_id}")
+def delete_comment(comment_id: int, user: User = Depends(_require_user), db: Session = Depends(get_db)):
+    row = db.get(Comment, comment_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="comment not found")
+    if row.user_id != user.id:
+        raise HTTPException(status_code=403, detail="not your comment")
+    if row.status == "deleted":
+        return {"status": "deleted"}
+    if row.created_at < datetime.now(timezone.utc) - timedelta(hours=24):
+        raise HTTPException(status_code=400, detail="Comments can only be deleted within 24 hours.")
+    row.status = "deleted"
+    db.commit()
+    return {"status": "deleted"}
+
+
 @router.post("/reactions")
 def react(body: ReactionIn, user: User = Depends(_require_user), db: Session = Depends(get_db)):
+    if body.target_type not in {"drama", "episode", "comment"}:
+        raise HTTPException(status_code=422, detail="bad target_type")
+    if body.target_type == "comment":
+        target = db.get(Comment, body.target_id)
+        if target is None or target.status != "approved":
+            raise HTTPException(status_code=404, detail="comment not found")
     existing = db.scalar(
         select(Reaction).where(
             Reaction.user_id == user.id,
@@ -640,7 +829,24 @@ def drama_play(drama_id: int, user: User | None = Depends(_optional_user), db: S
 
     items: list[dict] = []
     resume: dict | None = None
-    for episode in content.list_published_episodes(db, drama_id):
+    episodes = content.list_published_episodes(db, drama_id)
+    # One grouped query keeps the payload from turning into N+1 counts.
+    comment_counts = (
+        {
+            int(episode_id): int(total)
+            for episode_id, total in db.execute(
+                select(Comment.episode_id, func.count())
+                .where(
+                    Comment.episode_id.in_([episode.id for episode in episodes]),
+                    Comment.status == "approved",
+                )
+                .group_by(Comment.episode_id)
+            )
+        }
+        if episodes
+        else {}
+    )
+    for episode in episodes:
         free = episode.episode_number <= drama.free_episode_count
         locked = not (free or member or episode.id in unlocked)
         position = progress_rows.get(episode.id, 0)
@@ -653,6 +859,7 @@ def drama_play(drama_id: int, user: User | None = Depends(_optional_user), db: S
                 "free": free,
                 "locked": locked,
                 "progress_seconds": position,
+                "comment_count": comment_counts.get(episode.id, 0),
                 "unlock": {"coin_price": drama.coin_price_per_episode} if locked else None,
             }
         )

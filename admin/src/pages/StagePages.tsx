@@ -1207,8 +1207,67 @@ const MODERATION_VERDICT: Record<string, { color: string; label: string }> = {
   block: { color: "red", label: "拦截" },
 };
 
+type CommentRow = {
+  id: number;
+  body: string;
+  status: string;
+  drama_id: number;
+  drama_title: string;
+  episode_id: number;
+  episode_number: number | null;
+  user_id: number;
+  user_display_name: string;
+  user_email: string | null;
+  created_at: string | null;
+  moderation_verdict: string | null;
+  moderation_score: number | null;
+  moderation_reason: string | null;
+};
+
+const COMMENT_TABS = [
+  { label: "待审核", value: "pending" },
+  { label: "已发布", value: "approved" },
+  { label: "已删除", value: "deleted" },
+  { label: "全部", value: "" },
+];
+
 export function CommentsPage() {
-  const { data, reload } = useLoad<{ items: any[] }>("/admin/v1/comments", { items: [] });
+  const [status, setStatus] = useState("pending");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [data, setData] = useState<{ items: CommentRow[]; total: number }>({ items: [], total: 0 });
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (status) params.set("status", status);
+    if (q.trim()) params.set("q", q.trim());
+    api<{ items: CommentRow[]; total: number }>(`/admin/v1/comments?${params}`)
+      .then(setData)
+      .catch((e) => message.error(`读取评论失败：${errorText(e)}`))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, page, pageSize, q]);
+
+  const moderate = async (row: CommentRow, next: "approved" | "deleted") => {
+    try {
+      await api(`/admin/v1/comments/${row.id}`, {
+        method: "POST",
+        body: JSON.stringify({ status: next }),
+      });
+      message.success(next === "approved" ? "已通过，客户端立即可见" : "已删除，客户端刷新后不可见");
+      load();
+    } catch (e) {
+      message.error(`操作失败：${errorText(e)}`);
+    }
+  };
+
   return (
     <Space direction="vertical" style={{ width: "100%" }} size={16}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
@@ -1217,36 +1276,85 @@ export function CommentsPage() {
             评论审核
           </Typography.Title>
           <Typography.Text type="secondary">
-            自动判定来自「自动审核」页配置的 OpenAI 模型；人工通过或删除始终优先。
+            评论按集隔离展示。自动判定来自「自动审核」配置的模型，人工通过或删除始终优先。
           </Typography.Text>
         </Space>
         <Space>
+          <Input.Search
+            allowClear
+            placeholder="搜索评论内容"
+            style={{ width: 220 }}
+            onSearch={(value) => {
+              setPage(1);
+              setQ(value);
+            }}
+          />
           <Link to="/moderation">
             <Button size="small">自动审核配置</Button>
           </Link>
-          <Button size="small" icon={<ReloadOutlined />} onClick={() => reload()}>
+          <Button size="small" icon={<ReloadOutlined />} onClick={load} loading={loading}>
             刷新
           </Button>
         </Space>
       </div>
+
+      <Segmented
+        value={status}
+        options={COMMENT_TABS}
+        onChange={(value) => {
+          setPage(1);
+          setStatus(String(value));
+        }}
+      />
+
       <Table
         rowKey="id"
+        loading={loading}
         dataSource={data.items}
-        pagination={{ pageSize: 20, hideOnSinglePage: true }}
-        scroll={{ x: 900 }}
+        scroll={{ x: 1080 }}
+        pagination={{
+          current: page,
+          pageSize,
+          total: data.total,
+          showSizeChanger: true,
+          showTotal: (total) => `共 ${total} 条`,
+          onChange: (nextPage, nextSize) => {
+            setPage(nextPage);
+            setPageSize(nextSize);
+          },
+        }}
         columns={[
-          { title: "内容", dataIndex: "body" },
-          { title: "剧集", dataIndex: "drama_id", width: 90 },
+          { title: "内容", dataIndex: "body", width: 280, render: (value: string) => <span style={{ whiteSpace: "pre-wrap" }}>{value}</span> },
+          {
+            title: "剧集",
+            width: 190,
+            render: (_, row) => (
+              <Space direction="vertical" size={0}>
+                <Typography.Text ellipsis style={{ maxWidth: 180 }}>
+                  {row.drama_title}
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  EP {row.episode_number ?? "-"} · #{row.episode_id}
+                </Typography.Text>
+              </Space>
+            ),
+          },
           {
             title: "用户",
-            dataIndex: "user_id",
-            width: 90,
-            render: (value) => `#${value}`,
+            width: 190,
+            render: (_, row) => (
+              <Space direction="vertical" size={0}>
+                <Typography.Text>{row.user_display_name}</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {row.user_email ?? `#${row.user_id}`}
+                </Typography.Text>
+              </Space>
+            ),
           },
           {
             title: "状态",
             dataIndex: "status",
-            width: 100,
+            width: 90,
             render: (value: string) => (
               <Tag color={COMMENT_STATUS[value]?.color ?? "default"}>
                 {COMMENT_STATUS[value]?.label ?? value}
@@ -1255,7 +1363,7 @@ export function CommentsPage() {
           },
           {
             title: "自动判定",
-            width: 130,
+            width: 110,
             render: (_, row) => {
               if (!row.moderation_verdict) {
                 return <Typography.Text type="secondary">未经过模型</Typography.Text>;
@@ -1281,36 +1389,17 @@ export function CommentsPage() {
             title: "时间",
             dataIndex: "created_at",
             width: 150,
-            render: (value: string) => (value ? new Date(value).toLocaleString() : "-"),
+            render: (value: string | null) => (value ? new Date(value).toLocaleString() : "-"),
           },
           {
             title: "操作",
-            width: 140,
+            width: 150,
             render: (_, row) => (
               <Space>
-                <Button
-                  size="small"
-                  onClick={async () => {
-                    await api(`/admin/v1/comments/${row.id}`, {
-                      method: "POST",
-                      body: JSON.stringify({ status: "approved" }),
-                    });
-                    reload();
-                  }}
-                >
+                <Button size="small" disabled={row.status === "approved"} onClick={() => moderate(row, "approved")}>
                   通过
                 </Button>
-                <Button
-                  size="small"
-                  danger
-                  onClick={async () => {
-                    await api(`/admin/v1/comments/${row.id}`, {
-                      method: "POST",
-                      body: JSON.stringify({ status: "deleted" }),
-                    });
-                    reload();
-                  }}
-                >
+                <Button size="small" danger disabled={row.status === "deleted"} onClick={() => moderate(row, "deleted")}>
                   删除
                 </Button>
               </Space>

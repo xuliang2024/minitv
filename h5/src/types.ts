@@ -127,6 +127,7 @@ export interface FeedEpisode {
   title: string;
   duration_seconds: number;
   free: boolean;
+  comment_count: number;
 }
 
 export interface FeedItem {
@@ -155,6 +156,7 @@ export interface PlayEpisode {
   free: boolean;
   locked: boolean;
   progress_seconds: number;
+  comment_count: number;
   unlock: { coin_price: number } | null;
 }
 
@@ -186,4 +188,34 @@ export interface PlaybackAuth {
   renditions?: string[];
   episode_id?: number;
   unlock?: { coin_price: number; membership_available?: boolean };
+}
+
+
+export interface CommentAuthor {
+  public_id: string;
+  display_name: string;
+  avatar_url: string;
+}
+
+export interface CommentItem {
+  id: number;
+  body: string;
+  created_at: string | null;
+  like_count: number;
+  liked: boolean;
+  mine: boolean;
+  user: CommentAuthor;
+}
+
+export interface CommentsPayload {
+  items: CommentItem[];
+  next_cursor: number | null;
+  total: number;
+}
+
+export interface CommentCreateResult {
+  id: number;
+  status: "approved" | "pending" | "deleted";
+  item: CommentItem | null;
+  moderation: { verdict: string; score: number; reason: string; model: string } | null;
 }

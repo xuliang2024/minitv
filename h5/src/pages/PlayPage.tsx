@@ -19,6 +19,7 @@ import {
 } from "../icons";
 import { EpisodeView } from "../player/EpisodeView";
 import type { PlayEpisode, PlayPayload } from "../types";
+import { CommentSheet } from "../ui/CommentSheet";
 import { toast } from "../ui/toast";
 
 interface Props {
@@ -37,7 +38,8 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
   const [error, setError] = useState(false);
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
-  const [sheet, setSheet] = useState<"episodes" | "synopsis" | "settings" | null>(null);
+  const [sheet, setSheet] = useState<"episodes" | "synopsis" | "settings" | "comments" | null>(null);
+  const [commentCounts, setCommentCounts] = useState<Record<number, number>>({});
   const [liked, setLiked] = useState(false);
   const [favorited, setFavorited] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -90,6 +92,7 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
   if (payload.items.length === 0) return <div className="center">{t(locale, "empty")}</div>;
 
   const current = payload.items[index];
+  const commentCount = commentCounts[current.id] ?? current.comment_count;
   const go = (next: number) => {
     if (next < 0 || next >= payload.items.length) return;
     setIndex(next);
@@ -184,11 +187,11 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
         <button
           type="button"
           className="rail-btn"
-          onClick={() => setSheet("episodes")}
-          aria-label={t(locale, "episodes_tab")}
+          onClick={() => setSheet("comments")}
+          aria-label={t(locale, "comments")}
         >
           <span className="rail-icon"><IconComment size={30} /></span>
-          <span className="rail-label">{payload.items.length > 0 ? payload.items.length : t(locale, "select")}</span>
+          <span className="rail-label">{commentCount > 0 ? formatCount(commentCount, locale) : t(locale, "comment")}</span>
         </button>
 
         <button
@@ -246,7 +249,19 @@ export function PlayPage({ dramaId, locale, onBack }: Props) {
           />
         </>
       )}
-      {sheet && sheet !== "settings" && (
+      {sheet === "comments" && (
+        <>
+          <button className="sheet-mask" onClick={() => setSheet(null)} />
+          <CommentSheet
+            episodeId={current.id}
+            locale={locale}
+            initialCount={commentCount}
+            onCountChange={(next) => setCommentCounts((prev) => ({ ...prev, [current.id]: next }))}
+            onClose={() => setSheet(null)}
+          />
+        </>
+      )}
+      {sheet && sheet !== "settings" && sheet !== "comments" && (
         <>
           <button className="sheet-mask" onClick={() => setSheet(null)} />
           <EpisodeSheet

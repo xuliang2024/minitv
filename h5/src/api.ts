@@ -1,4 +1,6 @@
 import type {
+  CommentCreateResult,
+  CommentsPayload,
   FavoritesPayload,
   HistoryPayload,
   LedgerPayload,
@@ -279,4 +281,15 @@ export interface OrdersPayload {
 /** Purchase history shown in the Me page. */
 export function getOrders(limit = 20, offset = 0): Promise<OrdersPayload> {
   return getJson<OrdersPayload>(`/v1/me/orders?limit=${limit}&offset=${offset}`);
+}
+
+
+export function listComments(episodeId: number, cursor: number | null = null, limit = 20) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (cursor) query.set("cursor", String(cursor));
+  return getJson<CommentsPayload>(`/v1/episodes/${episodeId}/comments?${query}`);
+}
+
+export function createComment(episodeId: number, body: string) {
+  return postJson<CommentCreateResult>(`/v1/episodes/${episodeId}/comments`, { body });
 }
