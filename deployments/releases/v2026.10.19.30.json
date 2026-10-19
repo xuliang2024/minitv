@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.19.30",
+  "target": "r2",
+  "status": "published",
+  "sha": "acd3798df14c7a3baa5331555a91dc6e20504958",
+  "short_sha": "acd3798d",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.19.30/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "7de1f5233a589eac744493af34a93438191db769cd1be8174354157beb54f355",
+  "files": [
+    {
+      "path": "assets/index-BfqhJeq-.js",
+      "size": 820794
+    },
+    {
+      "path": "assets/index-NrUUHxeO.css",
+      "size": 39593
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-19T11:29:29+08:00",
+  "finished_at": "2026-10-19T11:29:50+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 81008,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "会员卡取消后显示不再续费",
+  "dirty": false
+}
