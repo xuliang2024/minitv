@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.19.15",
+  "target": "server",
+  "status": "published",
+  "sha": "a6faf77a1d1d2791197b944e6153f67930d324a4",
+  "short_sha": "a6faf77a",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-19T10:02:26+08:00",
+  "finished_at": "2026-10-19T10:02:42+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 45902,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "每日任务后端：task_claims + /v1/me/tasks（--allow-dirty：他会话 admin/src/pages/Rewards.tsx 与 Flutter 图标未提交，不影响 backend/）",
+  "dirty": true
+}
