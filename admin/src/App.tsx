@@ -23,7 +23,7 @@ import {
   CommentsPage,
   DashboardPage,
   FinancePage,
-  OpsCenterPage,
+  // OpsCenterPage, // 运营中心入口已关闭，恢复时连同 ITEMS 与 /ops 路由一起放回
   PlansPage,
   UsersPage,
 } from "./pages/StagePages";
@@ -47,7 +47,9 @@ const ITEMS = [
   { key: "/dramas", label: "剧集管理" },
   { key: "/groups", label: "首页分组" },
   { key: "/users", label: "用户管理" },
-  { key: "/ops", label: "运营中心" },
+  // 运营中心（推送记录）暂不开放：当前只是台账占位，没有真实推送通道，先隐藏入口。
+  // 恢复时把下面一行和 /ops 路由一起放回来即可。
+  // { key: "/ops", label: "运营中心" },
   { key: "/home-ops", label: "首页运营" },
   { key: "/rewards", label: "金币与任务" },
   { key: "/comments", label: "评论审核" },
@@ -261,7 +263,8 @@ export default function App() {
               <Route path="/groups" element={<GroupsPage />} />
               <Route path="/groups/:id" element={<GroupDetailPage />} />
               <Route path="/users" element={<UsersPage />} />
-              <Route path="/ops" element={<OpsCenterPage />} />
+              {/* 入口已关闭：/ops 落到下面的 * 通配，自动回数据看板。 */}
+              {/* <Route path="/ops" element={<OpsCenterPage />} /> */}
               <Route path="/home-ops" element={<HomeOpsPage />} />
               <Route path="/rewards" element={<Rewards />} />
               <Route path="/comments" element={<CommentsPage />} />
