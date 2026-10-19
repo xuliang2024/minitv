@@ -31,6 +31,9 @@ DEFAULT_AMOUNTS = {
     "bind_email": [30],
     "bind_facebook": [80],
     "ad": [30],
+    "like_5": [20],
+    "favorite_5": [30],
+    "watch_8": [50],
 }
 REWARD_CONFIG_ACTION = "reward_config_update"
 MAX_REWARD_AMOUNT = 1_000_000
@@ -72,6 +75,36 @@ REWARD_TASKS: tuple[dict, ...] = (
         "description": "每天可领一次，同日重复请求不二次入账",
         "kind": "single",
         "amounts": list(DEFAULT_AMOUNTS["ad"]),
+    },
+    {
+        "code": "like_5",
+        "name": "点赞 5 部剧",
+        "description": "当天给 5 部不同的剧点赞，每日可领一次",
+        "kind": "single",
+        "period": "daily",
+        "metric": "like",
+        "target": 5,
+        "amounts": list(DEFAULT_AMOUNTS["like_5"]),
+    },
+    {
+        "code": "favorite_5",
+        "name": "收藏 5 部剧",
+        "description": "当天收藏 5 部不同的剧，每日可领一次",
+        "kind": "single",
+        "period": "daily",
+        "metric": "favorite",
+        "target": 5,
+        "amounts": list(DEFAULT_AMOUNTS["favorite_5"]),
+    },
+    {
+        "code": "watch_8",
+        "name": "看完 8 集",
+        "description": "当天看完 8 集不同的剧集，每日可领一次",
+        "kind": "single",
+        "period": "daily",
+        "metric": "complete",
+        "target": 8,
+        "amounts": list(DEFAULT_AMOUNTS["watch_8"]),
     },
 )
 REWARD_TASK_BY_CODE = {task["code"]: task for task in REWARD_TASKS}
@@ -411,6 +444,9 @@ def reward_config_overview(session: Session, *, today: date | None = None) -> di
                 "name": task["name"],
                 "description": task["description"],
                 "kind": task["kind"],
+                "period": task.get("period", "once"),
+                "metric": task.get("metric"),
+                "target": task.get("target"),
                 "size": len(task["amounts"]),
                 "default_amounts": list(task["amounts"]),
                 "current": {

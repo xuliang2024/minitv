@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.modules.account import service as accounts
+from app.modules.account import tasks as account_tasks
 from app.modules.account.models import User
 from app.modules.account.service import AccountError
 from app.modules.billing import service as billing
@@ -303,6 +304,22 @@ def checkin(user: User = Depends(_require_user), db: Session = Depends(get_db)):
 def ad_reward(user: User = Depends(_require_user), db: Session = Depends(get_db)):
     try:
         return accounts.claim_ad(db, user)
+    except AccountError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get("/me/tasks")
+def my_tasks(user: User = Depends(_require_user), db: Session = Depends(get_db)):
+    """Daily task centre: progress, amounts and check-in state in one call."""
+    return account_tasks.tasks_overview(db, user)
+
+
+@router.post("/me/tasks/{code}/claim")
+def claim_daily_task(
+    code: str, user: User = Depends(_require_user), db: Session = Depends(get_db)
+):
+    try:
+        return account_tasks.claim_task(db, user, code)
     except AccountError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

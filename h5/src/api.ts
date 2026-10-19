@@ -167,6 +167,41 @@ export function checkin(): Promise<CheckinResult> {
   return postJson<CheckinResult>("/v1/me/checkin", {});
 }
 
+export interface DailyTaskItem {
+  code: string;
+  name: string;
+  description: string;
+  metric: "like" | "favorite" | "complete";
+  target: number;
+  progress: number;
+  amount: number;
+  claimed: boolean;
+}
+
+export interface DailyTasksPayload {
+  today: string;
+  balance: number;
+  checkin: { checked_today: boolean; streak: number; amount: number };
+  items: DailyTaskItem[];
+}
+
+export interface TaskClaimResult {
+  code: string;
+  amount: number;
+  balance: number;
+  replayed: boolean;
+  progress: number;
+}
+
+/** Daily task centre: progress, amounts and today's check-in state. */
+export function getTasks(): Promise<DailyTasksPayload> {
+  return getJson<DailyTasksPayload>("/v1/me/tasks");
+}
+
+export function claimTask(code: string): Promise<TaskClaimResult> {
+  return postJson<TaskClaimResult>(`/v1/me/tasks/${code}/claim`, {});
+}
+
 export function updateMe(body: { display_name?: string; bio?: string }): Promise<{ ok: boolean }> {
   return send("PATCH", "/v1/me", body) as Promise<{ ok: boolean }>;
 }

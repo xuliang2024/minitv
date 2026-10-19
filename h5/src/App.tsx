@@ -7,6 +7,7 @@ import { ForYouPage } from "./pages/ForYouPage";
 import { HomePage } from "./pages/HomePage";
 import { MePage } from "./pages/MePage";
 import { PlayPage } from "./pages/PlayPage";
+import { RewardsPage } from "./pages/RewardsPage";
 import { SearchPage } from "./pages/SearchPage";
 import { ToastHost } from "./ui/toast";
 
@@ -82,7 +83,7 @@ function AppShell() {
         ) : tab === "me" ? (
           <MePage locale={locale} onLocale={changeLocale} onOpen={setDramaId} />
         ) : (
-          <div className="center">{t(locale, "coming")}</div>
+          <RewardsPage locale={locale} onExplore={(target) => setTab(target)} />
         )}
       </main>
       {!playing && !searching && !loginOpen && (

@@ -34,7 +34,16 @@ def test_overview_lists_preset_defaults_when_unconfigured(make, session, client)
     headers = _ops(make, client)
     data = client.get("/admin/v1/rewards/config", headers=headers).json()
     codes = [item["code"] for item in data["items"]]
-    assert codes == ["checkin", "register", "bind_email", "bind_facebook", "ad"]
+    assert codes == [
+        "checkin",
+        "register",
+        "bind_email",
+        "bind_facebook",
+        "ad",
+        "like_5",
+        "favorite_5",
+        "watch_8",
+    ]
     by_code = {item["code"]: item for item in data["items"]}
     assert by_code["checkin"]["kind"] == "gradient"
     assert by_code["checkin"]["size"] == 7
@@ -44,6 +53,12 @@ def test_overview_lists_preset_defaults_when_unconfigured(make, session, client)
     assert by_code["bind_email"]["current"]["amounts"] == [30]
     assert by_code["bind_facebook"]["current"]["amounts"] == [80]
     assert by_code["ad"]["current"]["amounts"] == [30]
+    assert by_code["like_5"]["current"]["amounts"] == [20]
+    assert by_code["like_5"]["period"] == "daily"
+    assert by_code["like_5"]["target"] == 5
+    assert by_code["favorite_5"]["current"]["amounts"] == [30]
+    assert by_code["watch_8"]["current"]["amounts"] == [50]
+    assert by_code["watch_8"]["target"] == 8
     assert all(item["pending"] is None for item in data["items"])
     assert data["next_effective_on"] == (accounts.la_today() + timedelta(days=1)).isoformat()
     assert data["recent_changes"] == []

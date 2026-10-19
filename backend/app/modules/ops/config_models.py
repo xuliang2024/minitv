@@ -149,3 +149,22 @@ class AdClaim(Base):
     )
 
     __table_args__ = (UniqueConstraint("user_id", "day", name="uq_ad_claim_user_day"),)
+
+
+class TaskClaim(Base):
+    """One payout per user, task and local day. Daily tasks reset at midnight LA."""
+
+    __tablename__ = "task_claims"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)  # like_5 / favorite_5 / watch_8
+    period_key: Mapped[str] = mapped_column(String(16), nullable=False)  # America/Los_Angeles day
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "code", "period_key", name="uq_task_claim_user_code_day"),
+    )
