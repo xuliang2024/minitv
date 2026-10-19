@@ -391,7 +391,7 @@ function RankList({
                 </span>
                 <span className="rank-trend">
                   <IconFire size={11} />
-                  <span>{formatCount(isTop1 ? 1200000 : isTop2 ? 850000 : 560000, locale)}</span>
+                  <span>{formatCount(drama.play_count ?? 0, locale)}</span>
                 </span>
               </div>
             </div>

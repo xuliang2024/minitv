@@ -3,6 +3,8 @@ export interface DramaCard {
   title: string;
   cover_url: string | null;
   position?: number;
+  /** Lifetime real plays, bumped by the backend on every playback start. */
+  play_count?: number;
 }
 
 export interface HomeGroup {

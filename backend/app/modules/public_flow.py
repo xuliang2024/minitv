@@ -639,7 +639,15 @@ def home_groups(db: Session = Depends(get_db)):
         for link in links:
             drama = content.get_published_drama(db, link.drama_id)
             if drama is not None:
-                dramas.append({"id": drama.id, "title": drama.title, "cover_url": drama.cover_url, "position": link.position_in_group})
+                dramas.append(
+                    {
+                        "id": drama.id,
+                        "title": drama.title,
+                        "cover_url": drama.cover_url,
+                        "position": link.position_in_group,
+                        "play_count": drama.play_count,
+                    }
+                )
         payload.append(
             {
                 "id": group.id,
