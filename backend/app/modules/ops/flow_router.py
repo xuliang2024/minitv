@@ -1587,6 +1587,19 @@ def admin_comments(
     if q and q.strip():
         stmt = stmt.where(Comment.body.ilike(f"%{q.strip()}%"))
 
+    # Tab counters: same filters except status, so the numbers always match what the tabs would show.
+    counts_stmt = select(Comment.status, func.count()).group_by(Comment.status)
+    if drama_id:
+        counts_stmt = counts_stmt.where(Comment.drama_id == drama_id)
+    if episode_id:
+        counts_stmt = counts_stmt.where(Comment.episode_id == episode_id)
+    if q and q.strip():
+        counts_stmt = counts_stmt.where(Comment.body.ilike(f"%{q.strip()}%"))
+    counts = {"pending": 0, "approved": 0, "deleted": 0, "total": 0}
+    for row_status, row_count in db.execute(counts_stmt).all():
+        counts[row_status] = int(row_count)
+        counts["total"] += int(row_count)
+
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.execute(
         stmt.order_by(Comment.id.desc()).offset((page - 1) * page_size).limit(page_size)
@@ -1609,10 +1622,12 @@ def admin_comments(
                 "moderation_score": row.moderation_score,
                 "moderation_reason": row.moderation_reason,
                 "moderation_model": row.moderation_model,
+                "moderation_state": row.moderation_state,
             }
             for row, drama_title, episode_number, display_name, email in rows
         ],
         "total": int(total),
+        "counts": counts,
         "page": page,
         "page_size": page_size,
     }
@@ -1726,8 +1741,12 @@ def moderate(comment_id: int, body: CommentModIn, db: Session = Depends(get_db),
     if body.status not in {"approved", "deleted", "pending"}:
         raise HTTPException(status_code=422, detail="bad status")
     row.status = body.status
+    # A human decision wins over a late model response: the worker's final
+    # UPDATE is guarded by moderation_state='running'.
+    if row.moderation_state in {"queued", "running"}:
+        row.moderation_state = "canceled"
     db.commit()
-    return {"status": row.status}
+    return {"status": row.status, "moderation_state": row.moderation_state}
 
 
 GENDERS = ("unspecified", "female", "male", "other")

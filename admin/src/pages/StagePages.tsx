@@ -31,6 +31,7 @@ import {
   CheckCircleFilled,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  CommentOutlined,
   DollarOutlined,
   EditOutlined,
   InfoCircleOutlined,
@@ -38,6 +39,7 @@ import {
   ReloadOutlined,
   RiseOutlined,
   ShoppingCartOutlined,
+  StopOutlined,
   ThunderboltOutlined,
   TrophyFilled,
   UserAddOutlined,
@@ -1225,26 +1227,40 @@ type CommentRow = {
 };
 
 const COMMENT_TABS = [
+  { label: "全部", value: "" },
   { label: "待审核", value: "pending" },
   { label: "已发布", value: "approved" },
   { label: "已删除", value: "deleted" },
-  { label: "全部", value: "" },
 ];
 
+type CommentCounts = { pending: number; approved: number; deleted: number; total: number };
+
+const EMPTY_COMMENT_COUNTS: CommentCounts = { pending: 0, approved: 0, deleted: 0, total: 0 };
+
 export function CommentsPage() {
-  const [status, setStatus] = useState("pending");
+  const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [data, setData] = useState<{ items: CommentRow[]; total: number }>({ items: [], total: 0 });
+  const [data, setData] = useState<{ items: CommentRow[]; total: number; counts?: CommentCounts }>({
+    items: [],
+    total: 0,
+  });
   const [loading, setLoading] = useState(true);
+
+  const counts = data.counts ?? EMPTY_COMMENT_COUNTS;
+  const share = (value: number) => (counts.total ? `${((value / counts.total) * 100).toFixed(1)}%` : "0%");
+  const tabCount = (value: string) => {
+    if (!value) return counts.total;
+    return counts[value as keyof CommentCounts] ?? 0;
+  };
 
   const load = () => {
     setLoading(true);
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (status) params.set("status", status);
     if (q.trim()) params.set("q", q.trim());
-    api<{ items: CommentRow[]; total: number }>(`/admin/v1/comments?${params}`)
+    api<{ items: CommentRow[]; total: number; counts?: CommentCounts }>(`/admin/v1/comments?${params}`)
       .then(setData)
       .catch((e) => message.error(`读取评论失败：${errorText(e)}`))
       .finally(() => setLoading(false));
@@ -1298,9 +1314,55 @@ export function CommentsPage() {
         </Space>
       </div>
 
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} xl={6}>
+          <KpiCard
+            title="评论总数"
+            value={counts.total}
+            hint={<span style={{ fontSize: 12, color: "#667085" }}>当前筛选条件下的全部评论</span>}
+            icon={<CommentOutlined />}
+            color="#175cd3"
+            bg="#eff8ff"
+          />
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <KpiCard
+            title="待审核"
+            value={counts.pending}
+            hint={<span style={{ fontSize: 12, color: "#667085" }}>占全部 {share(counts.pending)}</span>}
+            icon={<ClockCircleOutlined />}
+            color="#b54708"
+            bg="#fffaeb"
+          />
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <KpiCard
+            title="已发布"
+            value={counts.approved}
+            hint={<span style={{ fontSize: 12, color: "#667085" }}>占全部 {share(counts.approved)}</span>}
+            icon={<CheckCircleOutlined />}
+            color="#027a48"
+            bg="#ecfdf3"
+          />
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <KpiCard
+            title="已删除"
+            value={counts.deleted}
+            hint={<span style={{ fontSize: 12, color: "#667085" }}>占全部 {share(counts.deleted)}</span>}
+            icon={<StopOutlined />}
+            color="#b42318"
+            bg="#fef3f2"
+          />
+        </Col>
+      </Row>
+
       <Segmented
         value={status}
-        options={COMMENT_TABS}
+        options={COMMENT_TABS.map((tab) => ({
+          label: `${tab.label} ${tabCount(tab.value)}`,
+          value: tab.value,
+        }))}
         onChange={(value) => {
           setPage(1);
           setStatus(String(value));
