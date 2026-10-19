@@ -1683,12 +1683,3 @@ img { display: block; max-width: 100%; }
 .rw-btn.ghost { color: var(--dim); background: rgba(255, 255, 255, 0.05); }
 .rw-btn.wide { width: 100%; padding: 11px; }
 .rw-btn:active { transform: scale(0.97); }
-
-.rw-guest {
-  margin-top: 36px; padding: 28px 20px; border-radius: 16px;
-  background: var(--card); border: 1px solid var(--line);
-  display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
-}
-.rw-guest-icon { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: rgba(245, 185, 66, 0.12); color: var(--gold); }
-.rw-guest b { font-size: 15px; }
-.rw-guest p { margin: 0 0 8px; font-size: 12px; color: var(--muted); }

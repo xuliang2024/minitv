@@ -77,6 +77,13 @@ let tasks = {
   ],
 };
 
+const publicTasks = {
+  today: "2026-10-19",
+  balance: 0,
+  checkin: { checked_today: false, streak: 1, amount: 30 },
+  items: tasks.items.map((item) => ({ ...item, progress: 0, claimed: false })),
+};
+
 function json(route, status, body) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
@@ -104,8 +111,11 @@ async function buildRoutes(route) {
   if (path === "/v1/auth/providers") {
     return json(route, 200, { email: { enabled: true }, google: { enabled: false, client_id: null } });
   }
-  if (path === "/v1/me" && method === "GET") {
+  if (path === "/v1/me") {
     return authed ? json(route, 200, me) : json(route, 401, { detail: "login required" });
+  }
+  if (path === "/v1/tasks" && method === "GET") {
+    return json(route, 200, publicTasks);
   }
   if (path === "/v1/me/tasks" && method === "GET") {
     calls.tasks += 1;
@@ -217,9 +227,29 @@ await guestPage.route("**/v1/**", buildRoutes);
 await guestPage.goto(APP_URL, { waitUntil: "networkidle" });
 await guestPage.waitForSelector('[data-tab="rewards"]', { timeout: 15000 });
 await guestPage.locator('[data-tab="rewards"]').click();
-await guestPage.waitForSelector(".rw-guest", { timeout: 8000 });
-check((await guestPage.locator(".rw-guest b").innerText()).includes("登录"), "guest sees the sign-in card");
+await guestPage.waitForSelector(".rw-task", { timeout: 8000 });
+check((await guestPage.locator(".rw-task").count()) === 3, "guest sees the task list");
+check(
+  (await guestPage.locator('[data-testid="rw-progress-like_5"]').innerText()).trim() === "0/5",
+  "guest progress starts at zero",
+);
+check((await guestPage.locator('[data-testid="rw-balance"]').innerText()).includes("0"), "guest balance is zero");
 await guestPage.screenshot({ path: `${OUT}-guest.png` });
+
+await guestPage.locator('[data-testid="rw-checkin"]').click();
+await guestPage.waitForSelector('[data-testid="login-sheet"]', { timeout: 5000 });
+await guestPage.waitForTimeout(500);
+check((await guestPage.locator('[data-testid="login-sheet"]').count()) === 1, "guest action opens the login sheet");
+await guestPage.screenshot({ path: `${OUT}-guest-login.png` });
+
+await guestPage.locator(".auth-mask").click();
+await guestPage.waitForSelector('[data-testid="login-sheet"]', { state: "detached", timeout: 5000 });
+await guestPage.locator('[data-testid="rw-action-like_5"]').click();
+await guestPage.waitForSelector('[data-testid="login-sheet"]', { timeout: 5000 });
+check(
+  (await guestPage.locator('[data-testid="login-sheet"]').count()) === 1,
+  "guest shortcut also asks for a login",
+);
 await guest.close();
 
 await browser.close();

@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.main import app
 from app.modules.account import tasks as task_service
 from app.modules.account.service import LA, AccountError, la_today
 from app.modules.ops.config_models import RewardConfig, TaskClaim
@@ -14,6 +16,11 @@ from app.modules.social.models import Reaction
 from app.modules.wallet.models import CoinLedgerEntry, WalletAccount
 
 DAY = la_today()
+
+
+@pytest.fixture()
+def client(session):
+    return TestClient(app)
 
 
 def _at(day, hour: int = 12) -> datetime:
@@ -184,3 +191,19 @@ def test_unknown_or_non_daily_task_is_rejected(make, session):
     with pytest.raises(AccountError) as not_daily:
         task_service.claim_task(session, user, "register", day=DAY)
     assert not_daily.value.status_code == 404
+
+
+def test_public_task_list_renders_without_a_session(client):
+    response = client.get("/v1/tasks")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["balance"] == 0
+    assert payload["checkin"] == {"checked_today": False, "streak": 1, "amount": 30}
+    assert [item["progress"] for item in payload["items"]] == [0, 0, 0]
+    assert [item["amount"] for item in payload["items"]] == [20, 30, 50]
+    assert all(item["claimed"] is False for item in payload["items"])
+
+
+def test_personal_task_list_still_requires_login(client):
+    assert client.get("/v1/me/tasks").status_code == 401

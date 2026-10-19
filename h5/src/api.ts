@@ -198,6 +198,11 @@ export function getTasks(): Promise<DailyTasksPayload> {
   return getJson<DailyTasksPayload>("/v1/me/tasks");
 }
 
+/** Same catalogue without a session: amounts and targets, progress zeroed. */
+export function getPublicTasks(): Promise<DailyTasksPayload> {
+  return getJson<DailyTasksPayload>("/v1/tasks");
+}
+
 export function claimTask(code: string): Promise<TaskClaimResult> {
   return postJson<TaskClaimResult>(`/v1/me/tasks/${code}/claim`, {});
 }

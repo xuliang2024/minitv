@@ -84,21 +84,27 @@ def _balance(session: Session, user_id: int) -> int:
     return wallet.balance if wallet is not None else 0
 
 
-def _checkin_state(session: Session, user: User, day: date) -> dict:
-    """What the task centre needs to paint the check-in card without guessing."""
-    today_row = session.scalar(
-        select(Checkin).where(Checkin.user_id == user.id, Checkin.day == day)
-    )
-    yesterday = session.scalar(
-        select(Checkin).where(Checkin.user_id == user.id, Checkin.day == day - timedelta(days=1))
-    )
+def _checkin_state(session: Session, user_id: int | None, day: date) -> dict:
+    """What the task centre needs to paint the check-in card without guessing.
+
+    Signed-out visitors get the day-one offer: the card is real data, only the
+    streak is unknown until they sign in.
+    """
     configured = session.scalar(
         select(RewardConfig)
         .where(RewardConfig.code == "checkin", RewardConfig.effective_on <= day)
         .order_by(RewardConfig.effective_on.desc())
     )
     gradient = list(configured.amounts) if configured is not None else list(DEFAULT_CHECKIN)
+    if user_id is None:
+        return {"checked_today": False, "streak": 1, "amount": int(gradient[0])}
 
+    today_row = session.scalar(
+        select(Checkin).where(Checkin.user_id == user_id, Checkin.day == day)
+    )
+    yesterday = session.scalar(
+        select(Checkin).where(Checkin.user_id == user_id, Checkin.day == day - timedelta(days=1))
+    )
     if today_row is not None:
         return {
             "checked_today": True,
@@ -116,11 +122,19 @@ def _checkin_state(session: Session, user: User, day: date) -> dict:
     }
 
 
-def tasks_overview(session: Session, user: User, *, day: date | None = None) -> dict:
+def tasks_overview(
+    session: Session, user: User | None, *, day: date | None = None
+) -> dict:
+    """The task centre payload, with or without a session.
+
+    A signed-out visitor gets the same cards and amounts with zero progress, so
+    the page never hides behind a login wall; signing in only personalises it.
+    """
     day = day or la_today()
+    user_id = None if user is None else user.id
     items = []
     for task in DAILY_TASKS:
-        progress = task_progress(session, user.id, task, day)
+        progress = task_progress(session, user_id, task, day) if user_id is not None else 0
         items.append(
             {
                 "code": task["code"],
@@ -130,13 +144,16 @@ def tasks_overview(session: Session, user: User, *, day: date | None = None) -> 
                 "target": int(task["target"]),
                 "progress": progress,
                 "amount": _active_amount(session, task["code"], day),
-                "claimed": _claim_of(session, user.id, task["code"], day) is not None,
+                "claimed": (
+                    user_id is not None
+                    and _claim_of(session, user_id, task["code"], day) is not None
+                ),
             }
         )
     return {
         "today": day.isoformat(),
-        "balance": _balance(session, user.id),
-        "checkin": _checkin_state(session, user, day),
+        "balance": 0 if user_id is None else _balance(session, user_id),
+        "checkin": _checkin_state(session, user_id, day),
         "items": items,
     }
 

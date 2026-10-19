@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   ApiError,
+  authToken,
   checkin as postCheckin,
   claimTask,
+  getPublicTasks,
   getTasks,
   type DailyTaskItem,
   type DailyTasksPayload,
@@ -49,16 +51,17 @@ export function RewardsPage({
   locale: Locale;
   onExplore: (target: "home" | "foryou") => void;
 }): ReactNode {
-  const { status, openLogin, requireAuth, refresh } = useAuth();
+  const { status, requireAuth, refresh } = useAuth();
   const [data, setData] = useState<DailyTasksPayload | null>(null);
   const [state, setState] = useState<LoadState>("idle");
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (status !== "user") return;
+    if (status === "loading") return;
     setState((prev) => (prev === "ready" ? prev : "loading"));
     try {
-      setData(await getTasks());
+      // Signed-out visitors still get the cards; only the numbers are personal.
+      setData(authToken() ? await getTasks() : await getPublicTasks());
       setState("ready");
     } catch {
       setState("error");
@@ -66,12 +69,8 @@ export function RewardsPage({
   }, [status]);
 
   useEffect(() => {
-    if (status === "user") void load();
-    if (status === "guest") {
-      setData(null);
-      setState("idle");
-    }
-  }, [status, load]);
+    void load();
+  }, [load]);
 
   const claim = (code: string) =>
     requireAuth(() => {
@@ -112,23 +111,6 @@ export function RewardsPage({
     });
 
   if (status === "loading") return <div className="center">…</div>;
-
-  if (status !== "user") {
-    return (
-      <div className="rw-page">
-        <section className="rw-guest">
-          <span className="rw-guest-icon">
-            <IconCoin size={26} />
-          </span>
-          <b>{t(locale, "rw_guest_title")}</b>
-          <p>{t(locale, "rw_guest_body")}</p>
-          <button type="button" className="rw-btn gold wide" onClick={openLogin}>
-            {t(locale, "sign_in")}
-          </button>
-        </section>
-      </div>
-    );
-  }
 
   if (state === "error" || (state === "idle" && !data)) {
     return (
@@ -193,7 +175,10 @@ export function RewardsPage({
             ? null
             : done
               ? () => claim(task.code)
-              : () => onExplore(task.metric === "complete" ? "foryou" : "home");
+              : () =>
+                  requireAuth(() =>
+                    onExplore(task.metric === "complete" ? "foryou" : "home"),
+                  );
 
           return (
             <article

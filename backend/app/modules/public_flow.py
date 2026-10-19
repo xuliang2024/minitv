@@ -308,6 +308,17 @@ def ad_reward(user: User = Depends(_require_user), db: Session = Depends(get_db)
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+@router.get("/tasks")
+def public_tasks(db: Session = Depends(get_db)):
+    """Task catalogue for signed-out visitors.
+
+    Same cards and amounts as /v1/me/tasks, with progress zeroed. The reward tab
+    renders this immediately; the client asks for a login only when the visitor
+    taps an action that needs an account.
+    """
+    return account_tasks.tasks_overview(db, None)
+
+
 @router.get("/me/tasks")
 def my_tasks(user: User = Depends(_require_user), db: Session = Depends(get_db)):
     """Daily task centre: progress, amounts and check-in state in one call."""
