@@ -423,6 +423,22 @@ function HomePage() {
                     <strong>Google Play</strong>
                   </span>
                 </a>
+                <a
+                  className="store-btn store-btn-web"
+                  href={WEB_APP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <svg className="icon-stroke" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="8.4" />
+                    <path d="M3.6 12h16.8" />
+                    <path d="M12 3.6c2.4 2.5 2.4 14.4 0 16.8M12 3.6c-2.4 2.5-2.4 14.4 0 16.8" />
+                  </svg>
+                  <span>
+                    <small>No download needed</small>
+                    <strong>Watch Online</strong>
+                  </span>
+                </a>
               </div>
             </div>
             <div className="qr-block">

@@ -800,6 +800,25 @@ summary:focus-visible {
   fill: #fff;
 }
 
+/* The web entry uses a stroked globe instead of a filled store glyph. */
+.store-btn svg.icon-stroke {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.store-btn-web {
+  border-color: rgba(229, 59, 62, 0.55);
+  background: rgba(229, 59, 62, 0.12);
+}
+
+.store-btn-web:hover {
+  border-color: rgba(229, 59, 62, 0.85);
+  background: rgba(229, 59, 62, 0.2);
+}
+
 .store-btn small {
   display: block;
   color: var(--muted);
