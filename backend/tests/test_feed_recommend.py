@@ -286,6 +286,34 @@ def test_drama_play_page_resumes_the_unfinished_episode(make, client, session):
     assert payload["items"][0]["progress_seconds"] == 70
 
 
+def test_drama_play_page_flags_finished_episodes(make, client, session):
+    drama = _show(make, session, title="Watched Page", free=3, episodes=4)
+    user = make.user(email="watcher@example.com")
+    episodes = _episodes(session, drama)
+    session.add(
+        PlaybackProgress(user_id=user.id, episode_id=episodes[0].id, position_seconds=900)
+    )
+    session.add(
+        PlaybackEvent(user_id=user.id, episode_id=episodes[0].id, kind="complete", position_seconds=900)
+    )
+    session.add(
+        PlaybackProgress(user_id=user.id, episode_id=episodes[1].id, position_seconds=40)
+    )
+    session.commit()
+
+    payload = client.get(
+        f"/v1/dramas/{drama.id}/play",
+        headers={"Authorization": f"Bearer {_token(user)}"},
+    ).json()
+    assert [item["completed"] for item in payload["items"]] == [True, False, False, False]
+    # Half-watched is not finished: the sheet paints a bar, not a check.
+    assert payload["items"][1]["progress_seconds"] == 40
+    assert payload["resume"] == {"episode_id": episodes[1].id, "position_seconds": 40}
+
+    guest = client.get(f"/v1/dramas/{drama.id}/play").json()
+    assert [item["completed"] for item in guest["items"]] == [False, False, False, False]
+
+
 def test_drama_play_page_404s_for_unpublished_drama(make, client, session):
     draft = make.drama(title="Not Out Yet", status="draft", free=3)
     assert client.get(f"/v1/dramas/{draft.id}/play").status_code == 404

@@ -535,6 +535,17 @@ function EpisodeSheet({
   const [range, setRange] = useState(Math.floor(index / RANGE) * RANGE);
   const slice = payload.items.slice(range, range + RANGE);
 
+  // Counted across the whole drama so the line stays put when the viewer
+  // pages through ranges.
+  const watched = payload.items.filter((episode) => episode.completed).length;
+  const watching = payload.items.filter(
+    (episode) => !episode.completed && !episode.locked && episode.progress_seconds > 0,
+  ).length;
+  const summary = [
+    watched > 0 ? t(locale, "ep_watched", { count: watched }) : "",
+    watching > 0 ? t(locale, "ep_watching", { count: watching }) : "",
+  ].filter(Boolean).join(" · ");
+
   return (
     <div className="sheet">
       <header>
@@ -546,23 +557,37 @@ function EpisodeSheet({
           <p className="syn-full">{payload.drama.synopsis || t(locale, "empty")}</p>
         ) : (
           <>
-            <div className="ranges">
-              {ranges.map((start) => (
-                <button key={start} className={start === range ? "on" : ""} onClick={() => setRange(start)}>
-                  {start + 1}-{Math.min(start + RANGE, payload.items.length)}
-                </button>
-              ))}
+            <div className="ranges-row">
+              <div className="ranges">
+                {ranges.map((start) => (
+                  <button key={start} className={start === range ? "on" : ""} onClick={() => setRange(start)}>
+                    {start + 1}-{Math.min(start + RANGE, payload.items.length)}
+                  </button>
+                ))}
+              </div>
+              {summary && <span className="ep-summary">{summary}</span>}
             </div>
             <div className="ep-grid">
               {slice.map((episode) => {
                 const position = payload.items.indexOf(episode);
+                const total = episode.duration_seconds || 0;
+                const ratio =
+                  total > 0 && !episode.locked && !episode.completed
+                    ? Math.min(1, episode.progress_seconds / total)
+                    : 0;
+                const state = episode.completed ? "done" : ratio > 0 ? "partial" : "";
                 return (
                   <button
                     key={episode.id}
-                    className={`${position === index ? "on" : ""} ${episode.locked ? "locked" : ""}`}
+                    className={`${position === index ? "on" : ""} ${episode.locked ? "locked" : ""} ${state}`}
                     onClick={() => onPick(position)}
                   >
                     {episode.episode_number}
+                    {state === "partial" && (
+                      <span className="ep-progress">
+                        <i style={{ width: `${Math.round(ratio * 100)}%` }} />
+                      </span>
+                    )}
                   </button>
                 );
               })}

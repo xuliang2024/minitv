@@ -925,6 +925,9 @@ def drama_play(drama_id: int, user: User | None = Depends(_optional_user), db: S
                 "free": free,
                 "locked": locked,
                 "progress_seconds": position,
+                # A finished episode reads differently from an untouched one in
+                # the episode sheet, so the flag travels with the row.
+                "completed": episode.id in completed,
                 "comment_count": comment_counts.get(episode.id, 0),
                 "unlock": {"coin_price": drama.coin_price_per_episode} if locked else None,
             }

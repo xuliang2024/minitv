@@ -156,6 +156,7 @@ export interface PlayEpisode {
   free: boolean;
   locked: boolean;
   progress_seconds: number;
+  completed?: boolean;
   comment_count: number;
   unlock: { coin_price: number } | null;
 }

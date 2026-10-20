@@ -1164,15 +1164,34 @@ img { display: block; max-width: 100%; }
 .sheet header button { color: var(--muted); font-size: 15px; }
 .sheet header button.on { color: #fff; font-weight: 700; }
 .sheet .body { overflow: auto; padding: 8px 16px 20px; }
+.ranges-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .ranges { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 12px; }
+.ranges-row .ranges { margin-bottom: 0; flex: 1; min-width: 0; }
 .ranges button { color: var(--muted); font-size: 12px; padding: 4px 8px; border-radius: 10px; background: rgba(255,255,255,.06); white-space: nowrap; }
 .ranges button.on { color: #fff; background: var(--red); }
+.ep-summary { flex-shrink: 0; color: rgba(255,255,255,.45); font-size: 11px; white-space: nowrap; }
 .ep-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .ep-grid button {
+  position: relative; overflow: hidden;
   aspect-ratio: 1; border-radius: 8px; background: rgba(255,255,255,.08); font-size: 13px;
 }
-.ep-grid button.on { background: var(--red); }
+.ep-grid button.done { background: rgba(255,255,255,.04); color: rgba(255,255,255,.35); }
+.ep-grid button.done::after {
+  content: ""; position: absolute; top: 7px; right: 7px; width: 7px; height: 4px;
+  border-left: 1.6px solid rgba(255,255,255,.5); border-bottom: 1.6px solid rgba(255,255,255,.5);
+  transform: rotate(-45deg);
+}
+.ep-grid button .ep-progress {
+  position: absolute; left: 6px; right: 6px; bottom: 5px; height: 3px;
+  border-radius: 2px; background: rgba(255,255,255,.18); overflow: hidden;
+}
+.ep-grid button .ep-progress i { display: block; height: 100%; border-radius: 2px; background: var(--red); }
+.ep-grid button.on { background: var(--red); color: #fff; }
+.ep-grid button.on .ep-progress { background: rgba(0,0,0,.28); }
+.ep-grid button.on .ep-progress i { background: #fff; }
+.ep-grid button.on.done::after { border-color: #fff; }
 .ep-grid button.locked { color: var(--gold); }
+.ep-grid button.locked::after { display: none; }
 .syn-full { color: rgba(255,255,255,.75); font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
 
 .search { padding: 12px 16px; }
