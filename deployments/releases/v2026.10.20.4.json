@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.20.4",
+  "target": "r2",
+  "status": "published",
+  "sha": "a5f8b6e9a1d0f4035312c39b13ff59ca75f71b4d",
+  "short_sha": "a5f8b6e9",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.20.4/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "f2b1d3753204f76604873b0bbbbca47b49140512cde97ad5f9595443db1d5f97",
+  "files": [
+    {
+      "path": "assets/index-BhY806JS.css",
+      "size": 48340
+    },
+    {
+      "path": "assets/index-DiMjXnjS.js",
+      "size": 844018
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-20T20:09:24+08:00",
+  "finished_at": "2026-10-20T20:09:40+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 20517,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "个人页：退出登录收进二级设置页（分组 + 二次确认），齿轮移到右上角",
+  "dirty": false
+}
