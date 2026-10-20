@@ -37,6 +37,11 @@ def main() -> None:
     parser.add_argument("--socks-port", type=int, default=11080)
     parser.add_argument("--forward-port", type=int, default=0)
     parser.add_argument("--publish", action="store_true")
+    parser.add_argument(
+        "--fast-first-pass",
+        action="store_true",
+        help="first pass uploads only and skips waiting for transcodes; the retry pass publishes",
+    )
     parser.add_argument("--only", help="comma-separated folder basenames")
     parser.add_argument("--start", type=int, default=0, help="skip the first N entries")
     parser.add_argument("--limit", type=int, default=0, help="process at most N entries")
@@ -87,6 +92,8 @@ def main() -> None:
             command += ["--socks-port", str(args.socks_port)]
         if args.publish:
             command.append("--publish")
+        if args.fast_first_pass:
+            command.append("--no-wait")
 
         result = subprocess.run(command, cwd=ROOT)
         elapsed = round(time.time() - started)

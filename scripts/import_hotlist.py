@@ -190,6 +190,11 @@ def main() -> None:
     parser.add_argument("--forward-port", type=int, help="local end of an ssh -L forward to video.bunnycdn.com:443 (preferred)")
     parser.add_argument("--publish", action="store_true", help="publish episodes and the drama when transcodes finish")
     parser.add_argument("--wait-minutes", type=int, default=20, help="how long to poll transcodes (default 20)")
+    parser.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="check transcodes once and exit 3 if not ready (first pass of a two-pass batch)",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--api", default=os.environ.get("MINITV_API", API_DEFAULT))
     args = parser.parse_args()
@@ -318,7 +323,7 @@ def main() -> None:
         print("\nuploads done; transcode status will advance via the backend reconciler")
         return
 
-    deadline = time.time() + args.wait_minutes * 60
+    deadline = 0 if args.no_wait else time.time() + args.wait_minutes * 60
     while True:
         listing = client.get(f"/admin/v1/dramas/{drama_id}/episodes?page_size=200")
         states = [row["status"] for row in listing["items"]]
