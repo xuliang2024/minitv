@@ -228,15 +228,19 @@ def main() -> None:
     print(f"metadata set: free={args.free} price={args.price} synopsis={len(synopsis)} chars")
 
     if not drama.get("cover_url"):
+        local_cover = folder / str(meta.get("cover_file") or "")
         with tempfile.TemporaryDirectory() as tmp:
-            image = Path(tmp) / "cover.jpg"
-            request = urllib.request.Request(meta["cover"], headers={"User-Agent": UA})
-            with urllib.request.urlopen(request, timeout=60) as response:
-                image.write_bytes(response.read())
+            if local_cover.is_file():
+                image = local_cover
+            else:
+                image = Path(tmp) / "cover.jpg"
+                request = urllib.request.Request(meta["cover"], headers={"User-Agent": UA})
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    image.write_bytes(response.read())
             client.upload_cover(drama_id, image)
         print("cover re-hosted")
 
-    count = meta["episode_cnt"]
+    count = int(meta["episode_cnt"])
     created = client.post(f"/admin/v1/dramas/{drama_id}/episodes/bulk", {"count": count})
     print(f"episodes: total={created['total']} newly_created={len(created['created'])}")
 
@@ -271,11 +275,19 @@ def main() -> None:
                 "duration_seconds": duration,
             },
         )
-        try:
-            bunny_put(session["video_id"], path, key, args.socks_port)
-        except Exception:
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                bunny_put(session["video_id"], path, key, args.socks_port)
+                last_error = None
+                break
+            except Exception as exc:  # Bunny returns transient 500s under load
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(5 * attempt)
+        if last_error is not None:
             client.post(f"/admin/v1/episodes/{episode_id}/upload-failed", {})
-            raise
+            raise last_error
         print(f"  ep{number:03d} uploaded -> {session['video_id']}")
 
     if pending:
@@ -293,8 +305,9 @@ def main() -> None:
         print(f"\n{len(failures)} upload(s) failed; rerun to retry:")
         for line in failures:
             print("  " + line)
-        if not args.publish:
-            return
+        # Never publish a drama with holes: exit non-zero so the batch runner
+        # retries this title (already-uploaded episodes are skipped).
+        return 3
 
     if not args.publish:
         print("\nuploads done; transcode status will advance via the backend reconciler")
@@ -312,6 +325,10 @@ def main() -> None:
         time.sleep(20)
 
     listing = client.get(f"/admin/v1/dramas/{drama_id}/episodes?page_size=200")
+    failed_rows = [row for row in listing["items"] if row["status"] == "transcode_failed"]
+    if failed_rows:
+        print(f"{len(failed_rows)} episode(s) failed to transcode; skipping publish, rerun to retry")
+        return 3
     for row in listing["items"]:
         if row["status"] != "in_review":
             continue
