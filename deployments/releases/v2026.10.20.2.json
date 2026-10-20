@@ -1,0 +1,41 @@
+{
+  "version": "v2026.10.20.2",
+  "target": "r2",
+  "status": "published",
+  "sha": "3393ee3aa7677f5d80f0f27b1b3fbdd76f00d4ab",
+  "short_sha": "3393ee3a",
+  "bucket": "minitv-h5",
+  "prefix": "releases/v2026.10.20.2/",
+  "promote_prefix": "",
+  "promoted_root": true,
+  "dist_digest": "ad4649f1a8b2dc3db7ac6cbe2aa1adbc4ba11beb805b8355ff9d3b22cc372c89",
+  "files": [
+    {
+      "path": "assets/index-9j7ZeB_E.js",
+      "size": 839256
+    },
+    {
+      "path": "assets/index-BOGzD_zf.css",
+      "size": 46937
+    },
+    {
+      "path": "favicon.svg",
+      "size": 205
+    },
+    {
+      "path": "index.html",
+      "size": 613
+    }
+  ],
+  "started_at": "2026-10-20T11:19:47+08:00",
+  "finished_at": "2026-10-20T11:20:34+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 19815,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "选集面板区分已看/半看（勾 + 进度条 + 已看统计）",
+  "dirty": false
+}
