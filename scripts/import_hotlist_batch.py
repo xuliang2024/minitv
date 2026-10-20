@@ -35,6 +35,7 @@ def main() -> None:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--socks-port", type=int, default=11080)
+    parser.add_argument("--forward-port", type=int, default=0)
     parser.add_argument("--publish", action="store_true")
     parser.add_argument("--only", help="comma-separated folder basenames")
     parser.add_argument("--start", type=int, default=0, help="skip the first N entries")
@@ -80,7 +81,9 @@ def main() -> None:
             "--price", str(item.get("price", 50)),
             "--workers", str(args.workers),
         ]
-        if args.socks_port:
+        if args.forward_port:
+            command += ["--forward-port", str(args.forward_port)]
+        elif args.socks_port:
             command += ["--socks-port", str(args.socks_port)]
         if args.publish:
             command.append("--publish")
@@ -118,7 +121,9 @@ def main() -> None:
                 "--price", str(item.get("price", 50)),
                 "--workers", str(args.workers),
             ]
-            if args.socks_port:
+            if args.forward_port:
+                command += ["--forward-port", str(args.forward_port)]
+            elif args.socks_port:
                 command += ["--socks-port", str(args.socks_port)]
             if args.publish:
                 command.append("--publish")

@@ -126,10 +126,14 @@ def probe(path: Path) -> tuple[int, int, int]:
     return int(stream["width"]), int(stream["height"]), duration
 
 
-def bunny_put(video_id: str, path: Path, key: str, socks_port: int | None) -> None:
+def bunny_put(video_id: str, path: Path, key: str, socks_port: int | None, forward_port: int | None = None) -> None:
     endpoint = f"{BUNNY_STREAM_API}/library/{os.environ['BUNNY_STREAM_LIBRARY_ID']}/videos/{video_id}"
     cmd = ["curl", "-sS", "--fail-with-body", "--max-time", "1800"]
-    if socks_port:
+    if forward_port:
+        # Plain TCP forward (ssh -L). Much faster than the SOCKS relay for
+        # large bodies, which OpenSSH's dynamic proxy throttles badly.
+        cmd += ["--connect-to", f"video.bunnycdn.com:443:127.0.0.1:{forward_port}"]
+    elif socks_port:
         cmd += ["--socks5-hostname", f"127.0.0.1:{socks_port}"]
     cmd += [
         "-X", "PUT", endpoint,
@@ -183,6 +187,7 @@ def main() -> None:
     parser.add_argument("--price", type=int, default=50, help="coins per locked episode (default 50)")
     parser.add_argument("--workers", type=int, default=6, help="concurrent Bunny uploads (default 6)")
     parser.add_argument("--socks-port", type=int, help="SSH dynamic tunnel port for Bunny traffic")
+    parser.add_argument("--forward-port", type=int, help="local end of an ssh -L forward to video.bunnycdn.com:443 (preferred)")
     parser.add_argument("--publish", action="store_true", help="publish episodes and the drama when transcodes finish")
     parser.add_argument("--wait-minutes", type=int, default=20, help="how long to poll transcodes (default 20)")
     parser.add_argument("--dry-run", action="store_true")
@@ -278,7 +283,7 @@ def main() -> None:
         last_error: Exception | None = None
         for attempt in range(1, 4):
             try:
-                bunny_put(session["video_id"], path, key, args.socks_port)
+                bunny_put(session["video_id"], path, key, args.socks_port, args.forward_port)
                 last_error = None
                 break
             except Exception as exc:  # Bunny returns transient 500s under load
