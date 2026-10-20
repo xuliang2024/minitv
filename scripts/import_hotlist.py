@@ -330,9 +330,9 @@ def main() -> None:
         time.sleep(20)
 
     listing = client.get(f"/admin/v1/dramas/{drama_id}/episodes?page_size=200")
-    failed_rows = [row for row in listing["items"] if row["status"] == "transcode_failed"]
-    if failed_rows:
-        print(f"{len(failed_rows)} episode(s) failed to transcode; skipping publish, rerun to retry")
+    not_ready = [row for row in listing["items"] if row["status"] not in {"in_review", "published"}]
+    if not_ready:
+        print(f"{len(not_ready)} episode(s) still not ready; skipping publish, rerun to finish")
         return 3
     for row in listing["items"]:
         if row["status"] != "in_review":
