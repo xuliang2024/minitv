@@ -1254,6 +1254,16 @@ img { display: block; max-width: 100%; }
   content: ""; flex: 1; height: 1px; background: rgba(255, 255, 255, 0.1);
 }
 .auth-google { display: flex; justify-content: center; min-height: 40px; }
+.auth-oauth { display: flex; flex-direction: column; gap: 10px; }
+.auth-fb {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 40px; border: 0; border-radius: 999px;
+  background: #1877f2; color: #fff; font-family: inherit;
+  font-size: 14px; font-weight: 500;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.auth-fb:active { transform: scale(0.98); }
+.auth-fb:disabled { opacity: 0.55; }
 .auth-code { display: flex; gap: 8px; margin: 2px 0 12px; }
 .auth-box {
   flex: 1; min-width: 0; height: 52px; text-align: center;

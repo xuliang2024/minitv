@@ -106,6 +106,13 @@ class GoogleIn(BaseModel):
     id_token: str = Field(min_length=1)
 
 
+class FacebookIn(BaseModel):
+    """Either a Limited Login id_token or an SDK access token, never both."""
+
+    access_token: str | None = Field(default=None, min_length=1)
+    id_token: str | None = Field(default=None, min_length=1)
+
+
 class EventIn(BaseModel):
     episode_id: int
     position_seconds: int = 0
@@ -203,6 +210,9 @@ def auth_providers():
     GIS button with it, and the Flutter app reuses it as Android's
     `serverClientId`. iOS mints its own audience from the iOS client baked into
     the app, which the backend accepts through `GOOGLE_CLIENT_IDS`.
+
+    Facebook serves its public App ID the same way: the H5 JavaScript SDK and
+    the native SDKs all need it, and it is not a secret.
     """
     client_id = next(
         (
@@ -213,9 +223,11 @@ def auth_providers():
         ),
         "",
     )
+    facebook_app_id = os.environ.get("FACEBOOK_APP_ID", "").strip()
     return {
         "email": {"enabled": True},
         "google": {"enabled": bool(client_id), "client_id": client_id or None},
+        "facebook": {"enabled": bool(facebook_app_id), "app_id": facebook_app_id or None},
     }
 
 
@@ -253,6 +265,20 @@ def email_login(body: LoginIn, db: Session = Depends(get_db)):
 def google_login(body: GoogleIn, db: Session = Depends(get_db)):
     try:
         user, token, created = accounts.login_with_google(db, id_token=body.id_token)
+    except AccountError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return {"token": token, "user_id": user.id, "public_id": user.public_id, "created": created}
+
+
+@router.post("/auth/facebook")
+def facebook_login(body: FacebookIn, db: Session = Depends(get_db)):
+    """Sign in with Facebook; the first visit creates the account."""
+    if not body.access_token and not body.id_token:
+        raise HTTPException(status_code=422, detail="access_token or id_token required")
+    try:
+        user, token, created = accounts.login_with_facebook(
+            db, access_token=body.access_token, id_token=body.id_token
+        )
     except AccountError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     return {"token": token, "user_id": user.id, "public_id": user.public_id, "created": created}

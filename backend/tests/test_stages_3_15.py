@@ -451,8 +451,12 @@ def test_register_has_no_password_and_rewards_follow_rules(make, session, client
     assert ad.status_code == 200
     again = client.post("/v1/me/ad-reward", headers={"Authorization": f"Bearer {token}"})
     assert again.status_code == 409
-    oauth = client.post("/v1/auth/oauth/facebook")
+    oauth = client.post("/v1/auth/oauth/tiktok")
     assert oauth.status_code == 501
+    # Facebook graduated from the stub to a real endpoint of its own.
+    facebook = client.post("/v1/auth/oauth/facebook")
+    assert facebook.status_code == 400
+    assert "auth/facebook" in facebook.json()["detail"]
 
 
 def test_pending_comments_stay_hidden_and_dashboard_uses_los_angeles(make, client, session):

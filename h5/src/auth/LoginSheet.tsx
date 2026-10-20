@@ -3,6 +3,7 @@ import {
   ApiError,
   authenticateEmail,
   getAuthProviders,
+  loginWithFacebook,
   loginWithGoogle,
   sendEmailCode,
   type AuthProviders,
@@ -11,6 +12,7 @@ import type { Locale } from "../copy";
 import { t } from "../copy";
 import { IconClose } from "../icons";
 import { useAuth } from "./AuthProvider";
+import { facebookAccessToken, prepareFacebookLogin } from "./facebook";
 import { renderGoogleButton } from "./google";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -37,6 +39,9 @@ function messageFor(error: unknown, locale: Locale): string {
       case "network":
         return t(locale, "err_network");
     }
+    // Every rejection the Facebook verifier produces starts with "facebook";
+    // to the viewer it just means the button is not usable right now.
+    if (error.message.includes("facebook")) return t(locale, "err_facebook");
     if (error.status === 0) return t(locale, "err_network");
   }
   return t(locale, "err_generic");
@@ -61,11 +66,12 @@ function LoginForm({
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
   const [digits, setDigits] = useState<string[]>(() => Array.from({ length: CODE_LENGTH }, () => ""));
-  const [busy, setBusy] = useState<"idle" | "sending" | "verifying" | "google">("idle");
+  const [busy, setBusy] = useState<"idle" | "sending" | "verifying" | "google" | "facebook">("idle");
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const [providers, setProviders] = useState<AuthProviders | null>(null);
   const [googleFailed, setGoogleFailed] = useState(false);
+  const [facebookFailed, setFacebookFailed] = useState(false);
   const googleHost = useRef<HTMLDivElement | null>(null);
   const boxes = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -76,7 +82,13 @@ function LoginForm({
         if (alive) setProviders(data);
       })
       .catch(() => {
-        if (alive) setProviders({ email: { enabled: true }, google: { enabled: false, client_id: null } });
+        if (alive) {
+          setProviders({
+            email: { enabled: true },
+            google: { enabled: false, client_id: null },
+            facebook: { enabled: false, app_id: null },
+          });
+        }
       });
     return () => {
       alive = false;
@@ -90,6 +102,41 @@ function LoginForm({
   }, [cooldown]);
 
   const googleReady = Boolean(providers?.google.enabled && providers.google.client_id && !googleFailed);
+
+  const facebookAppId = providers?.facebook?.enabled ? providers.facebook.app_id : null;
+  const facebookVisible = Boolean(facebookAppId && !facebookFailed);
+  const [facebookSdkReady, setFacebookSdkReady] = useState(false);
+
+  // The SDK is loaded and initialised while the sheet sits idle: `FB.login`
+  // has to run inside the click itself or the popup is blocked.
+  useEffect(() => {
+    if (!facebookAppId) return;
+    let alive = true;
+    prepareFacebookLogin(facebookAppId)
+      .then(() => {
+        if (alive) setFacebookSdkReady(true);
+      })
+      .catch(() => {
+        if (alive) setFacebookFailed(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [facebookAppId]);
+
+  const signInWithFacebook = () => {
+    setBusy("facebook");
+    setError(null);
+    facebookAccessToken()
+      .then((accessToken) => {
+        if (!accessToken) return undefined; // Dialog dismissed.
+        return loginWithFacebook(accessToken).then((session) => onToken(session.token));
+      })
+      .catch((err) => {
+        setError(err instanceof ApiError ? messageFor(err, locale) : t(locale, "err_facebook"));
+      })
+      .finally(() => setBusy("idle"));
+  };
 
   useEffect(() => {
     if (!googleReady || step !== "email" || !googleHost.current || !providers?.google.client_id) return;
@@ -213,10 +260,31 @@ function LoginForm({
                 {busy === "sending" ? t(locale, "sending") : t(locale, "send_code")}
               </button>
 
-              {googleReady && (
+              {(googleReady || facebookVisible) && (
                 <>
                   <div className="auth-divider"><span>{t(locale, "or")}</span></div>
-                  <div className="auth-google" ref={googleHost} data-testid="google-slot" />
+                  <div className="auth-oauth">
+                    {facebookVisible && (
+                      <button
+                        type="button"
+                        className="auth-fb"
+                        onClick={signInWithFacebook}
+                        disabled={disabled || !facebookSdkReady}
+                        data-testid="facebook-button"
+                      >
+                        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                          <path
+                            d="M13.5 21v-7h2.4l.4-2.8h-2.8V9.4c0-.8.2-1.4 1.4-1.4h1.5V5.5c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.8v2H8.1V14h2.4v7h3z"
+                            fill="currentColor"
+                          />
+                        </svg>
+                        {busy === "facebook" ? t(locale, "verifying") : t(locale, "continue_facebook")}
+                      </button>
+                    )}
+                    {googleReady && (
+                      <div className="auth-google" ref={googleHost} data-testid="google-slot" />
+                    )}
+                  </div>
                   {busy === "google" && <p className="auth-hint center-text">{t(locale, "verifying")}</p>}
                 </>
               )}

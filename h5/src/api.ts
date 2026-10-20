@@ -101,6 +101,8 @@ export function postJson<T>(path: string, body: unknown): Promise<T> {
 export interface AuthProviders {
   email: { enabled: boolean };
   google: { enabled: boolean; client_id: string | null };
+  /** Absent on deployments built before Facebook sign-in existed. */
+  facebook?: { enabled: boolean; app_id: string | null };
 }
 
 export interface MeProfile {
@@ -148,6 +150,11 @@ export function authenticateEmail(email: string, code: string): Promise<Session>
 
 export function loginWithGoogle(idToken: string): Promise<Session> {
   return postJson<Session>("/v1/auth/google", { id_token: idToken });
+}
+
+/** The H5 SDK only hands over an opaque token; the backend asks Graph who it is. */
+export function loginWithFacebook(accessToken: string): Promise<Session> {
+  return postJson<Session>("/v1/auth/facebook", { access_token: accessToken });
 }
 
 export function getMe(): Promise<MeProfile> {

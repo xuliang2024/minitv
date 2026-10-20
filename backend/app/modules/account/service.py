@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.account.facebook import FacebookAuthError, verify as verify_facebook
 from app.modules.account.google import GoogleAuthError, GoogleIdentity, verify_id_token
 from app.modules.account.mail import MailError, send_email
 from app.modules.account.models import ThirdPartyIdentity, User, VerificationCode
@@ -323,36 +324,92 @@ def login_with_google(session: Session, *, id_token: str) -> tuple[User, str, bo
 
 
 def link_google_identity(session: Session, identity: GoogleIdentity) -> tuple[User, str, bool]:
+    return _link_identity(
+        session,
+        provider="google",
+        subject=identity.subject,
+        email=identity.email,
+        name=identity.name,
+        picture=identity.picture,
+    )
+
+
+def login_with_facebook(
+    session: Session, *, access_token: str | None = None, id_token: str | None = None
+) -> tuple[User, str, bool]:
+    """Sign in with Facebook, creating the account on first use.
+
+    Limited Login hands over a signed id_token; the Android and H5 SDKs hand
+    over an opaque access token that is verified against the Graph API first.
+    """
+    try:
+        identity = verify_facebook(access_token=access_token, id_token=id_token)
+    except FacebookAuthError as exc:
+        raise AccountError(401, str(exc)) from exc
+    return _link_identity(
+        session,
+        provider="facebook",
+        subject=identity.subject,
+        email=identity.email,
+        name=identity.name,
+        picture=identity.picture,
+        merge_by_email=_facebook_links_by_email(),
+    )
+
+
+def _facebook_links_by_email() -> bool:
+    """Whether a Facebook sign-in may land on an account that already exists.
+
+    Facebook only returns an address the user has confirmed, so the default
+    matches Google's behaviour: one person, one wallet. A deployment that would
+    rather never merge on a third party's word can set
+    ``FACEBOOK_LINK_BY_EMAIL=0`` — a Facebook user who already signed up with a
+    code then gets a second, separate account instead.
+    """
+    return os.environ.get("FACEBOOK_LINK_BY_EMAIL", "1").strip() != "0"
+
+
+def _link_identity(
+    session: Session,
+    *,
+    provider: str,
+    subject: str,
+    email: str | None,
+    name: str,
+    picture: str,
+    merge_by_email: bool = True,
+) -> tuple[User, str, bool]:
+    """Attach a provider subject to a user, creating the user if needed."""
     linked = session.scalar(
         select(ThirdPartyIdentity).where(
-            ThirdPartyIdentity.provider == "google",
-            ThirdPartyIdentity.provider_user_id == identity.subject,
+            ThirdPartyIdentity.provider == provider,
+            ThirdPartyIdentity.provider_user_id == subject,
         )
     )
     created = False
     if linked is not None:
         user = session.get(User, linked.user_id)
         if user is None:
-            raise AccountError(401, "google account is not linked")
-        if identity.email and user.email is None:
-            taken = session.scalar(select(User).where(User.email == identity.email))
+            raise AccountError(401, f"{provider} account is not linked")
+        if email and user.email is None:
+            taken = session.scalar(select(User).where(User.email == email))
             if taken is None:
-                user.email = identity.email
+                user.email = email
     else:
-        user = session.scalar(select(User).where(User.email == identity.email)) if identity.email else None
+        user = session.scalar(select(User).where(User.email == email)) if email else None
+        if user is not None and not merge_by_email:
+            # The address already belongs to someone who signed up another way.
+            # Keep the two accounts apart; the unique index forbids reusing it.
+            user = None
+            email = None
         if user is None:
-            user = _new_user(
-                session,
-                email=identity.email,
-                display_name=identity.name,
-                avatar_url=identity.picture,
-            )
+            user = _new_user(session, email=email, display_name=name, avatar_url=picture)
             created = True
-        session.add(ThirdPartyIdentity(user_id=user.id, provider="google", provider_user_id=identity.subject))
-    if identity.name and not user.display_name:
-        user.display_name = identity.name
-    if identity.picture and not user.avatar_url:
-        user.avatar_url = identity.picture
+        session.add(ThirdPartyIdentity(user_id=user.id, provider=provider, provider_user_id=subject))
+    if name and not user.display_name:
+        user.display_name = name
+    if picture and not user.avatar_url:
+        user.avatar_url = picture
     token = _issue_session(user)
     session.commit()
     return user, token, created
@@ -368,8 +425,10 @@ def resolve_user(session: Session, token: str | None) -> User | None:
 
 
 def oauth_login(session: Session, *, provider: str) -> None:
-    if provider == "google":
-        raise AccountError(400, "use /v1/auth/google")
+    if provider in ("google", "facebook"):
+        # Both have a real endpoint of their own; the generic stub only exists
+        # for providers that were never implemented.
+        raise AccountError(400, f"use /v1/auth/{provider}")
     flag = os.environ.get(f"OAUTH_{provider.upper()}_ENABLED", "")
     if flag != "1":
         raise AccountError(501, f"{provider} is not configured")
