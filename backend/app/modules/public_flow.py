@@ -198,8 +198,21 @@ def auth_providers():
     The client hides anything that is off instead of rendering a button that
     cannot work. The Google client id is served from the environment so a new
     origin does not need an H5 rebuild.
+
+    Only the browser client is published here: the H5 build renders Google's
+    GIS button with it, and the Flutter app reuses it as Android's
+    `serverClientId`. iOS mints its own audience from the iOS client baked into
+    the app, which the backend accepts through `GOOGLE_CLIENT_IDS`.
     """
-    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    client_id = next(
+        (
+            item.strip()
+            for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_IDS")
+            for item in os.environ.get(name, "").split(",")
+            if item.strip()
+        ),
+        "",
+    )
     return {
         "email": {"enabled": True},
         "google": {"enabled": bool(client_id), "client_id": client_id or None},

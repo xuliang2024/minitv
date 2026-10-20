@@ -33,14 +33,26 @@ class GoogleIdentity:
 
 
 def configured() -> bool:
-    return bool(os.environ.get("GOOGLE_CLIENT_ID", "").strip())
+    return any(os.environ.get(name, "").strip() for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_IDS"))
 
 
-def _audience() -> str:
-    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
-    if not client_id:
+def _audiences() -> list[str]:
+    """Every client id allowed to mint a token for this backend.
+
+    The web client is what the H5 build signs in with; iOS mints its own
+    audience from the iOS client, and Android reuses the web one through
+    `serverClientId`. Both envs are read so an existing deployment keeps
+    working when only the comma separated list is populated.
+    """
+    audiences: list[str] = []
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_IDS"):
+        for item in os.environ.get(name, "").split(","):
+            client_id = item.strip()
+            if client_id and client_id not in audiences:
+                audiences.append(client_id)
+    if not audiences:
         raise GoogleAuthError("google is not configured")
-    return client_id
+    return audiences
 
 
 def _certs() -> list[dict]:
@@ -76,7 +88,7 @@ def verify_id_token(token: str) -> GoogleIdentity:
     import jwt
     from jwt import PyJWK
 
-    audience = _audience()
+    audiences = _audiences()
     try:
         header = jwt.get_unverified_header(token)
         key = next(item for item in _certs() if item.get("kid") == header.get("kid"))
@@ -84,7 +96,7 @@ def verify_id_token(token: str) -> GoogleIdentity:
             token,
             PyJWK(key).key,
             algorithms=["RS256"],
-            audience=audience,
+            audience=audiences,
             issuer=GOOGLE_ISSUERS,
         )
     except StopIteration as exc:
