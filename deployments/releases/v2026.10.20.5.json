@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.20.5",
+  "target": "server",
+  "status": "published",
+  "sha": "a636fdec31abeb6e9a608c55970b275c923fbd6c",
+  "short_sha": "a636fdec",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-20T20:54:06+08:00",
+  "finished_at": "2026-10-20T20:54:24+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 35584,
+    "agent_session": null,
+    "cwd": "/private/tmp/deploy-membership"
+  },
+  "note": "用户管理：会员开通/取消（接口 + 列表读数修正）",
+  "dirty": false
+}
