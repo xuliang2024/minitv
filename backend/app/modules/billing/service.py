@@ -347,6 +347,261 @@ def cancel_subscription(session: Session, user_id: int) -> None:
     session.commit()
 
 
+# ------------------------------------------------- admin membership ops
+#
+# Support needs to hand out and take back membership without going through
+# Stripe. Entitlement is read from exactly one place — an `active` row whose
+# `max(current_period_end, pass_end)` is still in the future (see
+# `access_until`) — so these helpers only move those two windows and never
+# touch entitlements, orders or Stripe prices.
+
+MAX_GRANT_DAYS = 3650
+GRANT_MODES = ("extend", "restart")
+REVOKE_MODES = ("now", "period_end")
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def active_subscription(session: Session, user_id: int, *, for_update: bool = False) -> Subscription | None:
+    stmt = select(Subscription).where(
+        Subscription.user_id == user_id,
+        Subscription.status == "active",
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    return session.scalar(stmt)
+
+
+def _window_base(row: Subscription) -> datetime:
+    """Where a granted period starts when it is *stacked* on what is left."""
+    candidates = [end for end in (_as_aware(row.pass_end), _as_aware(row.current_period_end)) if end]
+    return max([_now()] + candidates)
+
+
+def _describe(sub: Subscription, plan: Plan) -> dict:
+    return {
+        "id": sub.id,
+        "plan_code": plan.code,
+        "plan_name": plan.name_zh or plan.name_en,
+        "status": sub.status,
+        "start": sub.current_period_start.isoformat(),
+        "end": sub.current_period_end.isoformat(),
+        "pass_end": sub.pass_end.isoformat() if sub.pass_end else None,
+        "canceled_at": sub.canceled_at.isoformat() if sub.canceled_at else None,
+        "billing_mode": sub.billing_mode,
+        "source": "subscription" if sub.stripe_subscription_id else "one_time",
+    }
+
+
+def membership_detail(session: Session, user_id: int) -> dict:
+    """What the admin modal shows: identical numbers to `/v1/me.membership`."""
+    membership = active_membership(session, user_id)
+    row = active_subscription(session, user_id)
+    plan = session.get(Plan, row.plan_id) if row is not None else None
+    membership["source"] = None if row is None else ("subscription" if row.stripe_subscription_id else "one_time")
+    membership["plan_name"] = (plan.name_zh or plan.name_en) if plan is not None else None
+    if membership.get("plan_code") is None and plan is not None:
+        # Expired window: still useful for support to see the last plan bought.
+        membership["plan_code"] = plan.code
+    membership["has_stripe_subscription"] = bool(row is not None and row.stripe_subscription_id)
+
+    rows = session.execute(
+        select(Subscription, Plan)
+        .join(Plan, Plan.id == Subscription.plan_id)
+        .where(Subscription.user_id == user_id)
+        .order_by(Subscription.id.desc())
+        .limit(6)
+    ).all()
+    membership["history"] = [_describe(sub, plan_row) for sub, plan_row in rows]
+
+    last = session.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.target_type == "user",
+            AuditLog.target_id == user_id,
+            AuditLog.action.in_(("membership_grant", "membership_revoke")),
+        )
+        .order_by(AuditLog.id.desc())
+    )
+    membership["last_adjust"] = (
+        None
+        if last is None
+        else {
+            "action": last.action,
+            "actor_id": last.actor_id,
+            "at": last.created_at.isoformat(),
+            "payload": last.payload,
+        }
+    )
+    return membership
+
+
+def grant_membership(
+    session: Session,
+    *,
+    user_id: int,
+    plan_code: str,
+    days: int | None,
+    mode: str,
+    reason: str,
+    actor_id: int,
+) -> dict:
+    """Give a user time, the same way a purchased pass would be stacked."""
+    if mode not in GRANT_MODES:
+        raise BillingError(422, "unknown grant mode")
+    plan = session.scalar(select(Plan).where(Plan.code == plan_code, Plan.status == "active"))
+    if plan is None:
+        raise BillingError(404, "plan not found")
+    version = _latest_version(session, plan)
+    length = PLAN_DAYS.get(plan_code, 30) if days is None else int(days)
+    if length < 1 or length > MAX_GRANT_DAYS:
+        raise BillingError(422, f"天数需在 1–{MAX_GRANT_DAYS} 之间")
+    reason = (reason or "").strip()
+    if not reason:
+        raise BillingError(422, "请填写调整原因")
+
+    before_until = access_until(session, user_id)
+    row = active_subscription(session, user_id, for_update=True)
+    if mode == "restart" and row is not None and row.stripe_subscription_id:
+        # We cannot move Stripe's billing period, so "restart" would silently
+        # leave the subscription window in place.
+        raise BillingError(409, "该用户有自动续费订阅，请改用「顺延」")
+
+    if row is None:
+        row = Subscription(
+            user_id=user_id,
+            plan_id=plan.id,
+            plan_version_id=version.id,
+            status="active",
+            current_period_start=_now(),
+            current_period_end=_now(),
+            billing_mode="one_time",
+        )
+        session.add(row)
+        session.flush()
+
+    base = _window_base(row) if mode == "extend" else _now()
+    row.pass_end = base + timedelta(days=length)
+    if not row.stripe_subscription_id:
+        # Stripe-owned rows keep their plan: the webhook re-derives it from the
+        # price and would overwrite us on the next update anyway.
+        row.plan_id = plan.id
+        row.plan_version_id = version.id
+
+    session.add(
+        AuditLog(
+            actor_type="admin",
+            actor_id=actor_id,
+            action="membership_grant",
+            target_type="user",
+            target_id=user_id,
+            payload={
+                "plan_code": plan_code,
+                "days": length,
+                "mode": mode,
+                "reason": reason,
+                "before_until": before_until.isoformat() if before_until else None,
+                "after_until": row.pass_end.isoformat(),
+            },
+        )
+    )
+    session.commit()
+    return {
+        "before_until": before_until.isoformat() if before_until else None,
+        "after_until": row.pass_end.isoformat(),
+        "added_days": length,
+        "plan_code": plan_code,
+        "mode": mode,
+    }
+
+
+def revoke_membership(
+    session: Session,
+    *,
+    user_id: int,
+    mode: str,
+    reason: str,
+    actor_id: int,
+) -> dict:
+    """Take membership back. Stripe is always told *before* the local row moves."""
+    if mode not in REVOKE_MODES:
+        raise BillingError(422, "unknown revoke mode")
+    reason = (reason or "").strip()
+    if not reason:
+        raise BillingError(422, "请填写取消原因")
+
+    row = active_subscription(session, user_id, for_update=True)
+    now = _now()
+    before_until = access_until(session, user_id)
+    if row is None or before_until is None:
+        raise BillingError(409, "该用户当前没有有效会员")
+
+    stripe_id = row.stripe_subscription_id
+    if mode == "period_end":
+        if not stripe_id:
+            raise BillingError(409, "时长包没有续费概念，请选择「立即收回」")
+        # Access continues to current_period_end; canceled_at only marks
+        # "will not renew". A failure here raises 502 and leaves the row alone.
+        _stripe_request(f"/subscriptions/{stripe_id}", {"cancel_at_period_end": "true"}, method="POST")
+        row.canceled_at = now
+        session.add(
+            AuditLog(
+                actor_type="admin",
+                actor_id=actor_id,
+                action="membership_revoke",
+                target_type="user",
+                target_id=user_id,
+                payload={
+                    "mode": mode,
+                    "reason": reason,
+                    "before_until": before_until.isoformat(),
+                    "after_until": before_until.isoformat(),
+                    "stripe_canceled": True,
+                },
+            )
+        )
+        session.commit()
+        return {
+            "mode": mode,
+            "before_until": before_until.isoformat(),
+            "after_until": before_until.isoformat(),
+            "stripe_canceled": True,
+        }
+
+    if stripe_id:
+        # Immediate stop: no proration refund, the money side stays manual.
+        _stripe_request(f"/subscriptions/{stripe_id}", method="DELETE")
+    row.pass_end = now
+    row.current_period_end = now
+    row.canceled_at = now
+    row.status = "canceled"
+    session.add(
+        AuditLog(
+            actor_type="admin",
+            actor_id=actor_id,
+            action="membership_revoke",
+            target_type="user",
+            target_id=user_id,
+            payload={
+                "mode": mode,
+                "reason": reason,
+                "before_until": before_until.isoformat(),
+                "after_until": now.isoformat(),
+                "stripe_canceled": bool(stripe_id),
+            },
+        )
+    )
+    session.commit()
+    return {
+        "mode": mode,
+        "before_until": before_until.isoformat(),
+        "after_until": now.isoformat(),
+        "stripe_canceled": bool(stripe_id),
+    }
+
+
 # --------------------------------------------------------------- stripe
 
 
@@ -404,7 +659,8 @@ def plan_code_for_price(price_id: str | None, fallback: str | None = None) -> st
 def _stripe_request(path: str, data: dict | None = None, method: str = "POST") -> dict:
     """Minimal Stripe REST call. Only the handful of fields we need."""
     payload = urllib.parse.urlencode(data, doseq=True).encode() if data else None
-    if payload is None:
+    # A body-less POST is a GET; an explicit DELETE must stay a DELETE.
+    if payload is None and method == "POST":
         method = "GET"
     request = urllib.request.Request(f"{STRIPE_API}{path}", data=payload, method=method)
     request.add_header("Authorization", f"Bearer {stripe_secret()}")

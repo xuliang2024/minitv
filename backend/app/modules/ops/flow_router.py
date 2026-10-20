@@ -23,15 +23,18 @@ from app.modules.account.service import (
     save_reward_config,
 )
 from app.modules.analytics.service import dashboard as build_dashboard
-from app.modules.billing.models import Order, Plan, PlanVersion, Subscription
+from app.modules.billing.models import Order, Plan, PlanVersion
 from app.modules.billing.service import (
     BillingError,
     active_membership,
     billing_mode,
     change_price,
     get_billing_settings,
+    grant_membership as billing_grant_membership,
     list_current_plans,
+    membership_detail as billing_membership_detail,
     provision_prices_for_mode,
+    revoke_membership as billing_revoke_membership,
     set_billing_mode,
 )
 from app.modules.common import bunny
@@ -1769,7 +1772,11 @@ def list_users(q: str | None = None, db: Session = Depends(get_db), user: AdminU
     items = []
     for row in rows:
         wallet = db.get(WalletAccount, row.id)
-        sub = db.scalar(select(Subscription).where(Subscription.user_id == row.id, Subscription.status == "active"))
+        # Read the entitlement the same way playback does. Looking at the
+        # subscription row directly reported `current_period_end`, which for a
+        # one-time pass is just the purchase moment — the real expiry lives in
+        # `pass_end`, so the column showed "valid until <a past date>".
+        membership = active_membership(db, row.id)
         items.append(
             {
                 "id": row.id,
@@ -1782,8 +1789,10 @@ def list_users(q: str | None = None, db: Session = Depends(get_db), user: AdminU
                 "region": row.region,
                 "locale": row.locale,
                 "coins": 0 if wallet is None else wallet.balance,
-                "member": sub is not None,
-                "member_until": None if sub is None else sub.current_period_end.isoformat(),
+                "member": membership["active"],
+                "member_until": membership["until"],
+                "canceling": membership["canceling"],
+                "billing_mode": membership["billing_mode"],
                 "created_at": row.created_at.isoformat(),
             }
         )
@@ -1894,6 +1903,93 @@ def adjust(user_id: int, body: AdjustIn, db: Session = Depends(get_db), actor: A
     )
     db.commit()
     return {"before": before, "delta": body.delta, "after": after}
+
+
+class MembershipGrantIn(BaseModel):
+    plan_code: str
+    days: int | None = Field(default=None, ge=1, le=3650)
+    # extend = stack on what is left; restart = count from today (burns the rest)
+    mode: str = "extend"
+    reason: str = ""
+
+
+class MembershipRevokeIn(BaseModel):
+    # now = lose access immediately; period_end = keep access, stop renewing
+    mode: str = "now"
+    reason: str = ""
+
+
+@router.get("/users/{user_id}/membership")
+def user_membership(
+    user_id: int,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_admin),
+):
+    """会员详情：真实到期时间、来源、最近 6 条记录与上一次后台调整。"""
+    account = db.get(User, user_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    payload = billing_membership_detail(db, user_id)
+    payload["user"] = {
+        "id": account.id,
+        "public_id": account.public_id,
+        "display_name": account.display_name,
+        "email": account.email,
+    }
+    last = payload.get("last_adjust")
+    if last and last.get("actor_id"):
+        staff = db.get(AdminUser, last["actor_id"])
+        if staff is not None:
+            last["actor_name"] = staff.display_name or staff.username
+    return payload
+
+
+@router.post("/users/{user_id}/membership")
+def grant_user_membership(
+    user_id: int,
+    body: MembershipGrantIn,
+    db: Session = Depends(get_db),
+    actor: AdminUser = Depends(require_admin_role),
+):
+    """后台开通 / 续期：只叠 `pass_end`，不建订单、不碰 Stripe 价格。"""
+    if db.get(User, user_id) is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    try:
+        return billing_grant_membership(
+            db,
+            user_id=user_id,
+            plan_code=body.plan_code,
+            days=body.days,
+            mode=body.mode,
+            reason=body.reason,
+            actor_id=actor.id,
+        )
+    except BillingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.delete("/users/{user_id}/membership")
+def revoke_user_membership(
+    user_id: int,
+    body: MembershipRevokeIn,
+    db: Session = Depends(get_db),
+    actor: AdminUser = Depends(require_admin_role),
+):
+    """后台取消：Stripe 订阅先打远程，成功后本地两个时间窗一起收回。"""
+    if db.get(User, user_id) is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    try:
+        return billing_revoke_membership(
+            db,
+            user_id=user_id,
+            mode=body.mode,
+            reason=body.reason,
+            actor_id=actor.id,
+        )
+    except BillingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 ORDER_STATUSES = ("created", "paid", "failed", "refunded")

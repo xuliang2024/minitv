@@ -5,6 +5,7 @@ import {
   Avatar,
   Button,
   Card,
+  Checkbox,
   Col,
   Descriptions,
   Drawer,
@@ -860,6 +861,10 @@ type AdminUserRow = {
   coins: number;
   member: boolean;
   member_until?: string | null;
+  /** 订阅已设为到期不续费（Stripe cancel_at_period_end）。 */
+  canceling?: boolean;
+  /** 当前生效窗口的类型：subscription 自动续费 / one_time 时长包。 */
+  billing_mode?: string | null;
   created_at: string;
 };
 
@@ -1070,8 +1075,328 @@ function UserEditModal({ user, onClose, onSaved }: { user: AdminUserRow; onClose
         <Form.Item name="bio" label="简介">
           <Input.TextArea rows={3} maxLength={500} showCount placeholder="用户自我介绍" />
         </Form.Item>
-        <Typography.Text type="secondary">用户 ID / 金币 / 会员状态不能在此修改；金币请使用「调账」。</Typography.Text>
+        <Typography.Text type="secondary">用户 ID / 金币 / 会员状态不能在此修改；金币请使用「调账」，会员请使用「会员」。</Typography.Text>
       </Form>
+    </Modal>
+  );
+}
+
+type MembershipDetail = {
+  active: boolean;
+  plan_code: string | null;
+  plan_name?: string | null;
+  until: string | null;
+  subscription_until: string | null;
+  pass_until: string | null;
+  canceling: boolean;
+  billing_mode: string | null;
+  source: "subscription" | "one_time" | null;
+  has_stripe_subscription: boolean;
+  user: { id: number; public_id?: string | null; display_name: string; email?: string | null };
+  history: {
+    id: number;
+    plan_code: string;
+    plan_name: string;
+    status: string;
+    start: string;
+    end: string;
+    pass_end: string | null;
+    canceled_at: string | null;
+    billing_mode: string;
+    source: string;
+  }[];
+  last_adjust: {
+    action: string;
+    actor_id: number | null;
+    actor_name?: string;
+    at: string;
+    payload: any;
+  } | null;
+};
+
+const PLAN_DAYS: Record<string, number> = { weekly: 7, monthly: 30, yearly: 365 };
+
+/** 与后端一致：续期从 `max(now, 当前到期)` 起算，「重算」从今天起算。 */
+function previewExpiry(detail: MembershipDetail | null, days: number, mode: string): Date {
+  const now = new Date();
+  const live = detail?.active && detail.until ? new Date(detail.until) : null;
+  const base = mode === "extend" && live && live.getTime() > now.getTime() ? live : now;
+  return new Date(base.getTime() + Math.max(0, days || 0) * 86400000);
+}
+
+/** 行内「会员」弹窗：真实状态 + 开通/续期 + 取消会员。 */
+function MembershipModal({ user, onClose, onSaved }: { user: AdminUserRow; onClose: () => void; onSaved: (text: string) => void }) {
+  const isAdmin = useIsAdmin();
+  const [detail, setDetail] = useState<MembershipDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [granting, setGranting] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [showRevoke, setShowRevoke] = useState(false);
+  const [form] = Form.useForm<{ plan_code: string; days: number; mode: "extend" | "restart"; reason: string }>();
+  const [revokeForm] = Form.useForm<{ mode: "now" | "period_end"; reason: string }>();
+  const { data: plans } = useLoad<{ items: PlanItem[] }>("/admin/v1/plans", { items: [] });
+
+  const planCode = Form.useWatch("plan_code", form) ?? "monthly";
+  const days = Form.useWatch("days", form);
+  const mode = Form.useWatch("mode", form) ?? "extend";
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api<MembershipDetail>(`/admin/v1/users/${user.id}/membership`)
+      .then((value) => {
+        if (alive) setDetail(value);
+      })
+      .catch((e) => message.error(errorText(e)))
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user.id]);
+
+  // 换套餐时把天数带成该套餐的默认值；手改过的天数只在换套餐时被重置。
+  useEffect(() => {
+    form.setFieldValue("days", PLAN_DAYS[planCode] ?? 30);
+  }, [planCode, form]);
+
+  const planOptions = plans.items.length
+    ? plans.items.map((item) => ({
+        code: item.code,
+        label: `${item.name_zh || item.name_en} · ${PLAN_DAYS[item.code] ?? "?"} 天`,
+      }))
+    : Object.keys(PLAN_DAYS).map((code) => ({ code, label: `${code} · ${PLAN_DAYS[code]} 天` }));
+
+  const remainDays =
+    detail?.active && detail.until
+      ? Math.max(0, Math.ceil((new Date(detail.until).getTime() - Date.now()) / 86400000))
+      : 0;
+  const after = previewExpiry(detail, typeof days === "number" ? days : 0, mode);
+  const overwrite = mode === "restart" && remainDays > 0;
+
+  const submitGrant = async () => {
+    const values = await form.validateFields().catch(() => null);
+    if (!values) return;
+    setGranting(true);
+    try {
+      const res = await api<{ after_until: string; added_days: number }>(`/admin/v1/users/${user.id}/membership`, {
+        method: "POST",
+        body: JSON.stringify({
+          plan_code: values.plan_code,
+          days: values.days,
+          mode: values.mode,
+          reason: values.reason.trim(),
+        }),
+      });
+      onSaved(`已开通 ${res.added_days} 天，到期 ${formatTime(res.after_until)}`);
+    } catch (e: any) {
+      message.error(errorText(e));
+      setGranting(false);
+    }
+  };
+
+  const submitRevoke = async () => {
+    const values = await revokeForm.validateFields().catch(() => null);
+    if (!values) return;
+    setRevoking(true);
+    try {
+      const res = await api<{ mode: string; after_until: string }>(`/admin/v1/users/${user.id}/membership`, {
+        method: "DELETE",
+        body: JSON.stringify({ mode: values.mode, reason: values.reason.trim() }),
+      });
+      onSaved(
+        res.mode === "now" ? "已立即收回会员权益" : `已设为到期不续费，权益保留至 ${formatTime(res.after_until)}`,
+      );
+    } catch (e: any) {
+      message.error(errorText(e));
+      setRevoking(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title={`会员 · ${user.display_name}`}
+      width={560}
+      onCancel={onClose}
+      footer={<Button onClick={onClose}>关闭</Button>}
+      styles={{ body: { maxHeight: "calc(100vh - 200px)", overflowY: "auto", paddingRight: 4 } }}
+    >
+      {loading ? (
+        <Skeleton active paragraph={{ rows: 5 }} />
+      ) : !detail ? (
+        <Alert type="error" showIcon message="会员信息加载失败，请关闭后重试" />
+      ) : (
+        <Space direction="vertical" size={14} style={{ width: "100%" }}>
+          <Card size="small" style={{ background: "#fafafa" }} styles={{ body: { padding: 12 } }}>
+            <Space direction="vertical" size={6} style={{ width: "100%" }}>
+              <Space size={8} wrap>
+                <Tag
+                  color={detail.active ? (detail.canceling ? "orange" : "green") : "default"}
+                  style={{ marginInlineEnd: 0 }}
+                >
+                  {detail.active ? (detail.canceling ? "到期不续" : "有效") : "无"}
+                </Tag>
+                <Typography.Text>
+                  {detail.until ? `至 ${formatTime(detail.until)}` : "未开通会员"}
+                </Typography.Text>
+                {detail.active && detail.source ? (
+                  <Tag style={{ marginInlineEnd: 0 }}>
+                    {detail.source === "subscription" ? "订阅" : "时长包"}
+                  </Tag>
+                ) : null}
+                {detail.plan_name ? <Typography.Text type="secondary">{detail.plan_name}</Typography.Text> : null}
+              </Space>
+              {detail.active && detail.has_stripe_subscription ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  订阅周期至 {formatTime(detail.subscription_until)}
+                  {detail.pass_until ? ` · 时长包至 ${formatTime(detail.pass_until)}` : ""}
+                </Typography.Text>
+              ) : null}
+              {detail.last_adjust ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  最近后台调整：
+                  {detail.last_adjust.actor_name || `#${detail.last_adjust.actor_id}`} ·{" "}
+                  {formatTime(detail.last_adjust.at)} ·{" "}
+                  {detail.last_adjust.action === "membership_grant"
+                    ? `赠送 ${detail.last_adjust.payload?.days ?? "?"} 天（${detail.last_adjust.payload?.reason ?? "-"}）`
+                    : `取消会员（${detail.last_adjust.payload?.reason ?? "-"}）`}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          </Card>
+
+          {!isAdmin ? (
+            <Alert type="info" showIcon message="仅管理员可调整会员，当前账号只读。" />
+          ) : (
+            <>
+              <Form
+                form={form}
+                layout="vertical"
+                initialValues={{ plan_code: "monthly", days: 30, mode: "extend", reason: "" }}
+                onFinish={submitGrant}
+              >
+                <Form.Item name="plan_code" label="套餐">
+                  <Radio.Group optionType="button" buttonStyle="solid">
+                    {planOptions.map((item) => (
+                      <Radio.Button key={item.code} value={item.code}>
+                        {item.label}
+                      </Radio.Button>
+                    ))}
+                  </Radio.Group>
+                </Form.Item>
+                <Row gutter={16}>
+                  <Col span={8}>
+                    <Form.Item
+                      name="days"
+                      label="时长（天）"
+                      rules={[
+                        { required: true, message: "请输入天数" },
+                        { type: "number", min: 1, max: 3650, message: "1–3650 天" },
+                      ]}
+                    >
+                      <InputNumber min={1} max={3650} precision={0} style={{ width: "100%" }} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={16}>
+                    <Form.Item name="mode" label="开通方式">
+                      <Radio.Group optionType="button" buttonStyle="solid">
+                        <Radio.Button value="extend">顺延</Radio.Button>
+                        <Radio.Button value="restart">从今天重算</Radio.Button>
+                      </Radio.Group>
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item
+                  name="reason"
+                  label="原因"
+                  rules={[{ required: true, whitespace: true, message: "请填写调整原因" }]}
+                >
+                  <Input maxLength={200} placeholder="如：客诉补偿 / 活动赠送" />
+                </Form.Item>
+                <Alert
+                  type={overwrite ? "warning" : "info"}
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message={
+                    overwrite
+                      ? `将从今天起算，覆盖剩余 ${remainDays} 天 → ${formatTime(after.toISOString())}`
+                      : `到期时间 ${detail.until ? formatTime(detail.until) : "（未开通）"} → ${formatTime(after.toISOString())}`
+                  }
+                />
+                <Button type="primary" htmlType="submit" loading={granting} block>
+                  确认开通
+                </Button>
+              </Form>
+
+              {detail.active ? (
+                <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 12 }}>
+                  {/* 默认折叠：收回权益是低频操作，展开才占版面，也少一次误点。 */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <Typography.Text strong style={{ color: "#cf1322" }}>
+                      危险操作
+                    </Typography.Text>
+                    <Button type="link" size="small" danger onClick={() => setShowRevoke((value) => !value)}>
+                      {showRevoke ? "收起" : "取消会员"}
+                    </Button>
+                  </div>
+                  {showRevoke ? (
+                    <>
+                      <Form
+                        form={revokeForm}
+                        layout="vertical"
+                        style={{ marginTop: 8 }}
+                        initialValues={{ mode: detail.has_stripe_subscription ? "period_end" : "now", reason: "" }}
+                      >
+                        <Form.Item name="mode" label="方式">
+                          <Radio.Group>
+                            <Radio value="now">立即收回（当天失效）</Radio>
+                            <Radio value="period_end" disabled={!detail.has_stripe_subscription}>
+                              到期不续费
+                            </Radio>
+                          </Radio.Group>
+                        </Form.Item>
+                        <Form.Item
+                          name="reason"
+                          label="原因"
+                          rules={[{ required: true, whitespace: true, message: "请填写取消原因" }]}
+                        >
+                          <Input maxLength={200} placeholder="如：误开通 / 退款处理" />
+                        </Form.Item>
+                      </Form>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {detail.has_stripe_subscription
+                          ? "会同步取消 Stripe 自动续费；立即收回不退款，退款需到 Stripe 后台处理。"
+                          : "时长包没有续费概念，只能立即收回；已消耗的时长不退款。"}
+                      </Typography.Text>
+                      <Checkbox
+                        checked={confirmed}
+                        onChange={(e) => setConfirmed(e.target.checked)}
+                        style={{ marginTop: 10, display: "block" }}
+                      >
+                        我确认收回该用户权益
+                      </Checkbox>
+                      <Button
+                        danger
+                        type="primary"
+                        block
+                        style={{ marginTop: 8 }}
+                        disabled={!confirmed}
+                        loading={revoking}
+                        onClick={submitRevoke}
+                      >
+                        确认收回
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </Space>
+      )}
     </Modal>
   );
 }
@@ -1082,6 +1407,7 @@ export function UsersPage() {
   const [query, setQuery] = useState("");
   const [coinTarget, setCoinTarget] = useState<AdminUserRow | null>(null);
   const [editTarget, setEditTarget] = useState<AdminUserRow | null>(null);
+  const [memberTarget, setMemberTarget] = useState<AdminUserRow | null>(null);
   const { data, reload, loading } = useLoad<{ items: AdminUserRow[] }>(
     query ? `/admin/v1/users?q=${encodeURIComponent(query)}` : "/admin/v1/users",
     { items: [] }
@@ -1097,6 +1423,7 @@ export function UsersPage() {
     message.success(text);
     setCoinTarget(null);
     setEditTarget(null);
+    setMemberTarget(null);
     reload();
   };
 
@@ -1126,7 +1453,7 @@ export function UsersPage() {
           dataSource={data.items}
           loading={loading}
           size="middle"
-          scroll={{ x: 900 }}
+          scroll={{ x: 1060 }}
           locale={{ emptyText: query ? `没有匹配「${query}」的用户` : "暂无用户" }}
           pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 位用户` }}
           columns={[
@@ -1152,26 +1479,39 @@ export function UsersPage() {
             {
               title: "会员",
               dataIndex: "member",
-              width: 200,
-              render: (value: boolean, row) =>
-                value ? (
-                  <Space size={6}>
-                    <Tag color="green" style={{ marginInlineEnd: 0 }}>有效</Tag>
-                    {row.member_until ? (
+              width: 230,
+              render: (value: boolean, row) => (
+                <Space size={6} style={{ cursor: "pointer" }} onClick={() => setMemberTarget(row)}>
+                  <Tag
+                    color={value ? (row.canceling ? "orange" : "green") : "default"}
+                    style={{ marginInlineEnd: 0 }}
+                  >
+                    {value ? (row.canceling ? "到期不续" : "有效") : "无"}
+                  </Tag>
+                  {value ? (
+                    <>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                         至 {formatTime(row.member_until)}
                       </Typography.Text>
-                    ) : null}
-                  </Space>
-                ) : (
-                  <Typography.Text type="secondary">无</Typography.Text>
-                ),
+                      {row.billing_mode ? (
+                        <Tag style={{ marginInlineEnd: 0, fontSize: 11 }}>
+                          {row.billing_mode === "subscription" ? "订阅" : "时长包"}
+                        </Tag>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      未开通
+                    </Typography.Text>
+                  )}
+                </Space>
+              ),
             },
             { title: "注册时间", dataIndex: "created_at", width: 160, render: (v: string) => formatTime(v) },
             {
               title: "操作",
               key: "action",
-              width: 140,
+              width: 200,
               fixed: "right",
               render: (_, row) => (
                 <Space size={0}>
@@ -1185,6 +1525,9 @@ export function UsersPage() {
                       编辑
                     </Button>
                   </Tooltip>
+                  <Button type="link" size="small" onClick={() => setMemberTarget(row)}>
+                    {row.member ? "会员" : isAdmin ? "开通" : "会员"}
+                  </Button>
                 </Space>
               ),
             },
@@ -1193,6 +1536,7 @@ export function UsersPage() {
       </Card>
       {coinTarget ? <CoinAdjustModal user={coinTarget} onClose={() => setCoinTarget(null)} onSaved={saved} /> : null}
       {editTarget ? <UserEditModal user={editTarget} onClose={() => setEditTarget(null)} onSaved={saved} /> : null}
+      {memberTarget ? <MembershipModal user={memberTarget} onClose={() => setMemberTarget(null)} onSaved={saved} /> : null}
     </Space>
   );
 }
