@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.20.6",
+  "target": "r2",
+  "status": "published",
+  "sha": "a636fdec31abeb6e9a608c55970b275c923fbd6c",
+  "short_sha": "a636fdec",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.20.6/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "4a1415592b0b0ab4feac8ea45798c46cfa3337f4d5cc3fa5c0bff7c9c7a5a8f7",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-BimNo2zV.js",
+      "size": 1456296
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-20T20:54:37+08:00",
+  "finished_at": "2026-10-20T20:55:22+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 35827,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "用户管理：会员列三态 + 会员设置弹窗（开通/续期/取消）",
+  "dirty": false
+}
