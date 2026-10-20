@@ -1474,16 +1474,7 @@ img { display: block; max-width: 100%; }
   background: #ff4b3e;
   box-shadow: 0 0 8px rgba(255, 75, 62, 0.5);
 }
-.me-gear {
-  width: 32px;
-  height: 32px;
-  border-radius: 16px;
-  display: grid;
-  place-items: center;
-  color: #8c8484;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
+.me-top-actions { display: flex; align-items: center; gap: 8px; }
 
 .me-content { padding-top: 14px; }
 .me-grid { padding: 0 16px; gap: 16px 10px; }
@@ -1682,6 +1673,56 @@ img { display: block; max-width: 100%; }
   color: #8c8484;
 }
 .me-seg button.on { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.me-set-group { margin-bottom: 20px; }
+.me-set-group > h4 {
+  margin: 0 0 8px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+.me-set-list {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+.me-set-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+  font-size: 14px;
+  color: var(--text, #f7f2f3);
+}
+.me-set-list > .me-set-item:last-child { border-bottom: none; }
+.me-set-label { flex: 1; min-width: 0; }
+.me-set-value {
+  max-width: 58%;
+  font-size: 13px;
+  color: var(--muted, #a79ca1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.me-set-chev { display: grid; place-items: center; color: rgba(255, 255, 255, 0.32); }
+.me-signout-body { margin: 0 0 10px; font-size: 13px; line-height: 1.6; color: var(--muted, #a79ca1); }
+.me-signout-email { margin: 0; font-size: 13px; color: var(--text, #f7f2f3); word-break: break-all; }
+.me-signout-confirm { margin-top: 16px; }
+.me-signout-cancel {
+  width: 100%;
+  height: 46px;
+  margin-top: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text, #f7f2f3);
+  font-size: 14px;
+  font-weight: 600;
+}
 .me-signout {
   width: 100%;
   height: 46px;

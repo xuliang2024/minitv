@@ -17,6 +17,7 @@ import {
   IconBell,
   IconBookmark,
   IconCalendarCheck,
+  IconChevronRight,
   IconCoin,
   IconCopy,
   IconGear,
@@ -38,7 +39,7 @@ import { OrdersSheet } from "../ui/OrdersSheet";
 import { toast } from "../ui/toast";
 
 type MeTab = "history" | "favorites" | "likes";
-type SheetId = "edit" | "ledger" | "messages" | "settings" | "premium" | "orders";
+type SheetId = "edit" | "ledger" | "messages" | "settings" | "premium" | "orders" | "signout";
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 const CHECKIN_KEY = "minitv_h5_checkin";
@@ -205,16 +206,27 @@ export function MePage({
     <div className="me-page">
       <div className="me-top">
         <span className="me-top-label">{t(locale, "nav.me")}</span>
-        <button
-          type="button"
-          className="icon-btn me-bell"
-          aria-label={t(locale, "me_messages")}
-          onClick={() => requireAuth(() => setSheet("messages"))}
-          data-testid="me-messages"
-        >
-          <IconBell size={18} />
-          {unread > 0 && <span className="me-dot">{unread > 9 ? "9+" : unread}</span>}
-        </button>
+        <div className="me-top-actions">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t(locale, "me_settings")}
+            onClick={() => setSheet("settings")}
+            data-testid="me-settings"
+          >
+            <IconGear size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn me-bell"
+            aria-label={t(locale, "me_messages")}
+            onClick={() => requireAuth(() => setSheet("messages"))}
+            data-testid="me-messages"
+          >
+            <IconBell size={18} />
+            {unread > 0 && <span className="me-dot">{unread > 9 ? "9+" : unread}</span>}
+          </button>
+        </div>
       </div>
 
       <section className="me-hero">
@@ -381,14 +393,6 @@ export function MePage({
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className="me-gear"
-          aria-label={t(locale, "me_settings")}
-          onClick={() => setSheet("settings")}
-        >
-          <IconGear size={18} />
-        </button>
       </div>
 
       <div className="me-content">
@@ -457,9 +461,19 @@ export function MePage({
         <SettingsSheet
           locale={locale}
           signedIn={!guest}
+          email={user?.email ?? null}
           onLocale={onLocale}
+          onEdit={() => setSheet("edit")}
           onClose={() => setSheet(null)}
-          onSignOut={() => {
+          onSignOut={() => setSheet("signout")}
+        />
+      )}
+      {sheet === "signout" && (
+        <SignOutSheet
+          locale={locale}
+          email={user?.email ?? null}
+          onCancel={() => setSheet("settings")}
+          onConfirm={() => {
             setSheet(null);
             logout();
           }}
@@ -901,43 +915,122 @@ function MessagesSheet({
 function SettingsSheet({
   locale,
   signedIn,
+  email,
   onLocale,
+  onEdit,
   onClose,
   onSignOut,
 }: {
   locale: Locale;
   signedIn: boolean;
+  email: string | null;
   onLocale: (locale: Locale) => void;
+  onEdit: () => void;
   onClose: () => void;
   onSignOut: () => void;
 }) {
   return (
     <Sheet title={t(locale, "me_settings")} onClose={onClose} testId="settings-sheet">
-      <div className="me-set-row">
-        <span>{t(locale, "me_language")}</span>
-        <div className="me-seg">
-          <button
-            type="button"
-            className={locale === "en" ? "on" : ""}
-            onClick={() => onLocale("en")}
-          >
-            English
-          </button>
-          <button
-            type="button"
-            className={locale === "zh" ? "on" : ""}
-            onClick={() => onLocale("zh")}
-          >
-            中文
-          </button>
-        </div>
-      </div>
       {signedIn && (
-        <button type="button" className="me-signout" onClick={onSignOut}>
+        <section className="me-set-group">
+          <h4>{t(locale, "me_set_account")}</h4>
+          <div className="me-set-list">
+            {email && (
+              <div className="me-set-item">
+                <span className="me-set-label">{t(locale, "email_label")}</span>
+                <span className="me-set-value">{email}</span>
+              </div>
+            )}
+            <button
+              type="button"
+              className="me-set-item"
+              onClick={onEdit}
+              data-testid="settings-edit-profile"
+            >
+              <span className="me-set-label">{t(locale, "me_set_edit")}</span>
+              <span className="me-set-chev">
+                <IconChevronRight size={14} />
+              </span>
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section className="me-set-group">
+        <h4>{t(locale, "me_set_prefs")}</h4>
+        <div className="me-set-list">
+          <div className="me-set-item">
+            <span className="me-set-label">{t(locale, "me_language")}</span>
+            <div className="me-seg">
+              <button
+                type="button"
+                className={locale === "en" ? "on" : ""}
+                onClick={() => onLocale("en")}
+              >
+                English
+              </button>
+              <button
+                type="button"
+                className={locale === "zh" ? "on" : ""}
+                onClick={() => onLocale("zh")}
+              >
+                中文
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="me-set-group">
+        <h4>{t(locale, "me_set_about")}</h4>
+        <div className="me-set-list">
+          <div className="me-set-item">
+            <span className="me-set-label">{t(locale, "me_set_version")}</span>
+            <span className="me-set-value">MiniTV · H5</span>
+          </div>
+        </div>
+      </section>
+
+      {signedIn && (
+        <button
+          type="button"
+          className="me-signout"
+          onClick={onSignOut}
+          data-testid="settings-sign-out"
+        >
           {t(locale, "sign_out")}
         </button>
       )}
-      <p className="me-version">MiniTV · H5</p>
+    </Sheet>
+  );
+}
+
+function SignOutSheet({
+  locale,
+  email,
+  onCancel,
+  onConfirm,
+}: {
+  locale: Locale;
+  email: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Sheet title={t(locale, "sign_out_title")} onClose={onCancel} testId="signout-sheet">
+      <p className="me-signout-body">{t(locale, "sign_out_body")}</p>
+      {email && <p className="me-signout-email">{email}</p>}
+      <button
+        type="button"
+        className="auth-primary me-signout-confirm"
+        onClick={onConfirm}
+        data-testid="signout-confirm"
+      >
+        {t(locale, "sign_out")}
+      </button>
+      <button type="button" className="me-signout-cancel" onClick={onCancel}>
+        {t(locale, "sign_out_cancel")}
+      </button>
     </Sheet>
   );
 }
