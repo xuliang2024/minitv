@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.20.1",
+  "target": "server",
+  "status": "published",
+  "sha": "3393ee3aa7677f5d80f0f27b1b3fbdd76f00d4ab",
+  "short_sha": "3393ee3a",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-20T11:19:10+08:00",
+  "finished_at": "2026-10-20T11:19:30+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 19410,
+    "agent_session": null,
+    "cwd": "/private/tmp/minitv-deploy-episodes"
+  },
+  "note": "选集面板区分已看/半看：play payload 增加 completed",
+  "dirty": false
+}
