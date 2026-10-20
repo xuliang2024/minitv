@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.20.3",
+  "target": "server",
+  "status": "published",
+  "sha": "2507c5446efa42e2df9da2033e4731ff8183aba2",
+  "short_sha": "2507c544",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-20T14:25:56+08:00",
+  "finished_at": "2026-10-20T14:26:17+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 98923,
+    "agent_session": null,
+    "cwd": "/private/tmp/deploy-google"
+  },
+  "note": "Google 登录多 audience：iOS/Android client 可换取本站 token",
+  "dirty": false
+}
