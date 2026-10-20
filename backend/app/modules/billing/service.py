@@ -870,6 +870,16 @@ def _upsert_subscription(
     if current is None:
         current = Subscription(user_id=user_id, plan_id=plan.id, plan_version_id=version.id)
         session.add(current)
+    elif (
+        current.status == "canceled"
+        and current.canceled_at is not None
+        and status == "active"
+        and period_start <= _as_aware(current.canceled_at)
+    ):
+        # A late or retried event generated *before* the cancellation must not
+        # resurrect a membership an operator took back (or Stripe already
+        # ended). A renewal that starts after the cancellation still counts.
+        return current
     elif current.plan_id != plan.id:
         current.plan_id = plan.id
         current.plan_version_id = version.id

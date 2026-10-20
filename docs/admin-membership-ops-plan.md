@@ -211,3 +211,5 @@ membership = active_membership(db, row.id)
 `source` 未加列：详情用 `stripe_subscription_id` + `billing_mode` 推 `subscription` / `one_time`，另从 `audit_logs` 取最近一次 `membership_grant` / `membership_revoke` 作为「最近后台调整」，足够客服判断谁在什么时候给过什么。
 
 验证：后端 `pytest` 全量 303 passed；`admin` 的 `tsc --noEmit` + `vite build` 通过；本地 Playwright 走完「开通 30 天 → 列表变有效 → 展开危险区 → 勾选 → 立即收回 → 列表回无」，无 pageerror。
+
+补充（同日）：`_upsert_subscription` 增加了「迟到事件不复活」判断——`status='canceled'` 且 `period_start <= canceled_at` 的 `active` 事件直接忽略。Stripe 会重投事件，一个在收回之前生成的 `customer.subscription.updated` 若晚于收回到达，原本会把权益静默恢复。

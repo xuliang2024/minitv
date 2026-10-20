@@ -8,6 +8,9 @@ list instead of poking at the row directly.
 from __future__ import annotations
 
 import datetime
+import hashlib
+import hmac
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -413,3 +416,69 @@ def test_users_list_uses_the_pass_expiry(session, make, client):
     assert _close(_until(row_payload["member_until"]), now + datetime.timedelta(days=9))
     assert row_payload["billing_mode"] == "one_time"
     assert row_payload["canceling"] is False
+
+
+def _sign(body: bytes, secret: str) -> str:
+    stamp = int(datetime.datetime.now(UTC).timestamp())
+    digest = hmac.new(secret.encode(), f"{stamp}.".encode() + body, hashlib.sha256).hexdigest()
+    return f"t={stamp},v1={digest}"
+
+
+def test_a_late_stripe_event_cannot_resurrect_a_revoke(monkeypatch, session, make, client):
+    """Stripe retries events; one queued before the cancel must stay dead."""
+    secret = "whsec_test_admin"
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", secret)
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_unit")
+    _plans(session)
+    user = make.user(email="resurrect@example.com")
+    row = _subscribe(session, user)
+    headers = _staff(client, make)
+    monkeypatch.setattr(billing, "_stripe_request", lambda *a, **k: {"id": "sub_test_1"})
+
+    revoked = client.request(
+        "DELETE",
+        f"/admin/v1/users/{user.id}/membership",
+        json={"mode": "now", "reason": "误开通"},
+        headers=headers,
+    )
+    assert revoked.status_code == 200, revoked.text
+
+    session.expire_all()
+    assert session.get(Subscription, row.id).status == "canceled"
+
+    start = datetime.datetime.now(UTC) - datetime.timedelta(days=1)
+    end = start + datetime.timedelta(days=30)
+    event = {
+        "type": "customer.subscription.updated",
+        "data": {
+            "object": {
+                "id": "sub_test_1",
+                "customer": "cus_test_1",
+                "status": "active",
+                "metadata": {"user_id": str(user.id), "plan_code": "monthly"},
+                "items": {
+                    "data": [
+                        {
+                            "current_period_start": int(start.timestamp()),
+                            "current_period_end": int(end.timestamp()),
+                            "price": {"id": "price_monthly"},
+                        }
+                    ]
+                },
+            }
+        },
+    }
+    body = json.dumps(event).encode()
+    response = client.post(
+        "/v1/billing/stripe/webhook",
+        content=body,
+        headers={"Stripe-Signature": _sign(body, secret), "User-Agent": "Mozilla/5.0"},
+    )
+    assert response.status_code == 200, response.text
+
+    session.expire_all()
+    assert session.get(Subscription, row.id).status == "canceled"
+    me = client.get(
+        "/v1/me", headers=_user_headers(client, monkeypatch, "resurrect@example.com")
+    ).json()
+    assert me["membership"]["active"] is False
