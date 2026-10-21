@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.21.2",
+  "target": "server",
+  "status": "published",
+  "sha": "a748d9aae55f01ce0118951684e722c5b1d04757",
+  "short_sha": "a748d9aa",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-21T10:14:35+08:00",
+  "finished_at": "2026-10-21T10:14:54+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 79784,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "账号管理后端：staff 接口 + 迁移 b7f2c9d41e03（last_login_at/disable_reason/CHECK）；seed 改为空表才播种（其它会话仅 app/ 与 memory 未提交，backend 干净）",
+  "dirty": true
+}
