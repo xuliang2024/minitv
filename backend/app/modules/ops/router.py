@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.modules.common.models import AuditLog
 from app.modules.content.models import Drama, DramaTag, Episode, Tag
+from app.modules.ops import api_keys as api_key_service
 from app.modules.ops import service as ops_service
 from app.modules.ops.models import (
     CONTENT_WRITER_ROLES,
@@ -34,7 +35,11 @@ router = APIRouter(prefix="/admin/v1", tags=["admin"])
 def _bearer_token(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="missing bearer token")
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "missing_credential", "message": "缺少 Authorization 头"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return auth[len("Bearer "):]
 
 
@@ -49,12 +54,31 @@ def _session_store_503() -> HTTPException:
 
 
 def require_admin(request: Request, db: Session = Depends(get_db)) -> AdminUser:
+    """Accept either a staff session token or an API key.
+
+    API keys are bound to an ``admin_users`` row and resolved into that account,
+    so every downstream dependency (role checks, audit ``actor_id``) keeps
+    working unchanged. The session path is deliberately untouched.
+    """
+    credential = _bearer_token(request)
+    if api_key_service.looks_like_key(credential):
+        user, key = api_key_service.authenticate(
+            db, credential, request.method, request.url.path
+        )
+        # Read back by the event middleware after the response is produced.
+        request.state.api_key_id = key.id
+        request.state.api_key_staff_id = user.id
+        return user
     try:
-        user = ops_service.resolve_session_token(db, _bearer_token(request))
+        user = ops_service.resolve_session_token(db, credential)
     except ops_service.SessionStoreUnavailable as exc:
         raise _session_store_503() from exc
     if user is None:
-        raise HTTPException(status_code=401, detail="invalid or expired session")
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "invalid_session", "message": "会话无效或已过期"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 

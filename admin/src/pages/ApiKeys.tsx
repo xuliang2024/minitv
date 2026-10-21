@@ -1,0 +1,519 @@
+import { useMemo, useState } from "react";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  Modal,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+  message,
+} from "antd";
+import { api, errorText } from "../api";
+import { useConfirm } from "../confirm";
+import { formatTime, useLoad } from "../hooks";
+import { ROLE_LABELS } from "../me";
+
+type KeyState = "active" | "expiring" | "expired" | "revoked";
+
+type KeyRow = {
+  id: number;
+  name: string;
+  user_id: number;
+  username: string | null;
+  display_name: string;
+  key_prefix: string;
+  scopes: string[];
+  state: KeyState;
+  status: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+  revoke_reason: string | null;
+};
+
+type Summary = {
+  active: number;
+  expiring: number;
+  expired: number;
+  revoked: number;
+  total: number;
+};
+
+type StaffRow = { id: number; username: string; display_name: string; role: string; status: string };
+
+const SCOPE_LABELS: Record<string, string> = {
+  read: "读",
+  write: "写",
+  delete: "删除",
+  billing: "财务",
+  staff: "账号",
+};
+
+/** Only the first three are offered here; billing/staff stay admin-session-only. */
+const SCOPE_OPTIONS = [
+  { value: "read", label: "读：查询剧集、分集、上传状态" },
+  { value: "write", label: "写：建剧、改剧、上传、发布" },
+  { value: "delete", label: "删除：删剧（高危）" },
+];
+
+const TTL_OPTIONS = [
+  { value: 30, label: "30 天" },
+  { value: 90, label: "90 天" },
+  { value: 180, label: "180 天" },
+  { value: 365, label: "365 天" },
+  { value: 0, label: "长期（不推荐）" },
+];
+
+const STATE_TAG: Record<KeyState, { color: string; label: string }> = {
+  active: { color: "green", label: "有效" },
+  expiring: { color: "orange", label: "即将到期" },
+  expired: { color: "red", label: "已过期" },
+  revoked: { color: "default", label: "已撤销" },
+};
+
+function scopeText(scopes: string[]): string {
+  if (!scopes.length) return "跟随角色";
+  return scopes.map((scope) => SCOPE_LABELS[scope] ?? scope).join(" · ");
+}
+
+export default function ApiKeys() {
+  const { confirm, confirmModal } = useConfirm();
+
+  const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState<string>("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<KeyRow | null>(null);
+  const [secret, setSecret] = useState<{ key: string; name: string; expires_at: string | null } | null>(
+    null
+  );
+  // The plaintext modal opens only after the create dialog has finished its
+  // close animation, otherwise both modals are visible for ~200ms.
+  const [pendingSecret, setPendingSecret] = useState<{
+    key: string;
+    name: string;
+    expires_at: string | null;
+  } | null>(null);
+  const [createForm] = Form.useForm();
+  const [editForm] = Form.useForm();
+
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  // The list endpoint filters on the stored status; "expiring"/"expired" are
+  // derived states the server paints, so those are filtered on the client.
+  if (stateFilter === "active" || stateFilter === "revoked") params.set("status", stateFilter);
+  const path = `/admin/v1/api-keys${params.toString() ? `?${params.toString()}` : ""}`;
+  const { data, reload, loading } = useLoad<{ items: KeyRow[]; summary: Summary; total: number }>(
+    path,
+    { items: [], summary: { active: 0, expiring: 0, expired: 0, revoked: 0, total: 0 }, total: 0 }
+  );
+
+  const staff = useLoad<{ items: StaffRow[] }>("/admin/v1/staff", { items: [] });
+  const staffOptions = useMemo(
+    () =>
+      staff.data.items
+        .filter((row) => row.status === "active")
+        .map((row) => ({
+          value: row.id,
+          label: `${row.username}（${ROLE_LABELS[row.role] ?? row.role}）`,
+        })),
+    [staff.data.items]
+  );
+
+  const rows = useMemo(() => {
+    if (stateFilter === "expiring" || stateFilter === "expired") {
+      return data.items.filter((row) => row.state === stateFilter);
+    }
+    return data.items;
+  }, [data.items, stateFilter]);
+
+  const onCreate = async (values: any) => {
+    try {
+      const created = await api<KeyRow & { key: string }>("/admin/v1/api-keys", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: values.user_id,
+          name: values.name,
+          scopes: values.scopes,
+          expires_in_days: values.expires_in_days === 0 ? null : values.expires_in_days,
+        }),
+      });
+      setCreateOpen(false);
+      createForm.resetFields();
+      setPendingSecret({ key: created.key, name: created.name, expires_at: created.expires_at });
+      reload();
+    } catch (e) {
+      message.error(errorText(e));
+    }
+  };
+
+  const onEdit = async (values: any) => {
+    if (!editing) return;
+    try {
+      await api(`/admin/v1/api-keys/${editing.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: values.name, scopes: values.scopes }),
+      });
+      setEditing(null);
+      reload();
+      message.success("已保存");
+    } catch (e) {
+      message.error(errorText(e));
+    }
+  };
+
+  const onRotate = (row: KeyRow) => {
+    confirm({
+      title: `轮换密钥 ${row.name}`,
+      content: "旧密钥会立即失效，正在使用它的自动化会中断。",
+      okText: "轮换",
+      onOk: async () => {
+        try {
+          const fresh = await api<KeyRow & { key: string }>(
+            `/admin/v1/api-keys/${row.id}/rotate`,
+            { method: "POST", body: JSON.stringify({}) }
+          );
+          setSecret({ key: fresh.key, name: fresh.name, expires_at: fresh.expires_at });
+          reload();
+        } catch (e) {
+          message.error(errorText(e));
+          throw e; // keep the dialog open so the operator can retry
+        }
+      },
+    });
+  };
+
+  const onRevoke = (row: KeyRow) => {
+    confirm({
+      title: `撤销密钥 ${row.name}`,
+      content: "撤销后立即失效且不可恢复；需要继续使用请新建或轮换。",
+      okText: "撤销",
+      danger: true,
+      onOk: async () => {
+        try {
+          await api(`/admin/v1/api-keys/${row.id}/revoke`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          reload();
+          message.success("已撤销");
+        } catch (e) {
+          message.error(errorText(e));
+          throw e;
+        }
+      },
+    });
+  };
+
+  const onDelete = (row: KeyRow) => {
+    confirm({
+      title: `删除密钥 ${row.name}`,
+      content: "仅从未使用过的密钥可以删除。",
+      okText: "删除",
+      danger: true,
+      onOk: async () => {
+        try {
+          await api(`/admin/v1/api-keys/${row.id}`, { method: "DELETE" });
+          reload();
+          message.success("已删除");
+        } catch (e) {
+          message.error(errorText(e));
+          throw e;
+        }
+      },
+    });
+  };
+
+  const copySecret = async () => {
+    if (!secret) return;
+    try {
+      await navigator.clipboard.writeText(secret.key);
+      message.success("已复制");
+    } catch {
+      message.warning("复制失败，请手动选中");
+    }
+  };
+
+  return (
+    <Space direction="vertical" size={14} style={{ width: "100%" }}>
+      <Space wrap size={12} style={{ justifyContent: "space-between", width: "100%" }}>
+        <Space wrap size={8}>
+          <Input.Search
+            allowClear
+            placeholder="搜索名称 / 前缀 / 账号"
+            style={{ width: 260 }}
+            onSearch={setQuery}
+          />
+          <Select
+            style={{ width: 150 }}
+            value={stateFilter}
+            onChange={setStateFilter}
+            options={[
+              { value: "", label: "全部状态" },
+              { value: "active", label: "有效" },
+              { value: "expiring", label: "即将到期" },
+              { value: "expired", label: "已过期" },
+              { value: "revoked", label: "已撤销" },
+            ]}
+          />
+          <Tag color="green">有效 {data.summary.active}</Tag>
+          {data.summary.expiring > 0 && <Tag color="orange">即将到期 {data.summary.expiring}</Tag>}
+          {data.summary.expired > 0 && <Tag color="red">已过期 {data.summary.expired}</Tag>}
+          {data.summary.revoked > 0 && <Tag>已撤销 {data.summary.revoked}</Tag>}
+        </Space>
+        <Space>
+          <Button onClick={() => reload()}>刷新</Button>
+          <Button type="primary" onClick={() => setCreateOpen(true)}>
+            新建密钥
+          </Button>
+        </Space>
+      </Space>
+
+      <Alert
+        type="info"
+        showIcon
+        message="密钥只在创建或轮换时显示一次，之后只能看到前缀。密钥的权限永远不会超过其绑定账号的角色。"
+      />
+
+      <Table<KeyRow>
+        rowKey="id"
+        loading={loading}
+        dataSource={rows}
+        scroll={{ x: 1120 }}
+        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        columns={[
+          {
+            title: "名称",
+            dataIndex: "name",
+            width: 210,
+            render: (value: string, row) => (
+              <div>
+                <Typography.Text>{value}</Typography.Text>
+                <div style={{ fontSize: 12, color: "rgba(0,0,0,0.45)" }}>
+                  {row.last_used_at ? `最近使用 ${formatTime(row.last_used_at)}` : "从未使用"}
+                </div>
+              </div>
+            ),
+          },
+          {
+            title: "绑定账号",
+            dataIndex: "username",
+            width: 190,
+            render: (value: string | null, row) => (
+              <div>
+                <Typography.Text code style={{ whiteSpace: "nowrap" }}>
+                  {value ?? "-"}
+                </Typography.Text>
+                {row.display_name && (
+                  <div style={{ fontSize: 12, color: "rgba(0,0,0,0.45)" }}>{row.display_name}</div>
+                )}
+              </div>
+            ),
+          },
+          {
+            title: "前缀",
+            dataIndex: "key_prefix",
+            width: 170,
+            render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+          },
+          {
+            title: "权限",
+            dataIndex: "scopes",
+            width: 130,
+            render: (value: string[]) => (
+              <Typography.Text
+                type={value.includes("delete") ? "danger" : undefined}
+                style={{ fontSize: 12 }}
+              >
+                {scopeText(value)}
+              </Typography.Text>
+            ),
+          },
+          {
+            title: "状态",
+            dataIndex: "state",
+            width: 100,
+            render: (value: KeyState) => (
+              <Tag color={STATE_TAG[value].color}>{STATE_TAG[value].label}</Tag>
+            ),
+          },
+          {
+            title: "到期",
+            dataIndex: "expires_at",
+            width: 150,
+            render: (value: string | null) =>
+              value ? formatTime(value) : <Typography.Text type="secondary">长期</Typography.Text>,
+          },
+          {
+            title: "操作",
+            key: "actions",
+            width: 210,
+            render: (_, row) => {
+              const revoked = row.status === "revoked";
+              return (
+                <Space size={2}>
+                  <Button
+                    type="link"
+                    size="small"
+                    disabled={revoked}
+                    onClick={() => {
+                      setEditing(row);
+                      editForm.setFieldsValue({ name: row.name, scopes: row.scopes });
+                    }}
+                  >
+                    编辑
+                  </Button>
+                  <Tooltip title={revoked ? "已撤销，请新建" : ""}>
+                    <Button
+                      type="link"
+                      size="small"
+                      disabled={revoked}
+                      onClick={() => onRotate(row)}
+                    >
+                      轮换
+                    </Button>
+                  </Tooltip>
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    disabled={revoked}
+                    onClick={() => onRevoke(row)}
+                  >
+                    撤销
+                  </Button>
+                  <Tooltip title={row.last_used_at ? "已使用过，只能撤销" : ""}>
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      disabled={row.last_used_at !== null}
+                      onClick={() => onDelete(row)}
+                    >
+                      删除
+                    </Button>
+                  </Tooltip>
+                </Space>
+              );
+            },
+          },
+        ]}
+      />
+
+      <Typography.Text type="secondary">
+        共 {data.total} 把密钥 · 明文只在签发时出现一次，之后只能看到前缀
+      </Typography.Text>
+
+      <Modal
+        title="新建密钥"
+        open={createOpen}
+        onCancel={() => setCreateOpen(false)}
+        onOk={() => createForm.submit()}
+        okText="签发"
+        forceRender
+        afterClose={() => {
+          if (pendingSecret) {
+            setSecret(pendingSecret);
+            setPendingSecret(null);
+          }
+        }}
+      >
+        <Form
+          form={createForm}
+          layout="vertical"
+          onFinish={onCreate}
+          preserve={false}
+          initialValues={{ scopes: ["read", "write"], expires_in_days: 90 }}
+        >
+          <Form.Item
+            label="绑定账号"
+            name="user_id"
+            extra="密钥的权限不会超过该账号的角色；账号被禁用时密钥立即失效"
+            rules={[{ required: true, message: "请选择账号" }]}
+          >
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择 staff 账号"
+              options={staffOptions}
+            />
+          </Form.Item>
+          <Form.Item
+            label="名称"
+            name="name"
+            extra="同一账号下不能重名，建议写成 用途/实例"
+            rules={[{ required: true, message: "请输入名称" }]}
+          >
+            <Input maxLength={64} placeholder="如 agent-ops/upload-bot" />
+          </Form.Item>
+          <Form.Item label="权限" name="scopes" rules={[{ required: true }]}>
+            <Checkbox.Group options={SCOPE_OPTIONS} style={{ display: "grid", gap: 6 }} />
+          </Form.Item>
+          <Form.Item label="有效期" name="expires_in_days">
+            <Select options={TTL_OPTIONS} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="编辑密钥"
+        open={editing !== null}
+        onCancel={() => setEditing(null)}
+        onOk={() => editForm.submit()}
+        okText="保存"
+        forceRender
+      >
+        <Form form={editForm} layout="vertical" onFinish={onEdit}>
+          <Form.Item label="名称" name="name" rules={[{ required: true }]}>
+            <Input maxLength={64} />
+          </Form.Item>
+          <Form.Item label="权限" name="scopes" rules={[{ required: true }]}>
+            <Checkbox.Group options={SCOPE_OPTIONS} style={{ display: "grid", gap: 6 }} />
+          </Form.Item>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            到期时间不能在这里改；需要延长请轮换。
+          </Typography.Text>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="密钥已生成"
+        open={secret !== null}
+        onCancel={() => setSecret(null)}
+        footer={
+          <Button type="primary" onClick={() => setSecret(null)}>
+            我已保存
+          </Button>
+        }
+        maskClosable={false}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="只显示这一次。关闭后无法再次查看，遗失请轮换。"
+        />
+        <Input.TextArea
+          readOnly
+          value={secret?.key ?? ""}
+          autoSize={{ minRows: 2, maxRows: 3 }}
+          style={{ fontFamily: "monospace", fontSize: 12 }}
+        />
+        <Space style={{ marginTop: 12, justifyContent: "space-between", width: "100%" }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {secret ? `到期 ${secret.expires_at ? formatTime(secret.expires_at) : "长期"}` : ""}
+          </Typography.Text>
+          <Button onClick={copySecret}>复制</Button>
+        </Space>
+      </Modal>
+
+      {confirmModal}
+    </Space>
+  );
+}

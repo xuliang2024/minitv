@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from pathlib import Path
 
 import psycopg
 import redis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger("minitv.api")
 
 
 def load_env() -> None:
@@ -77,12 +80,14 @@ def health() -> dict:
 
 def _register_routers() -> None:
     from app.modules.content.public_router import router as public_router
+    from app.modules.ops.api_key_router import router as admin_api_key_router
     from app.modules.ops.flow_router import router as admin_flow_router
     from app.modules.ops.router import router as admin_router
     from app.modules.public_flow import router as public_flow_router
     from app.modules.recommend.router import router as feed_router
 
     app.include_router(admin_router)
+    app.include_router(admin_api_key_router)
     app.include_router(admin_flow_router)
     app.include_router(public_router)
     app.include_router(public_flow_router)
@@ -90,6 +95,43 @@ def _register_routers() -> None:
 
 
 _register_routers()
+
+
+@app.middleware("http")
+async def record_api_key_events(request: Request, call_next):
+    """Record one row per *write* request made with an API key.
+
+    ``audit_logs`` already says which person acted; this fills in which
+    credential did it. GETs are skipped on purpose — they would dominate the
+    table — and a failure here must never break the request itself.
+    """
+    started = time.perf_counter()
+    response = await call_next(request)
+    state = request.scope.get("state") or {}
+    key_id = state.get("api_key_id")
+    if key_id and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        from app.db import get_engine, make_session_factory
+        from app.modules.ops.models import ApiKeyEvent
+
+        try:
+            session = make_session_factory(get_engine())()
+            try:
+                session.add(
+                    ApiKeyEvent(
+                        key_id=key_id,
+                        staff_id=state.get("api_key_staff_id") or 0,
+                        method=request.method,
+                        path=request.url.path[:200],
+                        status_code=response.status_code,
+                        duration_ms=int((time.perf_counter() - started) * 1000),
+                    )
+                )
+                session.commit()
+            finally:
+                session.close()
+        except Exception:  # telemetry must never break the request
+            logger.warning("api_key_event_write_failed", exc_info=True)
+    return response
 
 
 def _start_background_jobs() -> None:

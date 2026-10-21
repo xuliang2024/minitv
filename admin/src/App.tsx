@@ -21,6 +21,7 @@ import { HomeOpsPage } from "./pages/HomeOps";
 import Moderation from "./pages/Moderation";
 import Rewards from "./pages/Rewards";
 import Staff from "./pages/Staff";
+import ApiKeys from "./pages/ApiKeys";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
 import {
   CommentsPage,
@@ -56,6 +57,8 @@ const ITEMS: { key: string; label: string; roles?: string[] }[] = [
   { key: "/tags", label: "标签库" },
   // 员工账号只对管理员开放：运营/财务看到入口也只会拿到 403。
   { key: "/staff", label: "账号管理", roles: ["admin"] },
+  // 密钥签发是超管动作，与账号管理同级。
+  { key: "/api-keys", label: "API 密钥", roles: ["admin"] },
 ];
 
 export default function App() {
@@ -285,6 +288,7 @@ export default function App() {
               <Route path="/plans" element={<PlansPage />} />
               <Route path="/tags" element={<Tags />} />
               <Route path="/staff" element={<Staff />} />
+              <Route path="/api-keys" element={<ApiKeys />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Content>
