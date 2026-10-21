@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.21.13",
+  "target": "server",
+  "status": "published",
+  "sha": "9f0e0e857e394db2e0e3db2db255e6cde62b9a5c",
+  "short_sha": "9f0e0e85",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-21T15:25:20+08:00",
+  "finished_at": "2026-10-21T15:25:33+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 79539,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "API：建剧重名 409 + 删空壳分集接口（CLI 依赖；其他会话改动不参与 payload）",
+  "dirty": true
+}
