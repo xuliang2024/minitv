@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.21.4",
+  "target": "r2",
+  "status": "published",
+  "sha": "4e2dfd991ba57e695fcc66cd9279244a2b31addd",
+  "short_sha": "4e2dfd99",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.21.4/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "97065a506189baf4cdb709442364417e402bf58ad697776fd6e000e676ee705a",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-YcGcCod8.js",
+      "size": 1475471
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-21T11:02:52+08:00",
+  "finished_at": "2026-10-21T11:03:37+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 95703,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "API 密钥管理页（列表/签发/轮换/撤销）+ 菜单入口",
+  "dirty": false
+}
