@@ -1,0 +1,33 @@
+{
+  "version": "v2026.10.21.8",
+  "target": "r2",
+  "status": "published",
+  "sha": "bdbb9c9c12342da3600c644885f0f119ada36405",
+  "short_sha": "bdbb9c9c",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.21.8/",
+  "promote_prefix": "cli/",
+  "promoted_root": true,
+  "dist_digest": "a29377f6ff0962c81eb2a0925e9fbc45a7040f67ab48cde522cf5b6c15b6983a",
+  "files": [
+    {
+      "path": "install.sh",
+      "size": 3351
+    },
+    {
+      "path": "minitv",
+      "size": 51962
+    }
+  ],
+  "started_at": "2026-10-21T15:03:00+08:00",
+  "finished_at": "2026-10-21T15:03:05+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 69991,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "minitv CLI 单文件 + install.sh（只读版）",
+  "dirty": false
+}
