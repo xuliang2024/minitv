@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.21.6",
+  "target": "server",
+  "status": "published",
+  "sha": "a6d3fefe06c87bbe5018c8d6a89570ba8b20c076",
+  "short_sha": "a6d3fefe",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-21T11:36:50+08:00",
+  "finished_at": "2026-10-21T11:37:05+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 7080,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "fix: API Key 空 scopes 提权（422）+ 事件/筛选修正（其他会话改动不参与 payload）",
+  "dirty": true
+}
