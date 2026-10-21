@@ -26,7 +26,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 DEFAULT_BASE = "https://api.minitv.us"
 # Cloudflare blocks urllib's default UA, so every request carries this one.
 UA = f"minitv/{VERSION} (+https://minitv.us)"
@@ -633,9 +633,10 @@ def _build_spec():
                 cmd(
                     "init",
                     "首次初始化：创建配置目录并写入 API Key",
-                    "minitv config init [--profile P] [--base-url URL]",
+                    "minitv config init [--profile P] [--base-url URL] [--stdin]",
                     cmd_config_init,
-                    examples=["minitv config init"],
+                    args=[arg(["--stdin"], "从标准输入读取 key（管道用）", kind="bool")],
+                    examples=["minitv config init", 'echo "$KEY" | minitv config init --stdin'],
                     outputs="配置目录、profile、校验结果",
                     exits=GLOBAL_EXITS,
                     errors=[("config_invalid", "配置文件损坏，删掉后重跑 init")],
@@ -1511,7 +1512,7 @@ def cmd_episode_publish(args):
     payload = _write(args, client, "POST", f"/admin/v1/episodes/{args.id}/publish")
     if payload is None:
         return EXIT_OK
-    output(args, {"id": args.id, "status": payload.get("status")})
+    output(args, {"id": int(args.id), "status": payload.get("status")})
     return EXIT_OK
 
 
@@ -1520,7 +1521,7 @@ def cmd_episode_unpublish(args):
     payload = _write(args, client, "POST", f"/admin/v1/episodes/{args.id}/unpublish")
     if payload is None:
         return EXIT_OK
-    output(args, {"id": args.id, "status": payload.get("status")})
+    output(args, {"id": int(args.id), "status": payload.get("status")})
     return EXIT_OK
 
 
@@ -1544,7 +1545,7 @@ def cmd_episode_publish_all(args):
 def cmd_episode_sync(args):
     client = Client(resolve_settings(args))
     payload = client.request("POST", f"/admin/v1/episodes/{args.id}/sync-status")
-    output(args, {"id": args.id, "status": (payload or {}).get("status")})
+    output(args, {"id": int(args.id), "status": (payload or {}).get("status")})
     return EXIT_OK
 
 
@@ -1606,7 +1607,7 @@ def cmd_episode_upload(args):
         raise usage_error(f"文件不存在：{path}")
     client = Client(resolve_settings(args))
     result = _upload_one(args, client, args.id, path)
-    output(args, {"episode_id": args.id, "file": path.name, **result})
+    output(args, {"episode_id": int(args.id), "file": path.name, **result})
     return EXIT_OK
 
 

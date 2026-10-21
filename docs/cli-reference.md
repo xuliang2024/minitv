@@ -1,4 +1,4 @@
-# minitv 0.3.0 — MiniTV 剧集管理 CLI
+# minitv 0.3.1 — MiniTV 剧集管理 CLI
 
 单文件、零依赖（Python >= 3.8）。TTY 输出表格，非 TTY 输出 JSON。
 
@@ -18,7 +18,7 @@ minitv doctor
 
 ### config — 配置与 API Key
 
-- `minitv config init [--profile P] [--base-url URL]` — 首次初始化：创建配置目录并写入 API Key
+- `minitv config init [--profile P] [--base-url URL] [--stdin]` — 首次初始化：创建配置目录并写入 API Key
 - `minitv config set-key [--profile P] [--stdin]` — 设置或替换当前 profile 的 API Key（先校验再落盘）
 - `minitv config show` — 查看当前配置（永不打印明文密钥）
 - `minitv config test` — 在线校验密钥：身份、权限、到期
