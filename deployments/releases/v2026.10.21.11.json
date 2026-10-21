@@ -1,0 +1,33 @@
+{
+  "version": "v2026.10.21.11",
+  "target": "r2",
+  "status": "published",
+  "sha": "b425adf285291a12b0607c655810c3f124ed24df",
+  "short_sha": "b425adf2",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.21.11/",
+  "promote_prefix": "cli/",
+  "promoted_root": true,
+  "dist_digest": "4deaf364449ab90d5dc1589a499f182d03faa4ff85b04281366c25f18383c261",
+  "files": [
+    {
+      "path": "install.sh",
+      "size": 3351
+    },
+    {
+      "path": "minitv",
+      "size": 53384
+    }
+  ],
+  "started_at": "2026-10-21T15:17:22+08:00",
+  "finished_at": "2026-10-21T15:17:26+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 76062,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "minitv 0.1.1：version 命令 + 帮助收敛",
+  "dirty": false
+}
