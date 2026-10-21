@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.21.9",
+  "target": "r2",
+  "status": "published",
+  "sha": "0a0b86f1ad69f328e7cd87749ae6597eccf1aea8",
+  "short_sha": "0a0b86f1",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.21.9/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "7b22c642336723b2573767a91dc4600d4bc401ae050d18294e21b971d94e9fec",
+  "files": [
+    {
+      "path": "assets/index-BZpKTsnW.js",
+      "size": 1478198
+    },
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-21T15:03:22+08:00",
+  "finished_at": "2026-10-21T15:04:34+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 70213,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "密钥页「接入 Agent」入口 + 一键初始化命令",
+  "dirty": false
+}
