@@ -11,7 +11,7 @@ import hashlib
 import hmac
 import os
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import redis as redis_lib
 from sqlalchemy import select
@@ -86,6 +86,9 @@ def login(session: Session, *, username: str, password: str) -> tuple[AdminUser,
         )
     except redis_lib.RedisError as exc:
         raise SessionStoreUnavailable("redis session store is unavailable") from exc
+    # Only a login that actually got a session counts as "last seen".
+    user.last_login_at = datetime.now(timezone.utc)
+    session.commit()
     return user, token
 
 
@@ -105,5 +108,29 @@ def resolve_session_token(session: Session, token: str) -> AdminUser | None:
 def logout(token: str) -> None:
     try:
         get_redis().delete(SESSION_PREFIX + token)
+    except redis_lib.RedisError as exc:
+        raise SessionStoreUnavailable("redis session store is unavailable") from exc
+
+
+def revoke_user_sessions(user_id: int) -> int:
+    """Drop every live session belonging to one staff account.
+
+    Disabling an account is already enforced by `resolve_session_token`, but a
+    password change is not: the row stays `active`, so old tokens would keep
+    working until their TTL runs out. Callers revoke *before* committing the
+    new password, so a Redis outage fails the request instead of silently
+    leaving the old credential alive.
+
+    Keys only map token -> user_id, so this walks the prefix. Staff head-count
+    is tiny; `scan_iter` (not `keys`) keeps Redis responsive.
+    """
+    try:
+        client = get_redis()
+        killed = 0
+        for key in client.scan_iter(match=SESSION_PREFIX + "*", count=200):
+            if client.get(key) == str(user_id):
+                client.delete(key)
+                killed += 1
+        return killed
     except redis_lib.RedisError as exc:
         raise SessionStoreUnavailable("redis session store is unavailable") from exc

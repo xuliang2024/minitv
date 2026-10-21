@@ -2,6 +2,19 @@ import { createContext, useContext } from "react";
 
 export type Me = { id: number; username: string; display_name: string; role: string };
 
+/** Human labels for `admin_users.role`; keys mirror backend/app/modules/ops/models.py. */
+export const ROLE_LABELS: Record<string, string> = {
+  ops: "运营",
+  finance: "财务",
+  admin: "管理员",
+};
+
+export const ROLE_OPTIONS = [
+  { value: "ops", label: "运营" },
+  { value: "finance", label: "财务" },
+  { value: "admin", label: "管理员" },
+];
+
 /**
  * Roles allowed to create / edit content. Mirrors CONTENT_WRITER_ROLES in
  * backend/app/modules/ops/models.py — the API answers 403 for anyone else.

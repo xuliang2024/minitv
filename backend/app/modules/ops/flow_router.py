@@ -67,7 +67,7 @@ from app.modules.ops.config_models import (
 from app.modules.social import moderation
 from app.modules.social.models import Comment, PushRecord
 from app.modules.ops.models import AdminUser
-from app.modules.ops.router import require_admin, require_content_writer
+from app.modules.ops.router import require_admin, require_admin_role, require_content_writer
 from app.modules.playback.service import authorize, bump_generation
 from app.modules.wallet.models import CoinLedgerEntry, WalletAccount
 
@@ -270,10 +270,8 @@ class ModerationTestIn(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
 
 
-def require_admin_role(user: AdminUser = Depends(require_admin)) -> AdminUser:
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="admin only")
-    return user
+# require_admin_role now lives in ops.router so the staff endpoints and the
+# high-risk endpoints below share one definition.
 
 
 @router.post("/dramas/{drama_id}/episodes")

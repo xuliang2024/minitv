@@ -4,13 +4,14 @@ import { Avatar, Button, Drawer, Dropdown, Grid, Layout, Menu, Space, Tag, Typog
 import type { MenuProps } from "antd";
 import {
   DownOutlined,
+  KeyOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuOutlined,
   MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import { api, clearToken, getToken } from "./api";
-import { MeContext, type Me } from "./me";
+import { MeContext, ROLE_LABELS, type Me } from "./me";
 import Login from "./pages/Login";
 import Dramas from "./pages/Dramas";
 import DramaEdit from "./pages/DramaEdit";
@@ -19,6 +20,8 @@ import GroupsPage, { GroupDetailPage } from "./pages/Groups";
 import { HomeOpsPage } from "./pages/HomeOps";
 import Moderation from "./pages/Moderation";
 import Rewards from "./pages/Rewards";
+import Staff from "./pages/Staff";
+import { ChangePasswordModal } from "./components/ChangePasswordModal";
 import {
   CommentsPage,
   DashboardPage,
@@ -36,13 +39,7 @@ const SIDER_WIDTH = 208;
  *  stops squeezing the page on tablets and phones. */
 const DESKTOP_QUERY = "(min-width: 992px)";
 
-const ROLE_LABELS: Record<string, string> = {
-  ops: "运营",
-  finance: "财务",
-  admin: "管理员",
-};
-
-const ITEMS = [
+const ITEMS: { key: string; label: string; roles?: string[] }[] = [
   { key: "/dashboard", label: "数据看板" },
   { key: "/dramas", label: "剧集管理" },
   { key: "/groups", label: "首页分组" },
@@ -57,6 +54,8 @@ const ITEMS = [
   { key: "/finance", label: "财务订单" },
   { key: "/plans", label: "会员套餐" },
   { key: "/tags", label: "标签库" },
+  // 员工账号只对管理员开放：运营/财务看到入口也只会拿到 403。
+  { key: "/staff", label: "账号管理", roles: ["admin"] },
 ];
 
 export default function App() {
@@ -68,6 +67,7 @@ export default function App() {
   // Desktop sidebar can be folded away so wide tables get the whole viewport.
   const [siderCollapsed, setSiderCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const screens = useBreakpoint();
   // useBreakpoint() is empty on the first render; fall back to a media query so
   // phones do not flash the desktop shell before hydration settles.
@@ -115,6 +115,11 @@ export default function App() {
         label: `登录账号：${account.username}（${ROLE_LABELS[account.role] ?? account.role}）`,
         children: [
           {
+            key: "password",
+            icon: <KeyOutlined />,
+            label: "修改密码",
+          },
+          {
             key: "logout",
             danger: true,
             icon: <LogoutOutlined />,
@@ -125,6 +130,7 @@ export default function App() {
     ],
     onClick: ({ key }) => {
       if (key === "logout") onLogout();
+      if (key === "password") setPasswordOpen(true);
     },
   });
 
@@ -143,6 +149,12 @@ export default function App() {
   const selected = selectedItem?.key ?? "/dramas";
   const pageTitle = selectedItem?.label ?? "剧集管理";
 
+  // Role-gated entries stay hidden until `/auth/me` resolves, so a non-admin
+  // never sees a menu item that would only 403. Unrestricted items pass through.
+  const visibleItems = ITEMS.filter(
+    (item) => !item.roles || (me !== null && item.roles.includes(me.role))
+  );
+
   const nav = (
     <>
       {!(isDesktop && siderCollapsed) && (
@@ -156,7 +168,7 @@ export default function App() {
         mode="inline"
         style={{ borderInlineEnd: "none" }}
         selectedKeys={[selected]}
-        items={ITEMS}
+        items={visibleItems}
         onClick={({ key }) => {
           navigate(key);
           setNavOpen(false);
@@ -272,11 +284,13 @@ export default function App() {
               <Route path="/finance" element={<FinancePage />} />
               <Route path="/plans" element={<PlansPage />} />
               <Route path="/tags" element={<Tags />} />
+              <Route path="/staff" element={<Staff />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </Content>
         </Layout>
       </Layout>
+      <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </MeContext.Provider>
   );
 }

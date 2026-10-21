@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { Button, Card, Form, Input, message } from "antd";
 import { api, setToken } from "../api";
 
-// 预设账号：方便日常登录后台，进页面即填好（对应 backend/app/seed_admin.py 的初始管理员）。
-// 注意：构建后这段明文会随 JS 一起下发，生产环境请把口令改掉，或把这里清空。
-const PRESET_LOGIN = { username: "admin", password: "admin-1234" };
+// 本地开发才预填默认账号，方便反复登录；生产构建里这个常量会被 Vite 直接裁掉，
+// 不会再随 JS 下发明文口令（旧版本把 admin/admin-1234 打进了线上包）。
+const PRESET_LOGIN = import.meta.env.DEV
+  ? { username: "admin", password: "admin-1234" }
+  : undefined;
 
 export default function Login() {
   const navigate = useNavigate();
