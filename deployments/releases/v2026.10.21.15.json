@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.21.15",
+  "target": "server",
+  "status": "published",
+  "sha": "1b24e9be959afac918ae2959bcf740e836ae6aba",
+  "short_sha": "1b24e9be",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-21T15:35:39+08:00",
+  "finished_at": "2026-10-21T15:35:52+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 83644,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "API：上传续签 upload-headers + fake TUS HEAD（CLI 0.3.0 依赖）",
+  "dirty": true
+}
