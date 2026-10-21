@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.21.7",
+  "target": "r2",
+  "status": "published",
+  "sha": "6dd4e2a8e1801fa4c0cbbbab6cef26a3ca184e05",
+  "short_sha": "6dd4e2a8",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.21.7/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "516e60f8f71f5de2024b59117e2152e05b05080db393f3280620c0149a01c99e",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-Bc-U2kZK.js",
+      "size": 1475464
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-21T11:37:17+08:00",
+  "finished_at": "2026-10-21T11:38:00+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 7256,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "密钥页「有效」筛选修正（过期密钥不再混入）",
+  "dirty": false
+}
