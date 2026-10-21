@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.21.1",
+  "target": "r2",
+  "status": "published",
+  "sha": "a6b3f320b582eb0b17f516d4aa6ace72e6ec3ac2",
+  "short_sha": "a6b3f320",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.21.1/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "f9abb9db01520f653cf3f8691767a6282ea0f05d2ff13aa462a8d9e6d0da9ca7",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-DuANT-hG.js",
+      "size": 1466968
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-21T10:13:52+08:00",
+  "finished_at": "2026-10-21T10:14:31+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 79575,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "账号管理：员工账号新增/改角色/禁用/重置密码 + 账号菜单改密；登录页移除默认口令",
+  "dirty": false
+}
