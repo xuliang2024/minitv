@@ -71,6 +71,13 @@ const TTL_OPTIONS = [
   { value: 0, label: "长期（不推荐）" },
 ];
 
+/** One source of truth for the copy-paste commands (see docs/cli-execution-plan.md §3.7). */
+const CLI_INSTALL = "curl -fsSL https://minitv.us/cli/install.sh | sh";
+const CLI_SET_KEY = "minitv config set-key";
+const CLI_DOCTOR = "minitv doctor";
+const cliOneLiner = (key: string) =>
+  `curl -fsSL https://minitv.us/cli/install.sh | MINITV_API_KEY='${key}' sh`;
+
 const STATE_TAG: Record<KeyState, { color: string; label: string }> = {
   active: { color: "green", label: "有效" },
   expiring: { color: "orange", label: "即将到期" },
@@ -89,6 +96,7 @@ export default function ApiKeys() {
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
   const [editing, setEditing] = useState<KeyRow | null>(null);
   const [secret, setSecret] = useState<{ key: string; name: string; expires_at: string | null } | null>(
     null
@@ -231,15 +239,16 @@ export default function ApiKeys() {
     });
   };
 
-  const copySecret = async () => {
-    if (!secret) return;
+  const copy = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(secret.key);
+      await navigator.clipboard.writeText(text);
       message.success("已复制");
     } catch {
       message.warning("复制失败，请手动选中");
     }
   };
+
+  const copySecret = () => (secret ? copy(secret.key) : Promise.resolve());
 
   return (
     <Space direction="vertical" size={14} style={{ width: "100%" }}>
@@ -269,6 +278,7 @@ export default function ApiKeys() {
           {data.summary.revoked > 0 && <Tag>已撤销 {data.summary.revoked}</Tag>}
         </Space>
         <Space>
+          <Button onClick={() => setAgentOpen(true)}>接入 Agent</Button>
           <Button onClick={() => reload()}>刷新</Button>
           <Button type="primary" onClick={() => setCreateOpen(true)}>
             新建密钥
@@ -493,6 +503,7 @@ export default function ApiKeys() {
           </Button>
         }
         maskClosable={false}
+        width={620}
       >
         <Alert
           type="warning"
@@ -512,6 +523,107 @@ export default function ApiKeys() {
           </Typography.Text>
           <Button onClick={copySecret}>复制</Button>
         </Space>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginBottom: 6 }}>
+            复制给 Agent 的一键命令（安装 CLI + 写入密钥 + 自检）
+          </div>
+          <div
+            style={{
+              background: "#e6f1fb",
+              border: "1px solid #b5d4f4",
+              borderRadius: 8,
+              padding: "10px 11px",
+            }}
+          >
+            <Typography.Text
+              style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}
+            >
+              {cliOneLiner(secret?.key ?? "")}
+            </Typography.Text>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: 8,
+                gap: 12,
+              }}
+            >
+              <span style={{ fontSize: 11, color: "#a32d2d" }}>
+                命令含密钥，勿截图或粘贴到公开渠道
+              </span>
+              <Button size="small" onClick={() => copy(cliOneLiner(secret?.key ?? ""))}>
+                复制命令
+              </Button>
+            </div>
+          </div>
+          <Typography.Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 6 }}>
+            密钥经环境变量传入、在安装脚本内部走 stdin，不会出现在进程列表；执行方的 shell 历史仍会留下这条命令。
+          </Typography.Text>
+        </div>
+      </Modal>
+
+      <Modal
+        title="接入 Agent"
+        open={agentOpen}
+        onCancel={() => setAgentOpen(false)}
+        footer={null}
+        width={620}
+      >
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
+          三步把命令行交给 Agent。装完后它能查剧、导数据，权限不超过这把密钥。
+        </Typography.Paragraph>
+
+        {[
+          {
+            title: "① 安装 CLI",
+            code: CLI_INSTALL,
+            hint: "装到 ~/.local/bin/minitv，需要 python3 ≥ 3.8；重复执行即升级。",
+          },
+          {
+            title: "② 设置 API Key",
+            code: CLI_SET_KEY,
+            hint: "隐藏输入、先校验再落盘；也可 echo \"$KEY\" | minitv config set-key --stdin。",
+          },
+          {
+            title: "③ 自检",
+            code: CLI_DOCTOR,
+            hint: "连不上会说清是网络、密钥还是权限问题。",
+          },
+        ].map((step) => (
+          <div key={step.title} style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{step.title}</div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+                background: "rgba(0,0,0,0.03)",
+                border: "1px solid rgba(0,0,0,0.08)",
+                borderRadius: 8,
+                padding: "9px 11px",
+              }}
+            >
+              <Typography.Text
+                style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}
+              >
+                {step.code}
+              </Typography.Text>
+              <Button size="small" onClick={() => copy(step.code)}>
+                复制
+              </Button>
+            </div>
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              {step.hint}
+            </Typography.Text>
+          </div>
+        ))}
+
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          已有密钥时按上面三步手工做一次即可；想把密钥一起交给 Agent，就在新建密钥成功后复制弹窗里的「一键命令」。
+        </Typography.Text>
       </Modal>
 
       {confirmModal}

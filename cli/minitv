@@ -1,0 +1,1447 @@
+#!/usr/bin/env python3
+"""minitv - MiniTV 剧集管理命令行。
+
+单文件、零第三方依赖（Python >= 3.8）。设计见 docs/cli-execution-plan.md：
+- help 由 SPEC 同源生成，`--help` / `help --json` / `guide` 三处永远一致；
+- 所有命令在 TTY 下打表格，非 TTY 或 --json 时输出 {"ok":true,"data":...}；
+- 密钥只从环境变量或 0600 凭据文件读，命令行参数传 key 会被拒绝。
+
+给 Agent：先跑 `minitv guide` 取完整手册，按每条命令 help 里的「相关命令」串流程。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+VERSION = "0.1.0"
+DEFAULT_BASE = "https://api.minitv.us"
+# Cloudflare blocks urllib's default UA, so every request carries this one.
+UA = f"minitv/{VERSION} (+https://minitv.us)"
+
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_USAGE = 2
+EXIT_AUTH = 3
+EXIT_NOT_FOUND = 4
+EXIT_CONFLICT = 5
+EXIT_UPLOAD = 6
+EXIT_NETWORK = 7
+
+EXIT_TABLE = [
+    ("0", "成功"),
+    ("2", "用法错误"),
+    ("3", "认证 / 权限（过期、撤销、账号禁用、scope 不足）"),
+    ("4", "对象不存在"),
+    ("5", "状态冲突（重复、非法迁移、限流）"),
+    ("6", "上传失败"),
+    ("7", "网络错误"),
+]
+
+
+# ---------------------------------------------------------------------------
+# errors
+# ---------------------------------------------------------------------------
+
+
+class CliError(Exception):
+    def __init__(self, message, *, code="error", exit_code=EXIT_ERROR, hint=None):
+        self.message = message
+        self.code = code
+        self.exit_code = exit_code
+        self.hint = hint
+        super().__init__(message)
+
+
+def usage_error(message, hint=None):
+    return CliError(message, code="usage", exit_code=EXIT_USAGE, hint=hint)
+
+
+# ---------------------------------------------------------------------------
+# settings
+# ---------------------------------------------------------------------------
+
+
+def config_dir() -> Path:
+    return Path(os.environ.get("MINITV_CONFIG_DIR") or (Path.home() / ".config" / "minitv"))
+
+
+def config_path() -> Path:
+    return config_dir() / "config.json"
+
+
+def credentials_path() -> Path:
+    return config_dir() / "credentials"
+
+
+DEFAULT_CONFIG = {
+    "default_profile": "prod",
+    "profiles": {
+        "prod": {"base_url": "https://api.minitv.us", "sandbox_drama_id": 0},
+        "local": {"base_url": "http://127.0.0.1:18110", "sandbox_drama_id": 0},
+    },
+}
+
+
+def load_config() -> dict:
+    path = config_path()
+    if not path.exists():
+        return json.loads(json.dumps(DEFAULT_CONFIG))
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise CliError(
+            f"配置文件无法读取：{path}（{exc}）",
+            code="config_invalid",
+            hint="删掉该文件后重跑 minitv config init",
+        )
+    data.setdefault("profiles", {})
+    data.setdefault("default_profile", "prod")
+    for name, prof in DEFAULT_CONFIG["profiles"].items():
+        data["profiles"].setdefault(name, dict(prof))
+    return data
+
+
+def save_config(cfg: dict) -> None:
+    directory = config_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass
+    config_path().write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
+
+
+def load_credentials() -> dict:
+    path = credentials_path()
+    if not path.exists():
+        return {}
+    creds = {}
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        creds[name.strip()] = value.strip()
+    return creds
+
+
+def save_credentials(creds: dict) -> None:
+    directory = config_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass
+    path = credentials_path()
+    body = "".join(f"{name}={value}\n" for name, value in sorted(creds.items()))
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as handle:
+        handle.write(body)
+    os.chmod(path, 0o600)
+
+
+class Settings:
+    def __init__(self, profile, base_url, api_key, timeout):
+        self.profile = profile
+        self.base_url = base_url
+        self.api_key = api_key
+        self.timeout = timeout
+
+
+def resolve_settings(args, *, require_key=True) -> Settings:
+    cfg = load_config()
+    profile = getattr(args, "profile", None) or cfg.get("default_profile") or "prod"
+    prof = cfg["profiles"].get(profile, {})
+    base = (getattr(args, "base_url", None) or prof.get("base_url") or DEFAULT_BASE).rstrip("/")
+    key = os.environ.get("MINITV_API_KEY", "").strip() or load_credentials().get(profile, "")
+    timeout = getattr(args, "timeout", None) or 20
+    if require_key and not key:
+        raise CliError(
+            f"profile '{profile}' 还没有 API Key",
+            code="missing_credential",
+            exit_code=EXIT_AUTH,
+            hint="运行 minitv config set-key 写入，或设置环境变量 MINITV_API_KEY",
+        )
+    return Settings(profile, base, key, timeout)
+
+
+# ---------------------------------------------------------------------------
+# http
+# ---------------------------------------------------------------------------
+
+
+_STATUS_CODE = {
+    401: ("invalid_session", EXIT_AUTH),
+    403: ("scope_denied", EXIT_AUTH),
+    404: ("not_found", EXIT_NOT_FOUND),
+    409: ("conflict", EXIT_CONFLICT),
+    422: ("validation_error", EXIT_USAGE),
+    429: ("rate_limited", EXIT_CONFLICT),
+}
+
+
+class Client:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+
+    def request(self, method, path, params=None, body=None):
+        url = self.settings.base_url + path
+        if params:
+            clean = {k: v for k, v in params.items() if v is not None}
+            if clean:
+                url += "?" + urllib.parse.urlencode(clean)
+        data = None
+        headers = {"User-Agent": UA, "Accept": "application/json"}
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        if self.settings.api_key:
+            headers["Authorization"] = f"Bearer {self.settings.api_key}"
+
+        attempts = 3 if method == "GET" else 1
+        last_exc = None
+        for attempt in range(attempts):
+            request = urllib.request.Request(url, data=data, headers=headers, method=method)
+            try:
+                with urllib.request.urlopen(request, timeout=self.settings.timeout) as response:
+                    raw = response.read()
+                    return json.loads(raw) if raw else None
+            except urllib.error.HTTPError as exc:
+                payload = exc.read()
+                code, exit_code = _classify(exc.code, payload)
+                if exc.code in (429, 500, 502, 503, 504) and attempt + 1 < attempts:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise CliError(
+                    _message(payload) or f"HTTP {exc.code}",
+                    code=code,
+                    exit_code=exit_code,
+                    hint=_hint(code),
+                ) from exc
+            except urllib.error.URLError as exc:
+                last_exc = exc
+                if attempt + 1 < attempts:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+        raise CliError(
+            f"无法连接 {self.settings.base_url}：{getattr(last_exc, 'reason', last_exc)}",
+            code="network_error",
+            exit_code=EXIT_NETWORK,
+            hint="检查网络或 --base-url；Cloudflare 会拒绝默认的 Python UA",
+        )
+
+    def paginate(self, path, params=None, page_size=100, limit=None):
+        items, page = [], 1
+        while True:
+            query = dict(params or {})
+            query.update({"page": page, "page_size": page_size})
+            payload = self.request("GET", path, query) or {}
+            batch = payload.get("items") or []
+            items.extend(batch)
+            if limit is not None and len(items) >= limit:
+                return items[:limit]
+            total = payload.get("total")
+            if not batch or (total is not None and len(items) >= total):
+                return items
+            page += 1
+
+
+def _payload_detail(payload):
+    try:
+        return json.loads(payload.decode() or "null")
+    except ValueError:
+        return None
+
+
+def _classify(status, payload):
+    detail = _payload_detail(payload)
+    if isinstance(detail, dict):
+        if isinstance(detail.get("detail"), dict):
+            inner = detail["detail"]
+            return inner.get("code") or _STATUS_CODE.get(status, ("http_error", EXIT_ERROR))[0], _exit_for(
+                inner.get("code"), status
+            )
+        code = detail.get("code")
+        if code:
+            return code, _exit_for(code, status)
+    return _STATUS_CODE.get(status, (f"http_{status}", EXIT_ERROR))
+
+
+def _exit_for(code, status):
+    if code in ("missing_credential", "invalid_key", "invalid_session", "key_expired", "key_revoked", "account_disabled", "scope_denied"):
+        return EXIT_AUTH
+    if code == "rate_limited":
+        return EXIT_CONFLICT
+    return _STATUS_CODE.get(status, ("", EXIT_ERROR))[1]
+
+
+def _message(payload):
+    detail = _payload_detail(payload)
+    if isinstance(detail, dict):
+        inner = detail.get("detail")
+        if isinstance(inner, dict):
+            return inner.get("message")
+        if isinstance(inner, str):
+            return inner
+        if isinstance(inner, list) and inner:
+            first = inner[0]
+            if isinstance(first, dict):
+                location = ".".join(str(part) for part in first.get("loc", [])[1:])
+                return f"{location}: {first.get('msg')}" if location else first.get("msg")
+    if isinstance(detail, str):
+        return detail
+    return None
+
+
+def _hint(code):
+    return {
+        "missing_credential": "先运行 minitv config set-key，或设置 MINITV_API_KEY",
+        "invalid_key": "密钥可能有误；到后台「API 密钥」页核对前缀",
+        "key_expired": "运行 minitv key rotate 或让管理员重新签发",
+        "key_revoked": "该密钥已被撤销，请重新签发",
+        "account_disabled": "密钥绑定的账号已被禁用，联系管理员",
+        "scope_denied": "当前密钥缺少该操作的 scope",
+        "rate_limited": "等待一分钟再试（每 key 600 次/分钟）",
+    }.get(code)
+
+
+# ---------------------------------------------------------------------------
+# output
+# ---------------------------------------------------------------------------
+
+
+def _is_json(args) -> bool:
+    return bool(getattr(args, "json", False)) or not sys.stdout.isatty()
+
+
+def _fields(args):
+    raw = getattr(args, "fields", None)
+    return [part.strip() for part in raw.split(",") if part.strip()] if raw else None
+
+
+def _filter(data, fields):
+    if not fields:
+        return data
+    if isinstance(data, list):
+        return [{k: item.get(k) for k in fields if k in item} for item in data]
+    if isinstance(data, dict):
+        return {k: data[k] for k in fields if k in data}
+    return data
+
+
+def _width(text):
+    return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
+
+
+def _pad(text, width):
+    return text + " " * max(0, width - _width(text))
+
+
+def _cell(value):
+    if value is None:
+        return "-"
+    if isinstance(value, str) and len(value) >= 19 and value[4] == "-" and value[10] == "T":
+        try:
+            moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return moment.astimezone().strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            pass
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(item) for item in value) or "-"
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def print_table(rows, columns, footer=None):
+    headers = [title for title, _ in columns]
+    table = [[_cell(row.get(key)) for _, key in columns] for row in rows]
+    widths = [max([_width(headers[i])] + [_width(line[i]) for line in table]) for i in range(len(columns))]
+    print("  ".join(_pad(headers[i], widths[i]) for i in range(len(columns))))
+    for line in table:
+        print("  ".join(_pad(line[i], widths[i]) for i in range(len(columns))))
+    if footer:
+        print(footer)
+
+
+def print_kv(pairs):
+    width = max([_width(str(label)) for label, _ in pairs] + [4])
+    for label, value in pairs:
+        print(f"{_pad(str(label), width)}  {_cell(value)}")
+
+
+def output(args, payload, *, rows=None, columns=None, footer=None, quiet_key=None):
+    fields = _fields(args)
+    # --quiet outranks --json: pipelines want ids, not an envelope.
+    if getattr(args, "quiet", False) and rows is not None and quiet_key:
+        for row in rows:
+            print(row.get(quiet_key))
+        return
+    if _is_json(args):
+        data = payload
+        if fields:
+            if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+                # Trim list rows, keep total/page intact.
+                data = dict(payload)
+                data["items"] = [_filter(row, fields) for row in payload["items"]]
+            else:
+                data = _filter(payload, fields)
+        print(json.dumps({"ok": True, "data": data, "meta": {"version": VERSION}}, ensure_ascii=False))
+        return
+    if rows is not None and columns:
+        print_table(rows, columns, footer=footer)
+        return
+    if isinstance(payload, dict):
+        pairs = [(k, v) for k, v in payload.items() if fields is None or k in fields]
+        print_kv(pairs)
+    else:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# SPEC: one registry drives argparse, --help, help --json and guide
+# ---------------------------------------------------------------------------
+
+
+def arg(flags, help_text, *, kind="str", choices=None, default=None, metavar=None, required=False):
+    return {
+        "flags": flags,
+        "help": help_text,
+        "kind": kind,
+        "choices": choices,
+        "default": default,
+        "metavar": metavar,
+        "required": required,
+    }
+
+
+def pos(name, help_text):
+    """位置参数（<id> 这类）；flags 里只有名字，没有前导 --。"""
+    return {
+        "flags": [name],
+        "help": help_text,
+        "kind": "positional",
+        "choices": None,
+        "default": None,
+        "metavar": name,
+        "required": True,
+    }
+
+
+def cmd(name, summary, usage, fn, *, args=(), examples=(), outputs="", exits="", errors=(), next_steps=()):
+    return {
+        "name": name,
+        "summary": summary,
+        "usage": usage,
+        "fn": fn,
+        "args": list(args),
+        "examples": list(examples),
+        "outputs": outputs,
+        "exits": exits,
+        "errors": list(errors),
+        "next_steps": list(next_steps),
+    }
+
+
+JSON_FLAG = arg(["--json"], "结构化输出（非 TTY 自动启用）", kind="bool")
+QUIET_FLAG = arg(["--quiet"], "只输出 id，便于脚本串联", kind="bool")
+FIELDS_FLAG = arg(["--fields"], "裁剪输出字段，如 id,title", metavar="LIST")
+PROFILE_ARG = arg(["--profile"], "profile 名，默认取 default_profile", metavar="P")
+BASE_ARG = arg(["--base-url"], "覆盖 base_url", metavar="URL")
+TIMEOUT_ARG = arg(["--timeout"], "HTTP 超时秒数", kind="int", default=20, metavar="N")
+
+GLOBAL_ARGS = [JSON_FLAG, QUIET_FLAG, FIELDS_FLAG, PROFILE_ARG, BASE_ARG, TIMEOUT_ARG]
+
+GLOBAL_EXITS = "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络"
+
+
+def _build_spec():
+    groups = []
+
+    groups.append(
+        {
+            "name": "config",
+            "summary": "配置与 API Key",
+            "commands": [
+                cmd(
+                    "init",
+                    "首次初始化：创建配置目录并写入 API Key",
+                    "minitv config init [--profile P] [--base-url URL]",
+                    cmd_config_init,
+                    examples=["minitv config init"],
+                    outputs="配置目录、profile、校验结果",
+                    exits=GLOBAL_EXITS,
+                    errors=[("config_invalid", "配置文件损坏，删掉后重跑 init")],
+                    next_steps=["minitv doctor"],
+                ),
+                cmd(
+                    "set-key",
+                    "设置或替换当前 profile 的 API Key（先校验再落盘）",
+                    "minitv config set-key [--profile P] [--stdin]",
+                    cmd_config_set_key,
+                    args=[arg(["--stdin"], "从标准输入读取 key（管道用）", kind="bool")],
+                    examples=[
+                        "minitv config set-key",
+                        "echo \"$KEY\" | minitv config set-key --stdin",
+                    ],
+                    outputs="校验得到的身份、权限、到期时间；写入 ~/.config/minitv/credentials",
+                    exits=GLOBAL_EXITS,
+                    errors=[
+                        ("invalid_key", "key 无效，不会覆盖磁盘上已有的密钥"),
+                        ("missing_credential", "没有读到 key（stdin 为空）"),
+                    ],
+                    next_steps=["minitv doctor"],
+                ),
+                cmd(
+                    "show",
+                    "查看当前配置（永不打印明文密钥）",
+                    "minitv config show",
+                    cmd_config_show,
+                    examples=["minitv config show"],
+                    outputs="profile、base_url、key 前缀与长度、文件路径",
+                    exits="0 成功",
+                    next_steps=["minitv config test  在线校验身份与到期"],
+                ),
+                cmd(
+                    "test",
+                    "在线校验密钥：身份、权限、到期",
+                    "minitv config test",
+                    cmd_config_test,
+                    examples=["minitv config test", "minitv config test --json"],
+                    outputs="username、role、scopes、expires_at",
+                    exits=GLOBAL_EXITS,
+                    next_steps=["minitv doctor  同时检查网络与服务端"],
+                ),
+                cmd(
+                    "use",
+                    "切换默认 profile",
+                    "minitv config use <profile>",
+                    cmd_config_use,
+                    args=[pos("profile_name", "要切换到的 profile")],
+                    examples=["minitv config use local"],
+                    outputs="新的默认 profile",
+                    exits="0 成功 · 2 用法（profile 不存在）",
+                ),
+                cmd(
+                    "path",
+                    "打印配置文件与凭据文件的路径",
+                    "minitv config path",
+                    cmd_config_path,
+                    examples=["minitv config path"],
+                    outputs="两行路径",
+                    exits="0 成功",
+                ),
+                cmd(
+                    "rm-key",
+                    "删除某个 profile 的密钥（保留其余配置）",
+                    "minitv config rm-key [--profile P]",
+                    cmd_config_rm_key,
+                    examples=["minitv config rm-key"],
+                    outputs="被删除的 profile",
+                    exits="0 成功",
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
+            "name": "auth",
+            "summary": "身份",
+            "commands": [
+                cmd(
+                    "whoami",
+                    "打印当前密钥绑定的账号与权限",
+                    "minitv auth whoami",
+                    cmd_auth_whoami,
+                    examples=["minitv auth whoami"],
+                    outputs="username、role、scopes、expires_at",
+                    exits=GLOBAL_EXITS,
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
+            "name": "drama",
+            "summary": "剧集：列表、详情、建改、上下线、排期、封面、标签",
+            "commands": [
+                cmd(
+                    "list",
+                    "列出剧集（按更新时间倒序）",
+                    "minitv drama list [--status S] [--q 关键字] [--tag ID] [--page N] [--page-size N]",
+                    cmd_drama_list,
+                    args=[
+                        arg(["--status"], "按状态筛选", kind="choice",
+                            choices=["draft", "in_review", "published", "unpublished"], metavar="S"),
+                        arg(["--q"], "标题关键字（只匹配标题）", metavar="TEXT"),
+                        arg(["--tag"], "按标签 id 过滤", kind="int", metavar="ID"),
+                        arg(["--page"], "页码", kind="int", default=1, metavar="N"),
+                        arg(["--page-size"], "每页条数（最大 100）", kind="int", default=20, metavar="N"),
+                    ],
+                    examples=[
+                        "minitv drama list --status draft",
+                        "minitv drama list --json --fields id,title,status",
+                    ],
+                    outputs="id、标题、状态、集数、更新时间；最后一行为全库状态计数",
+                    exits=GLOBAL_EXITS,
+                    next_steps=["minitv drama get <id>"],
+                ),
+                cmd(
+                    "get",
+                    "查看单部剧的详情（含标签、集数、播放量）",
+                    "minitv drama get <id>",
+                    cmd_drama_get,
+                    args=[pos("id", "剧集 id")],
+                    examples=["minitv drama get 184", "minitv drama get 184 --json"],
+                    outputs="剧的全部元数据字段 + tags",
+                    exits=GLOBAL_EXITS,
+                    next_steps=["minitv episode list --drama <id>"],
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
+            "name": "episode",
+            "summary": "分集：列表、建改删、发布、上传、转码对账",
+            "commands": [
+                cmd(
+                    "list",
+                    "列出某部剧的分集",
+                    "minitv episode list --drama ID [--status S] [--page N] [--page-size N]",
+                    cmd_episode_list,
+                    args=[
+                        arg(["--drama"], "剧集 id（必填）", kind="int", required=True, metavar="ID"),
+                        arg(["--status"], "分集状态", kind="choice",
+                            choices=["not_uploaded", "transcoding", "transcode_failed", "in_review", "published", "unpublished"],
+                            metavar="S"),
+                        arg(["--page"], "页码", kind="int", default=1, metavar="N"),
+                        arg(["--page-size"], "每页条数（最大 200）", kind="int", default=50, metavar="N"),
+                    ],
+                    examples=[
+                        "minitv episode list --drama 184",
+                        "minitv episode list --drama 184 --status in_review",
+                    ],
+                    outputs="id、集号、标题、状态、时长",
+                    exits=GLOBAL_EXITS,
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
+            "name": "tag",
+            "summary": "标签库",
+            "commands": [
+                cmd(
+                    "list",
+                    "列出全部标签及其剧集数",
+                    "minitv tag list",
+                    cmd_tag_list,
+                    examples=["minitv tag list"],
+                    outputs="id、name_en、name_zh、category、status、drama_count",
+                    exits=GLOBAL_EXITS,
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
+            "name": "group",
+            "summary": "首页分组与排序",
+            "commands": [
+                cmd(
+                    "list",
+                    "列出首页分组",
+                    "minitv group list",
+                    cmd_group_list,
+                    examples=["minitv group list"],
+                    outputs="id、名称、位置、样式、状态、剧集数",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "dramas",
+                    "列出某个分组里的剧",
+                    "minitv group dramas <id>",
+                    cmd_group_dramas,
+                    args=[pos("id", "分组 id")],
+                    examples=["minitv group dramas 12"],
+                    outputs="组内剧集列表",
+                    exits=GLOBAL_EXITS,
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
+            "name": "export",
+            "summary": "批量导出（给模型做上下文）",
+            "commands": [
+                cmd(
+                    "dramas",
+                    "导出全部剧集为 JSON",
+                    "minitv export dramas [--status S] [--out FILE]",
+                    cmd_export_dramas,
+                    args=[
+                        arg(["--status"], "只要某个状态", kind="choice",
+                            choices=["draft", "in_review", "published", "unpublished"], metavar="S"),
+                        arg(["--out"], "写入文件；省略则打到 stdout", metavar="FILE"),
+                    ],
+                    examples=[
+                        "minitv export dramas --out dramas.json",
+                        "minitv export dramas --status published --json",
+                    ],
+                    outputs='{"exported_at","count","items"}',
+                    exits=GLOBAL_EXITS,
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
+            "name": "doctor",
+            "summary": "自检：连通 / 身份 / 权限 / 服务端",
+            "commands": [
+                cmd(
+                    "doctor",
+                    "一次性检查网络、密钥、权限与服务端",
+                    "minitv doctor",
+                    cmd_doctor,
+                    examples=["minitv doctor", "minitv doctor --json"],
+                    outputs="五项检查结果；有问题时给出下一步",
+                    exits=GLOBAL_EXITS,
+                ),
+            ],
+        }
+    )
+    return groups
+
+
+def _find(group_name, cmd_name=None):
+    for group in SPEC:
+        if group["name"] != group_name:
+            continue
+        if cmd_name is None:
+            return group
+        for entry in group["commands"]:
+            if entry["name"] == cmd_name:
+                return entry
+    return None
+
+
+# ---------------------------------------------------------------------------
+# help rendering
+# ---------------------------------------------------------------------------
+
+
+def render_top_help():
+    lines = [
+        f"minitv {VERSION} — MiniTV 剧集管理 CLI",
+        "",
+        "开始",
+        "  config set-key          配置 API Key（首次）",
+        "  doctor                  自检：连通 / 身份 / 权限 / 限流",
+        "",
+        "能做什么",
+    ]
+    for group in SPEC:
+        if group["name"] in ("config", "doctor"):
+            continue
+        lines.append(f"  {group['name']:<22}{group['summary']}")
+    lines += [
+        "",
+        "给程序 / Agent",
+        "  --json                  结构化输出（非 TTY 自动启用）",
+        "  help --json             机器可读的命令目录",
+        "  guide                   完整手册（可重定向成 markdown）",
+        "",
+        "更多",
+        "  help errors             错误码与退出码",
+        "  help output             输出约定",
+        "  <group> --help          分组内命令",
+        "  <group> <cmd> --help    单条命令的完整说明",
+    ]
+    print("\n".join(lines))
+    return EXIT_OK
+
+
+def render_group_help(group):
+    lines = [f"{group['name']} — {group['summary']}", "", "命令"]
+    width = max(_width(entry["name"]) for entry in group["commands"]) + 2
+    for entry in group["commands"]:
+        lines.append(f"  {_pad(entry['name'], width)}{entry['summary']}")
+    lines += ["", f"用法：minitv {group['name']} <command> [--help]"]
+    print("\n".join(lines))
+    return EXIT_OK
+
+
+def render_command_help(group, entry):
+    lines = [
+        f"minitv {group['name']} {entry['name']} — {entry['summary']}",
+        "",
+        "用途",
+        f"  {entry['summary']}",
+        "",
+        "用法",
+        f"  {entry['usage']}",
+        "",
+        "参数",
+    ]
+    all_args = list(entry["args"]) + GLOBAL_ARGS
+    if all_args:
+        flag_width = max(_width(", ".join(a["flags"])) for a in all_args) + 2
+        for item in all_args:
+            if item.get("kind") == "positional":
+                flags = f"<{item['flags'][0]}>"
+            else:
+                flags = ", ".join(item["flags"])
+            if item.get("kind") == "int":
+                flags += f" {item.get('metavar') or 'N'}"
+            elif item.get("kind") in ("str", "choice") and item.get("metavar"):
+                flags += f" {item['metavar']}"
+            tag = "必填" if item.get("required") else "可选"
+            default = f"，默认 {item['default']}" if item.get("default") not in (None, False) else ""
+            choices = f"，可选 {', '.join(item['choices'])}" if item.get("choices") else ""
+            lines.append(f"  {_pad(flags, flag_width)}  {tag}  {item['help']}{choices}{default}")
+    else:
+        lines.append("  （无参数）")
+    lines += ["", "示例"]
+    for example in entry["examples"]:
+        lines.append(f"  {example}")
+    lines += [
+        "",
+        "输出",
+        f"  {entry['outputs'] or '见 --json'}",
+        "",
+        "退出码",
+        f"  {entry['exits'] or GLOBAL_EXITS}",
+    ]
+    if entry["errors"]:
+        lines += ["", "常见错误"]
+        for code, meaning in entry["errors"]:
+            lines.append(f"  {code:<20}{meaning}")
+    if entry["next_steps"]:
+        lines += ["", "相关命令"]
+        for step in entry["next_steps"]:
+            lines.append(f"  {step}")
+    print("\n".join(lines))
+    return EXIT_OK
+
+
+TOPICS = {
+    "errors": [
+        "错误码与退出码",
+        "",
+        "退出码",
+        *[f"  {code:<4}{meaning}" for code, meaning in EXIT_TABLE],
+        "",
+        "错误码（响应 error.code）",
+        "  missing_credential   没有携带密钥",
+        "  invalid_key          密钥不存在或已损坏",
+        "  key_expired          密钥过期，需要轮换",
+        "  key_revoked          密钥已被撤销",
+        "  account_disabled     绑定的账号被禁用",
+        "  scope_denied         当前密钥缺少该操作的 scope",
+        "  rate_limited         超过 600 次/分钟",
+        "  title_exists         同名剧已存在（建剧时）",
+        "  conflict             状态机不允许该迁移",
+        "  not_found            对象不存在",
+    ],
+    "output": [
+        "输出约定",
+        "",
+        "  TTY        表格",
+        "  非 TTY     单行 JSON：{\"ok\":true,\"data\":...,\"meta\":{\"version\":...}}",
+        "  失败       {\"ok\":false,\"error\":{\"code\",\"message\",\"hint\"}}，进程退出码非 0",
+        "  --fields   裁剪字段，省 token",
+        "  --quiet    只输出 id",
+    ],
+    "auth": [
+        "认证与密钥",
+        "",
+        "  key 前缀   mk_live_<8 hex>_<43 字符>",
+        "  绑定       某个 staff 账号；权限 = min(账号角色, scopes)",
+        "  scopes     read / write / delete / billing / staff",
+        "  存储       ~/.config/minitv/credentials（0600）",
+        "  环境变量   MINITV_API_KEY 优先，适合容器与沙箱",
+        "",
+        "  不提供 --key 参数：密钥走 stdout/交互输入，避免进入 shell 历史与进程列表。",
+    ],
+    "upload": [
+        "上传（迭代 3 提供）",
+        "",
+        "  视频字节不经过 API：upload-session 只登记元数据，浏览器/TUS 直传 Bunny。",
+        "  断点续传靠 TUS 的 HEAD/Upload-Offset，CLI 不保存本地状态。",
+    ],
+}
+
+
+def render_help(argv):
+    argv = [item for item in argv if not item.startswith("-")]
+    if not argv:
+        return render_top_help()
+    group = _find(argv[0])
+    if group is None:
+        print(f"未知命令：{argv[0]}", file=sys.stderr)
+        render_top_help()
+        return EXIT_USAGE
+    if len(argv) == 1:
+        if len(group["commands"]) == 1 and group["commands"][0]["name"] == group["name"]:
+            return render_command_help(group, group["commands"][0])
+        return render_group_help(group)
+    entry = _find(argv[0], argv[1])
+    if entry is None:
+        print(f"未知命令：{argv[0]} {argv[1]}", file=sys.stderr)
+        return render_group_help(group)
+    return render_command_help(group, entry)
+
+
+def catalog():
+    commands = []
+    for group in SPEC:
+        for entry in group["commands"]:
+            commands.append(
+                {
+                    "path": f"{group['name']} {entry['name']}",
+                    "summary": entry["summary"],
+                    "usage": entry["usage"],
+                    "args": [
+                        {
+                            "flags": item["flags"],
+                            "help": item["help"],
+                            "required": bool(item.get("required")),
+                            "default": item.get("default"),
+                            "choices": item.get("choices"),
+                        }
+                        for item in entry["args"] + GLOBAL_ARGS
+                    ],
+                    "examples": entry["examples"],
+                    "exits": entry["exits"] or GLOBAL_EXITS,
+                    "errors": [code for code, _ in entry["errors"]],
+                }
+            )
+    return {"version": VERSION, "commands": commands}
+
+
+def render_guide():
+    lines = [
+        f"# minitv {VERSION} — MiniTV 剧集管理 CLI",
+        "",
+        "单文件、零依赖（Python >= 3.8）。TTY 输出表格，非 TTY 输出 JSON。",
+        "",
+        "## 快速开始",
+        "",
+        "```bash",
+        "curl -fsSL https://minitv.us/cli/install.sh | sh",
+        "minitv config set-key",
+        "minitv doctor",
+        "```",
+        "",
+        "## 命令",
+        "",
+    ]
+    for group in SPEC:
+        lines.append(f"### {group['name']} — {group['summary']}")
+        lines.append("")
+        for entry in group["commands"]:
+            lines.append(f"- `{entry['usage']}` — {entry['summary']}")
+        lines.append("")
+    lines += ["## 退出码", ""]
+    for code, meaning in EXIT_TABLE:
+        lines.append(f"- `{code}` {meaning}")
+    lines += ["", "## 认证", ""]
+    lines += ["  " + line if line else "" for line in TOPICS["auth"]]
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# config commands
+# ---------------------------------------------------------------------------
+
+
+def _read_key(args):
+    if getattr(args, "stdin", False) or not sys.stdin.isatty():
+        return sys.stdin.read().strip()
+    import getpass
+
+    return getpass.getpass("粘贴 API Key（输入不回显）：").strip()
+
+
+def _identity(client):
+    me = client.request("GET", "/admin/v1/auth/me") or {}
+    scopes, expires = [], None
+    try:
+        listing = client.request("GET", "/admin/v1/auth/keys") or {}
+        prefix = client.settings.api_key[:16]
+        for row in listing.get("items") or []:
+            if row.get("key_prefix") == prefix:
+                scopes = row.get("scopes") or []
+                expires = row.get("expires_at")
+                break
+    except CliError:
+        pass
+    return me, scopes, expires
+
+
+def _warnings(me, scopes):
+    notes = []
+    if me.get("role") == "admin" and "delete" in (scopes or []):
+        notes.append("该密钥绑定 admin 且含 delete，等同超管；给自动化用建议换 agent-ops")
+    elif "delete" in (scopes or []):
+        notes.append("该密钥含 delete，可删除剧集")
+    return notes
+
+
+def cmd_config_set_key(args):
+    settings = resolve_settings(args, require_key=False)
+    key = _read_key(args)
+    if not key:
+        raise usage_error("没有读到 API Key", hint="用 --stdin 传入，或直接在终端里运行")
+    if not key.startswith("mk_live_"):
+        raise usage_error("API Key 格式不对（应以 mk_live_ 开头）", hint="到后台「API 密钥」页重新复制")
+    settings.api_key = key
+    client = Client(settings)
+    me, scopes, expires = _identity(client)
+    creds = load_credentials()
+    creds[settings.profile] = key
+    save_credentials(creds)
+
+    payload = {
+        "profile": settings.profile,
+        "base_url": settings.base_url,
+        "username": me.get("username"),
+        "role": me.get("role"),
+        "scopes": scopes,
+        "expires_at": expires,
+        "saved_to": str(credentials_path()),
+        "warnings": _warnings(me, scopes),
+    }
+    if _is_json(args):
+        output(args, payload)
+        return EXIT_OK
+    print_kv(
+        [
+            ("环境", f"{settings.profile} · {settings.base_url}"),
+            ("身份", f"{me.get('username')}（{me.get('role')}）"),
+            ("权限", " · ".join(scopes) if scopes else "跟随账号角色"),
+            ("到期", expires or "长期"),
+            ("已保存", f"{credentials_path()}（0600）"),
+        ]
+    )
+    for note in payload["warnings"]:
+        print(f"[提醒] {note}")
+    print("下一步  minitv doctor")
+    return EXIT_OK
+
+
+def cmd_config_init(args):
+    cfg = load_config()
+    save_config(cfg)
+    print_kv([("配置目录", str(config_dir())), ("配置文件", str(config_path()))])
+    return cmd_config_set_key(args)
+
+
+def cmd_config_show(args):
+    settings = resolve_settings(args, require_key=False)
+    key = settings.api_key
+    payload = {
+        "profile": settings.profile,
+        "base_url": settings.base_url,
+        "key_prefix": (key[:12] + "…") if key else None,
+        "key_length": len(key) if key else 0,
+        "config_file": str(config_path()),
+        "credentials_file": str(credentials_path()),
+    }
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_config_test(args):
+    settings = resolve_settings(args)
+    client = Client(settings)
+    me, scopes, expires = _identity(client)
+    payload = {
+        "username": me.get("username"),
+        "role": me.get("role"),
+        "scopes": scopes,
+        "expires_at": expires,
+        "warnings": _warnings(me, scopes),
+    }
+    if _is_json(args):
+        output(args, payload)
+        return EXIT_OK
+    print_kv(
+        [
+            ("身份", f"{me.get('username')}（{me.get('role')}）"),
+            ("权限", " · ".join(scopes) if scopes else "跟随账号角色"),
+            ("到期", expires or "长期"),
+        ]
+    )
+    for note in payload["warnings"]:
+        print(f"[提醒] {note}")
+    return EXIT_OK
+
+
+def cmd_config_use(args):
+    cfg = load_config()
+    profile = args.profile_name
+    if profile not in cfg["profiles"]:
+        raise usage_error(f"profile '{profile}' 不存在", hint="可选：" + ", ".join(cfg["profiles"]))
+    cfg["default_profile"] = profile
+    save_config(cfg)
+    print(f"默认 profile 已切换为 {profile}")
+    return EXIT_OK
+
+
+def cmd_config_path(args):
+    print(str(config_path()))
+    print(str(credentials_path()))
+    return EXIT_OK
+
+
+def cmd_config_rm_key(args):
+    settings = resolve_settings(args, require_key=False)
+    creds = load_credentials()
+    if settings.profile not in creds:
+        print(f"profile '{settings.profile}' 没有保存密钥")
+        return EXIT_OK
+    creds.pop(settings.profile)
+    save_credentials(creds)
+    print(f"已删除 profile '{settings.profile}' 的密钥")
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# read-only commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_auth_whoami(args):
+    return cmd_config_test(args)
+
+
+def cmd_doctor(args):
+    settings = resolve_settings(args, require_key=False)
+    results = []
+
+    def record(name, ok, detail, hint=None):
+        results.append({"name": name, "ok": ok, "detail": detail, "hint": hint})
+
+    health = None
+    try:
+        # /health needs no credential; use a throwaway client so a bad key
+        # still lets us prove the network is fine.
+        anonymous = Settings(settings.profile, settings.base_url, "", settings.timeout)
+        health = Client(anonymous).request("GET", "/health") or {}
+        record("连通", True, f"{settings.base_url} · {health.get('env', '?')}")
+    except CliError as exc:
+        record("连通", False, exc.message, exc.hint)
+        _print_doctor(args, settings, results)
+        return EXIT_NETWORK if exc.exit_code == EXIT_NETWORK else exc.exit_code
+
+    if not settings.api_key:
+        record("凭证", False, "没有配置 API Key", "运行 minitv config set-key")
+        _print_doctor(args, settings, results)
+        return EXIT_AUTH
+
+    client = Client(settings)
+    try:
+        me, scopes, expires = _identity(client)
+        record("身份", True, f"{me.get('username')}（{me.get('role')}）")
+        record("权限", True, " · ".join(scopes) if scopes else "跟随账号角色")
+        record("到期", True, expires or "长期")
+    except CliError as exc:
+        record("凭证", False, exc.message, exc.hint)
+        _print_doctor(args, settings, results)
+        return exc.exit_code
+
+    record("服务端", True, f"postgres {health.get('postgres', '?')} · redis {health.get('redis', '?')}")
+    warnings = _warnings(me, scopes)
+    _print_doctor(args, settings, results, warnings)
+    return EXIT_OK
+
+
+def _print_doctor(args, settings, results, warnings=()):
+    if _is_json(args):
+        print(
+            json.dumps(
+                {
+                    "ok": all(item["ok"] for item in results),
+                    "data": {
+                        "profile": settings.profile,
+                        "base_url": settings.base_url,
+                        "checks": results,
+                        "warnings": list(warnings),
+                    },
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+    for item in results:
+        mark = "[ok]" if item["ok"] else "[!!]"
+        print(f"{mark:<5}{item['name']:<6}{item['detail']}")
+        if not item["ok"] and item.get("hint"):
+            print(f"      提示：{item['hint']}")
+    for note in warnings:
+        print(f"[提醒] {note}")
+    if all(item["ok"] for item in results):
+        print("[ok] 通过" + (f"（{len(warnings)} 条提醒）" if warnings else ""))
+
+
+DRAMA_COLUMNS = [
+    ("ID", "id"),
+    ("标题", "title"),
+    ("状态", "status"),
+    ("集数", "episode_count"),
+    ("更新", "updated_at"),
+]
+
+
+def cmd_drama_list(args):
+    settings = resolve_settings(args)
+    client = Client(settings)
+    payload = client.request(
+        "GET",
+        "/admin/v1/dramas",
+        {"status": args.status, "q": args.q, "tag_id": args.tag, "page": args.page, "page_size": args.page_size},
+    ) or {}
+    items = payload.get("items") or []
+    counts = payload.get("status_counts") or {}
+    footer = None
+    if counts:
+        footer = " · ".join(f"{name} {counts.get(name, 0)}" for name in ("draft", "in_review", "published", "unpublished"))
+    output(args, payload, rows=items, columns=DRAMA_COLUMNS, footer=footer, quiet_key="id")
+    return EXIT_OK
+
+
+def cmd_drama_get(args):
+    settings = resolve_settings(args)
+    payload = Client(settings).request("GET", f"/admin/v1/dramas/{args.id}") or {}
+    output(args, payload)
+    return EXIT_OK
+
+
+EPISODE_COLUMNS = [
+    ("ID", "id"),
+    ("集号", "episode_number"),
+    ("标题", "title"),
+    ("状态", "status"),
+    ("时长", "duration_seconds"),
+]
+
+
+def cmd_episode_list(args):
+    settings = resolve_settings(args)
+    payload = Client(settings).request(
+        "GET",
+        f"/admin/v1/dramas/{args.drama}/episodes",
+        {"status": args.status, "page": args.page, "page_size": args.page_size},
+    ) or {}
+    items = payload.get("items") or []
+    for row in items:
+        seconds = row.get("duration_seconds") or 0
+        row["duration_seconds"] = f"{seconds // 60}:{seconds % 60:02d}" if seconds else "-"
+    output(args, payload, rows=items, columns=EPISODE_COLUMNS, quiet_key="id")
+    return EXIT_OK
+
+
+TAG_COLUMNS = [
+    ("ID", "id"),
+    ("name_en", "name_en"),
+    ("中文名", "name_zh"),
+    ("分类", "category"),
+    ("状态", "status"),
+    ("剧集数", "drama_count"),
+]
+
+
+def cmd_tag_list(args):
+    settings = resolve_settings(args)
+    payload = Client(settings).request("GET", "/admin/v1/tags") or {}
+    output(args, payload, rows=payload.get("items") or [], columns=TAG_COLUMNS, quiet_key="id")
+    return EXIT_OK
+
+
+GROUP_COLUMNS = [
+    ("ID", "id"),
+    ("名称", "name"),
+    ("位置", "position"),
+    ("样式", "style"),
+    ("状态", "status"),
+    ("剧集数", "drama_count"),
+]
+
+
+def cmd_group_list(args):
+    settings = resolve_settings(args)
+    payload = Client(settings).request("GET", "/admin/v1/groups") or {}
+    output(args, payload, rows=payload.get("items") or [], columns=GROUP_COLUMNS, quiet_key="id")
+    return EXIT_OK
+
+
+def cmd_group_dramas(args):
+    settings = resolve_settings(args)
+    payload = Client(settings).request("GET", f"/admin/v1/groups/{args.id}/dramas") or {}
+    items = payload.get("items") or []
+    output(args, payload, rows=items, columns=DRAMA_COLUMNS, quiet_key="id")
+    return EXIT_OK
+
+
+def cmd_export_dramas(args):
+    settings = resolve_settings(args)
+    client = Client(settings)
+    items = client.paginate("/admin/v1/dramas", {"status": args.status}, page_size=100)
+    payload = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "count": len(items),
+        "items": items,
+    }
+    if args.out:
+        Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        if _is_json(args):
+            output(args, {"count": len(items), "out": args.out})
+        else:
+            print(f"已导出 {len(items)} 部剧 → {args.out}")
+        return EXIT_OK
+    if _is_json(args):
+        output(args, payload)
+    else:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return EXIT_OK
+
+
+SPEC = _build_spec()
+
+
+# ---------------------------------------------------------------------------
+# argparse plumbing
+# ---------------------------------------------------------------------------
+
+
+def build_parser():
+    parents = argparse.ArgumentParser(add_help=False)
+    # SUPPRESS: a subparser must not reset a global flag given before the
+    # subcommand (`minitv --json drama list`).
+    parents.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="结构化输出")
+    parents.add_argument("--quiet", action="store_true", default=argparse.SUPPRESS, help="只输出 id")
+    parents.add_argument("--fields", default=argparse.SUPPRESS, help="裁剪字段")
+    parents.add_argument("--profile", default=argparse.SUPPRESS, help="profile 名")
+    parents.add_argument("--base-url", dest="base_url", default=argparse.SUPPRESS, help="覆盖 base_url")
+    parents.add_argument("--timeout", type=int, default=argparse.SUPPRESS, help="HTTP 超时秒数")
+
+    parser = argparse.ArgumentParser(prog="minitv", add_help=False, parents=[parents])
+    subparsers = parser.add_subparsers(dest="group")
+
+    for group in SPEC:
+        group_parser = subparsers.add_parser(group["name"], add_help=False, parents=[parents])
+        if group["name"] == "doctor":
+            # `minitv doctor` has no subcommand; bind the handler to the group.
+            group_parser.set_defaults(func=group["commands"][0]["fn"])
+            continue
+        command_parsers = group_parser.add_subparsers(dest="command")
+        for entry in group["commands"]:
+            command_parser = command_parsers.add_parser(entry["name"], add_help=False, parents=[parents])
+            command_parser.set_defaults(func=entry["fn"])
+            for item in entry["args"]:
+                flags = item["flags"]
+                kwargs = {"help": item["help"]}
+                if item.get("kind") == "positional":
+                    command_parser.add_argument(item["flags"][0], help=item["help"])
+                    continue
+                if item.get("kind") == "bool":
+                    command_parser.add_argument(*flags, action="store_true", **kwargs)
+                else:
+                    if item.get("choices"):
+                        kwargs["choices"] = item["choices"]
+                    if item.get("kind") == "int":
+                        kwargs["type"] = int
+                    if item.get("default") is not None:
+                        kwargs["default"] = item["default"]
+                    if item.get("metavar"):
+                        kwargs["metavar"] = item["metavar"]
+                    command_parser.add_argument(*flags, **kwargs)
+    return parser
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    if argv and argv[0] in ("-v", "--version", "version"):
+        print(VERSION)
+        return EXIT_OK
+    if not argv or argv[0] in ("-h", "--help"):
+        return render_top_help()
+    if argv[0] == "guide":
+        fmt = argv[argv.index("--format") + 1] if "--format" in argv and argv.index("--format") + 1 < len(argv) else "md"
+        if fmt == "json":
+            print(json.dumps(catalog(), ensure_ascii=False, indent=2))
+        else:
+            sys.stdout.write(render_guide())
+        return EXIT_OK
+    if argv[0] == "help":
+        rest = [item for item in argv[1:] if not item.startswith("-")]
+        if "--json" in argv:
+            print(json.dumps(catalog(), ensure_ascii=False, indent=2))
+            return EXIT_OK
+        if rest and rest[0] in TOPICS:
+            print("\n".join(TOPICS[rest[0]]))
+            return EXIT_OK
+        if rest:
+            return render_help(rest)
+        return render_top_help()
+    if "-h" in argv or "--help" in argv:
+        return render_help([item for item in argv if not item.startswith("-")][:2])
+
+    parser = build_parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:  # argparse already printed its own message
+        return EXIT_USAGE if exc.code else EXIT_OK
+    if not hasattr(args, "func"):
+        return render_top_help()
+    try:
+        return args.func(args)
+    except CliError as exc:
+        _report_error(exc, args)
+        return exc.exit_code
+    except KeyboardInterrupt:
+        return 130
+
+
+def _report_error(exc, args):
+    if _is_json(args):
+        print(
+            json.dumps(
+                {"ok": False, "error": {"code": exc.code, "message": exc.message, "hint": exc.hint}},
+                ensure_ascii=False,
+            )
+        )
+        return
+    print(f"[err] {exc.message}", file=sys.stderr)
+    if exc.hint:
+        print(f"      提示：{exc.hint}", file=sys.stderr)
+    print(f"      退出码 {exc.exit_code}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
