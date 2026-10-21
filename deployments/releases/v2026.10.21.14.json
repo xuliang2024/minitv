@@ -1,0 +1,33 @@
+{
+  "version": "v2026.10.21.14",
+  "target": "r2",
+  "status": "published",
+  "sha": "097555e03c3a3afd8192f67de23fb85e69101681",
+  "short_sha": "097555e0",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.21.14/",
+  "promote_prefix": "cli/",
+  "promoted_root": true,
+  "dist_digest": "4aeb10a187707f40723332f50bd19007b62aa881b7b01b08ccc3d7582c246ffa",
+  "files": [
+    {
+      "path": "install.sh",
+      "size": 3351
+    },
+    {
+      "path": "minitv",
+      "size": 103662
+    }
+  ],
+  "started_at": "2026-10-21T15:35:27+08:00",
+  "finished_at": "2026-10-21T15:35:34+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 83572,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "minitv 0.3.0：续传 + 封面/字幕 + 标签/分组/排期",
+  "dirty": false
+}
