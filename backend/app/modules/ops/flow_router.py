@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -39,7 +39,14 @@ from app.modules.billing.service import (
 )
 from app.modules.common import bunny
 from app.modules.common.models import AuditLog
-from app.modules.content.models import Drama, DramaHomeGroup, Episode, HomeGroup, MediaUpload
+from app.modules.content.models import (
+    CdnPurge,
+    Drama,
+    DramaHomeGroup,
+    Episode,
+    HomeGroup,
+    MediaUpload,
+)
 from app.modules.content.publish_service import (
     GROUP_LIMIT,
     PublishError,
@@ -799,6 +806,51 @@ async def dev_tus_patch(
         status_code=204,
         headers={"Upload-Offset": str(len(body)), "Tus-Resumable": "1.0.0"},
     )
+
+
+@router.delete("/episodes/{episode_id}", status_code=204)
+def delete_episode(
+    episode_id: int,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_content_writer),
+):
+    """Delete an **empty shell** only (`not_uploaded` / `transcode_failed`).
+
+    Anything with actual media (in_review / published / unpublished) must be
+    taken down first — deleting it would silently drop a video that viewers may
+    still hold an entitlement for.
+    """
+    episode = db.get(Episode, episode_id)
+    if episode is None:
+        raise HTTPException(status_code=404, detail="episode not found")
+    if episode.status not in ("not_uploaded", "transcode_failed"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "episode_not_empty",
+                "message": f"第 {episode.episode_number} 集是 {episode.status}，只有空壳可以删；请先下架",
+            },
+        )
+    bump_generation(episode.id)
+    db.execute(delete(MediaUpload).where(MediaUpload.episode_id == episode.id))
+    db.execute(delete(CdnPurge).where(CdnPurge.episode_id == episode.id))
+    db.add(
+        AuditLog(
+            actor_type="admin",
+            actor_id=user.id,
+            action="episode_delete",
+            target_type="episode",
+            target_id=episode.id,
+            payload={
+                "drama_id": episode.drama_id,
+                "episode_number": episode.episode_number,
+                "status": episode.status,
+            },
+        )
+    )
+    db.delete(episode)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.patch("/episodes/{episode_id}")

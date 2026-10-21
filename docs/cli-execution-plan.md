@@ -445,3 +445,35 @@ minitv episode upload-all --drama ID --dir DIR
 | 4 | — | Skill + MCP + 灰度 + 老脚本退场 | M |
 
 **建议**：迭代 0 与 P0-2 可以并行（互不依赖），迭代 1 的 CLI 部分等 P0-2 合并后接上；P0-3 与迭代 0 也可并行。
+
+## 11. 实施记录：全链路验收（2026-10-21 15:20）
+
+CLI **0.2.0** 把迭代 1–2 写完，并做了迭代 3 的单发上传（不含断点续传）。用独立库 + `BUNNY_MODE=fake` 跑了完整验收，12 项全过。
+
+### 新增能力
+
+| 层 | 内容 |
+|---|---|
+| CLI | `drama create/update/status/publish/unpublish/tag/delete`；`episode create/bulk/update/delete/publish/unpublish/publish-all/sync/upload/upload-all`；全局 `--dry-run`；错误体透出 `detail`（如 `title_exists` 的 `drama_id`） |
+| 后端 | 建剧/改名重名 → `409 title_exists`（带 `drama_id`）；`DELETE /admin/v1/episodes/{id}` 只删空壳（`not_uploaded`/`transcode_failed`），其余 409 `episode_not_empty` |
+| 测试 | 后端 358 passed（新增 5 项守卫测试） |
+
+### 验收脚本（真实顺序）
+
+```
+doctor → 建剧(draft) → 重名(409) → --upsert 复用 → 改简介/免费集数/定价
+→ 设标签(Action/Rebirth) → 目录批量上传 2 集(自动建集+上传+发布)
+→ 分集 published → drama publish(自动补跳 draft→in_review→published)
+→ 未登录访问 /v1/preview/dramas/{id}（2 集、1 集免费、标签可见）
+→ /v1/dramas/{id}/play（第 1 集 free/unlocked，第 2 集 locked）
+→ 删非空分集(409) → --confirm 不符(exit 2) → dry-run → 整剧删除
+```
+
+结果：**12/12 PASS**；公开接口返回 `episode_count=2 / free_playable_count=1 / tags=[Action,Rebirth]`，播放数据 `locked` 状态正确。
+
+### 还没做
+
+- **断点续传**（P0-4 `upload-headers` 未实现）：大文件在 1h 签名过期后需重跑，会新建会话从头传。
+- `upload-all` 目前**串行**，计划里的并发 2 放在后续。
+- 封面 / 字幕 / 排期 / `tag` 与 `group` 的写命令仍未进 CLI。
+- 上传时 CLI 不探测分辨率与时长（传 0），分集列表里时长显示 `-`；真实 Bunny 转码后由回调回填。

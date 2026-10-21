@@ -1,4 +1,4 @@
-# minitv 0.1.1 — MiniTV 剧集管理 CLI
+# minitv 0.2.0 — MiniTV 剧集管理 CLI
 
 单文件、零依赖（Python >= 3.8）。TTY 输出表格，非 TTY 输出 JSON。
 
@@ -34,10 +34,27 @@ minitv doctor
 
 - `minitv drama list [--status S] [--q 关键字] [--tag ID] [--page N] [--page-size N]` — 列出剧集（按更新时间倒序）
 - `minitv drama get <id>` — 查看单部剧的详情（含标签、集数、播放量）
+- `minitv drama create --title <T> [--upsert]` — 新建一部剧（默认 draft），标题全局唯一
+- `minitv drama update <id> [--title T] [--synopsis S] [--cover-url U] [--free N] [--coin N] [--tags 1,2]` — 修改剧集元数据（只传要改的字段）
+- `minitv drama status <id> --to draft|in_review|published|unpublished` — 单步切换剧集状态（不走自动补跳）
+- `minitv drama publish <id>` — 上线：按状态机自动补跳直到 published
+- `minitv drama unpublish <id>` — 下架剧集（同时作废已签发的播放地址）
+- `minitv drama tag <id> <tag_ids>` — 覆盖设置剧集的标签（全量替换）
+- `minitv drama delete <id> --confirm <id>` — 删除剧集（不可恢复；会连带删除分集与用户权益）
 
 ### episode — 分集：列表、建改删、发布、上传、转码对账
 
 - `minitv episode list --drama ID [--status S] [--page N] [--page-size N]` — 列出某部剧的分集
+- `minitv episode create --drama ID --number N [--title T]` — 登记一集（空壳，尚无视频）
+- `minitv episode bulk --drama ID --count N` — 批量登记 1..N 集（已存在的跳过）
+- `minitv episode update <id> [--title T] [--number N]` — 修改分集标题或集号
+- `minitv episode delete <id> --confirm <id>` — 删除空壳分集（not_uploaded / transcode_failed）
+- `minitv episode publish <id>` — 发布单集
+- `minitv episode unpublish <id>` — 下架单集（已签发的播放地址立即失效）
+- `minitv episode publish-all --drama ID` — 批量发布某剧里所有待发布/已下架的集
+- `minitv episode sync <id>` — 手动对账转码状态
+- `minitv episode upload <id> <file>` — 上传一集的视频（TUS 直传，不过 API）
+- `minitv episode upload-all --drama ID --dir DIR [--start N] [--title-rule en|cn|none] [--publish]` — 把目录里的视频按自然序灌进一部剧
 
 ### tag — 标签库
 

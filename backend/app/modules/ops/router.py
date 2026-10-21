@@ -609,7 +609,22 @@ def create_drama(
 ):
     drama = Drama(title=body.title)  # new dramas always start as drafts
     db.add(drama)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:  # uq_dramas_title
+        db.rollback()
+        # A machine caller (CLI/Agent) retries on timeout; a plain 500 would
+        # leave it unable to tell "created" from "not created". 409 + the
+        # existing id makes `--upsert` possible.
+        existing = db.scalar(select(Drama).where(Drama.title == body.title))
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "title_exists",
+                "message": "同名剧已存在",
+                "drama_id": existing.id if existing else None,
+            },
+        ) from exc
     return _drama_out(db, drama)
 
 
@@ -642,7 +657,14 @@ def update_drama(
         db.query(DramaTag).filter(DramaTag.drama_id == drama.id).delete()
         for tid in dict.fromkeys(tag_ids):  # tolerate duplicate ids from clients
             db.add(DramaTag(drama_id=drama.id, tag_id=tid))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:  # renaming onto an existing title
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "title_exists", "message": "同名剧已存在"},
+        ) from exc
     db.refresh(drama)
     return _drama_out(db, drama)
 
