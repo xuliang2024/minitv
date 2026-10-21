@@ -1,4 +1,4 @@
-# minitv 0.2.0 — MiniTV 剧集管理 CLI
+# minitv 0.3.0 — MiniTV 剧集管理 CLI
 
 单文件、零依赖（Python >= 3.8）。TTY 输出表格，非 TTY 输出 JSON。
 
@@ -41,6 +41,9 @@ minitv doctor
 - `minitv drama unpublish <id>` — 下架剧集（同时作废已签发的播放地址）
 - `minitv drama tag <id> <tag_ids>` — 覆盖设置剧集的标签（全量替换）
 - `minitv drama delete <id> --confirm <id>` — 删除剧集（不可恢复；会连带删除分集与用户权益）
+- `minitv drama cover-set <id> <file>` — 上传封面（JPG/PNG/WebP，≤5MB）
+- `minitv drama cover-clear <id>` — 清除封面
+- `minitv drama schedule <id> --at 2026-10-25T20:00+08:00` — 设置定时上线时间（需要外部触发 apply 才生效）
 
 ### episode — 分集：列表、建改删、发布、上传、转码对账
 
@@ -55,15 +58,24 @@ minitv doctor
 - `minitv episode sync <id>` — 手动对账转码状态
 - `minitv episode upload <id> <file>` — 上传一集的视频（TUS 直传，不过 API）
 - `minitv episode upload-all --drama ID --dir DIR [--start N] [--title-rule en|cn|none] [--publish]` — 把目录里的视频按自然序灌进一部剧
+- `minitv episode subtitle <id> <file>` — 上传字幕（.vtt / .srt，≤2MB）
 
 ### tag — 标签库
 
 - `minitv tag list` — 列出全部标签及其剧集数
+- `minitv tag create --name-en Name [--name-zh 中文] [--category main|sub]` — 新建标签
+- `minitv tag update <id> [--name-en N] [--name-zh N] [--category C] [--status S]` — 修改标签
+- `minitv tag delete <id> --confirm <id>` — 删除标签（仍被剧集引用时会 409 并列出引用）
 
 ### group — 首页分组与排序
 
 - `minitv group list` — 列出首页分组
 - `minitv group dramas <id>` — 列出某个分组里的剧
+- `minitv group create --name NAME [--position N]` — 新建首页分组（楼层）
+- `minitv group update <id> [--name N] [--position N] [--style S] [--badge B] [--status S]` — 改分组名 / 排序 / 样式 / 角标 / 上下线
+- `minitv group add <id> <drama_id> [--confirm]` — 把剧加进分组（不带 --confirm 只返回容量预览）
+- `minitv group remove <id> <drama_id>` — 把剧移出分组
+- `minitv group move <id> <drama_id> --position N` — 调整组内位置
 
 ### export — 批量导出（给模型做上下文）
 
@@ -72,6 +84,10 @@ minitv doctor
 ### version — 显示 CLI 版本
 
 - `minitv version` — 显示当前安装的 minitv 版本
+
+### schedule — 定时上架
+
+- `minitv schedule apply` — 把已到期的定时排期推上线（后台没有 cron，需要外部触发）
 
 ### doctor — 自检：连通 / 身份 / 权限 / 服务端
 

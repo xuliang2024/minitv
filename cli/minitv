@@ -16,6 +16,7 @@ import base64
 import json
 import os
 import re
+import secrets
 import sys
 import time
 import unicodedata
@@ -25,7 +26,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 DEFAULT_BASE = "https://api.minitv.us"
 # Cloudflare blocks urllib's default UA, so every request carries this one.
 UA = f"minitv/{VERSION} (+https://minitv.us)"
@@ -247,14 +248,41 @@ class Client:
             hint="检查网络或 --base-url；Cloudflare 会拒绝默认的 Python UA",
         )
 
-    def tus_upload(self, session, file_path):
-        """Create + PATCH a TUS upload; bytes never pass through our API.
+    def request_raw(self, method, path, body, content_type):
+        """Multipart / binary POST: same error mapping as ``request``."""
+        url = self.settings.base_url + path
+        headers = {
+            "User-Agent": UA,
+            "Accept": "application/json",
+            "Content-Type": content_type,
+        }
+        if self.settings.api_key:
+            headers["Authorization"] = f"Bearer {self.settings.api_key}"
+        request = urllib.request.Request(url, data=body, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=max(self.settings.timeout, 120)) as response:
+                raw = response.read()
+                return json.loads(raw) if raw else None
+        except urllib.error.HTTPError as exc:
+            payload = exc.read()
+            raw = _payload_detail(payload)
+            inner = raw.get("detail") if isinstance(raw, dict) else None
+            code, exit_code = _classify(exc.code, payload)
+            raise CliError(
+                _message(payload) or f"HTTP {exc.code}",
+                code=code,
+                exit_code=exit_code,
+                hint=_hint(code),
+                detail=inner if isinstance(inner, dict) else None,
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise CliError(
+                f"无法连接 {self.settings.base_url}：{getattr(exc, 'reason', exc)}",
+                code="network_error",
+                exit_code=EXIT_NETWORK,
+            ) from exc
 
-        The admin bearer token is attached only when the upload target is our own
-        origin (fake mode's /dev-tus receiver); Bunny's endpoint uses its own
-        signature headers.
-        """
-        size = file_path.stat().st_size
+    def _upload_target(self, session):
         target = urllib.parse.urljoin(self.settings.base_url + "/", session["upload_url"])
         headers = dict(session.get("headers") or {})
         if (
@@ -262,41 +290,92 @@ class Client:
             and self.settings.api_key
         ):
             headers["Authorization"] = f"Bearer {self.settings.api_key}"
+        return target, headers
 
-        filename = base64.b64encode(file_path.name.encode()).decode()
-        create_headers = {
-            **headers,
-            "Tus-Resumable": "1.0.0",
-            "Upload-Length": str(size),
-            "Upload-Metadata": f"filename {filename}",
-            "Content-Length": "0",
-        }
-        request = urllib.request.Request(target, data=b"", headers=create_headers, method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=self.settings.timeout) as response:
-                location = response.headers.get("Location") or target
-        except urllib.error.HTTPError as exc:
-            raise CliError(
-                f"创建上传会话失败：HTTP {exc.code}",
-                code="upload_failed",
-                exit_code=EXIT_UPLOAD,
-            ) from exc
+    def _resume_url(self, session, target):
+        video_id = str(session.get("video_id") or "")
+        if video_id and not target.rstrip("/").endswith(video_id):
+            return target.rstrip("/") + "/" + video_id
+        return target
 
-        patch_url = urllib.parse.urljoin(target, location)
+    def tus_offset(self, url, headers):
+        """TUS HEAD → (bytes already stored, total length)."""
+        request = urllib.request.Request(
+            url, headers={**headers, "Tus-Resumable": "1.0.0"}, method="HEAD"
+        )
+        with urllib.request.urlopen(request, timeout=self.settings.timeout) as response:
+            return (
+                int(response.headers.get("Upload-Offset") or 0),
+                int(response.headers.get("Upload-Length") or 0),
+            )
+
+    def tus_upload(self, session, file_path, resume=False):
+        """Create (or resume) and PATCH a TUS upload; bytes never touch our API.
+
+        ``resume=True`` asks the server for fresh headers (the signature expires
+        after an hour) and continues from the offset reported by HEAD, so an
+        interrupted transfer never starts over.
+        """
+        size = file_path.stat().st_size
+        target, headers = self._upload_target(session)
+        offset = 0
+        patch_url = None
+
+        if resume:
+            resume_url = self._resume_url(session, target)
+            try:
+                offset, _ = self.tus_offset(resume_url, headers)
+                patch_url = resume_url
+            except (urllib.error.HTTPError, urllib.error.URLError, ValueError):
+                # No resumable endpoint (or the server cannot answer HEAD):
+                # fall back to a fresh upload session.
+                offset = 0
+
+        if patch_url is None:
+            filename = base64.b64encode(file_path.name.encode()).decode()
+            create_headers = {
+                **headers,
+                "Tus-Resumable": "1.0.0",
+                "Upload-Length": str(size),
+                "Upload-Metadata": f"filename {filename}",
+                "Content-Length": "0",
+            }
+            request = urllib.request.Request(target, data=b"", headers=create_headers, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=self.settings.timeout) as response:
+                    location = response.headers.get("Location") or target
+            except urllib.error.HTTPError as exc:
+                raise CliError(
+                    f"创建上传会话失败：HTTP {exc.code}",
+                    code="upload_failed",
+                    exit_code=EXIT_UPLOAD,
+                ) from exc
+            patch_url = urllib.parse.urljoin(target, location)
+
+        if offset >= size:
+            return {"status": 204, "offset": offset, "resumed": True, "sent": 0}
+
+        remaining = size - offset
         patch_headers = {
             **headers,
             "Tus-Resumable": "1.0.0",
-            "Upload-Offset": "0",
+            "Upload-Offset": str(offset),
             "Content-Type": "application/offset+octet-stream",
-            "Content-Length": str(size),
+            "Content-Length": str(remaining),
         }
         with open(file_path, "rb") as handle:
+            handle.seek(offset)
             request = urllib.request.Request(patch_url, data=handle, headers=patch_headers, method="PATCH")
             try:
                 with urllib.request.urlopen(
                     request, timeout=max(self.settings.timeout, 300)
                 ) as response:
-                    return {"status": response.status, "offset": response.headers.get("Upload-Offset")}
+                    return {
+                        "status": response.status,
+                        "offset": response.headers.get("Upload-Offset") or offset + remaining,
+                        "resumed": bool(resume and offset),
+                        "sent": remaining,
+                    }
             except urllib.error.HTTPError as exc:
                 body = exc.read()
                 raise CliError(
@@ -309,7 +388,7 @@ class Client:
                     f"上传中断：{getattr(exc, 'reason', exc)}",
                     code="upload_failed",
                     exit_code=EXIT_UPLOAD,
-                    hint="重新运行同一条命令会在新的 upload-session 上重传",
+                    hint="重跑同一条命令并加 --resume，会从已传字节续传",
                 ) from exc
 
     def paginate(self, path, params=None, page_size=100, limit=None):
@@ -795,6 +874,38 @@ def _build_spec():
                     errors=[("not_found", "剧不存在")],
                     next_steps=[],
                 ),
+                cmd(
+                    "cover-set",
+                    "上传封面（JPG/PNG/WebP，≤5MB）",
+                    "minitv drama cover-set <id> <file>",
+                    cmd_drama_cover_set,
+                    args=[pos("id", "剧集 id"), pos("file", "本地图片")],
+                    examples=["minitv drama cover-set 184 ./cover.jpg"],
+                    outputs="cover_url（带 ?v= 版本号）",
+                    exits=GLOBAL_EXITS + " · 6 上传失败",
+                    errors=[("validation_error", "格式或大小不符")]
+                ),
+                cmd(
+                    "cover-clear",
+                    "清除封面",
+                    "minitv drama cover-clear <id>",
+                    cmd_drama_cover_clear,
+                    args=[pos("id", "剧集 id")],
+                    examples=["minitv drama cover-clear 184"],
+                    outputs="cover_url=""",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "schedule",
+                    "设置定时上线时间（需要外部触发 apply 才生效）",
+                    "minitv drama schedule <id> --at 2026-10-25T20:00+08:00",
+                    cmd_drama_schedule,
+                    args=[pos("id", "剧集 id"), arg(["--at"], "ISO8601 时间", required=True, metavar="AT")],
+                    examples=["minitv drama schedule 184 --at 2026-10-25T20:00+08:00"],
+                    outputs="id · scheduled_publish_at",
+                    exits=GLOBAL_EXITS,
+                    next_steps=["minitv schedule apply  手动触发到期上架"],
+                ),
             ],
         }
     )
@@ -928,7 +1039,8 @@ def _build_spec():
                     "上传一集的视频（TUS 直传，不过 API）",
                     "minitv episode upload <id> <file>",
                     cmd_episode_upload,
-                    args=[pos("id", "分集 id"), pos("file", "本地 .mp4 / .mov，≤200MB")],
+                    args=[pos("id", "分集 id"), pos("file", "本地 .mp4 / .mov，≤200MB"),
+                          arg(["--resume"], "从已上传的字节续传（签名过期后仍可用）", kind="bool")],
                     examples=["minitv episode upload 552 ./S01E01.mp4",
                               "minitv episode upload 552 ./S01E01.mp4 --json"],
                     outputs="episode_id · status · seconds · size",
@@ -949,6 +1061,7 @@ def _build_spec():
                         arg(["--title-rule"], "标题规则：en=Episode N / cn=第 N 集 / none=留空",
                             kind="choice", choices=["en", "cn", "none"], default="en", metavar="R"),
                         arg(["--publish"], "全部上传完成后逐集发布", kind="bool"),
+                        arg(["--resume"], "已在上传的分集从断点续传", kind="bool"),
                     ],
                     examples=[
                         "minitv episode upload-all --drama 184 --dir ./S01 --start 1 --publish",
@@ -958,6 +1071,17 @@ def _build_spec():
                     exits=GLOBAL_EXITS + " · 5 有失败项",
                     errors=[("upload_failed", "单个文件失败会继续，最后汇总")],
                     next_steps=["minitv drama publish <id>"],
+                ),
+                cmd(
+                    "subtitle",
+                    "上传字幕（.vtt / .srt，≤2MB）",
+                    "minitv episode subtitle <id> <file>",
+                    cmd_episode_subtitle,
+                    args=[pos("id", "分集 id"), pos("file", "本地字幕文件")],
+                    examples=["minitv episode subtitle 552 ./ep12.vtt"],
+                    outputs="subtitle_url（存储相对路径）",
+                    exits=GLOBAL_EXITS + " · 6 上传失败",
+                    errors=[("validation_error", "格式或大小不符")],
                 ),
             ],
         }
@@ -976,6 +1100,50 @@ def _build_spec():
                     examples=["minitv tag list"],
                     outputs="id、name_en、name_zh、category、status、drama_count",
                     exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "create",
+                    "新建标签",
+                    "minitv tag create --name-en Name [--name-zh 中文] [--category main|sub]",
+                    cmd_tag_create,
+                    args=[
+                        arg(["--name-en"], "英文名，全局唯一", required=True, metavar="NAME"),
+                        arg(["--name-zh"], "中文名", metavar="NAME"),
+                        arg(["--category"], "分类", kind="choice", choices=["main", "sub"], default="main"),
+                        arg(["--status"], "状态", kind="choice", choices=["enabled", "disabled"], default="enabled"),
+                    ],
+                    examples=["minitv tag create --name-en Werewolf --name-zh 狼人 --category sub"],
+                    outputs="新标签对象",
+                    exits=GLOBAL_EXITS,
+                    errors=[("conflict", "name_en 已存在")],
+                    next_steps=["minitv drama tag <id> <tag_ids>"],
+                ),
+                cmd(
+                    "update",
+                    "修改标签",
+                    "minitv tag update <id> [--name-en N] [--name-zh N] [--category C] [--status S]",
+                    cmd_tag_update,
+                    args=[
+                        pos("id", "标签 id"),
+                        arg(["--name-en"], "英文名", metavar="NAME"),
+                        arg(["--name-zh"], "中文名", metavar="NAME"),
+                        arg(["--category"], "分类", kind="choice", choices=["main", "sub"]),
+                        arg(["--status"], "状态", kind="choice", choices=["enabled", "disabled"]),
+                    ],
+                    examples=["minitv tag update 12 --status disabled"],
+                    outputs="更新后的标签对象",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "delete",
+                    "删除标签（仍被剧集引用时会 409 并列出引用）",
+                    "minitv tag delete <id> --confirm <id>",
+                    cmd_tag_delete,
+                    args=[pos("id", "标签 id"), arg(["--confirm"], "必须等于标签 id", required=True, metavar="ID")],
+                    examples=["minitv tag delete 12 --confirm 12"],
+                    outputs="deleted",
+                    exits=GLOBAL_EXITS,
+                    errors=[("conflict", "标签仍被剧集使用")],
                 ),
             ],
         }
@@ -1003,6 +1171,71 @@ def _build_spec():
                     args=[pos("id", "分组 id")],
                     examples=["minitv group dramas 12"],
                     outputs="组内剧集列表",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "create",
+                    "新建首页分组（楼层）",
+                    "minitv group create --name NAME [--position N]",
+                    cmd_group_create,
+                    args=[
+                        arg(["--name"], "分组名", required=True, metavar="NAME"),
+                        arg(["--position"], "排序位置，默认 0", kind="int", default=0, metavar="N"),
+                    ],
+                    examples=['minitv group create --name "New Releases" --position 4'],
+                    outputs="id",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "update",
+                    "改分组名 / 排序 / 样式 / 角标 / 上下线",
+                    "minitv group update <id> [--name N] [--position N] [--style S] [--badge B] [--status S]",
+                    cmd_group_update,
+                    args=[
+                        pos("id", "分组 id"),
+                        arg(["--name"], "分组名", metavar="N"),
+                        arg(["--position"], "排序位置", kind="int", metavar="N"),
+                        arg(["--style"], "楼层样式", kind="choice",
+                            choices=["poster3", "rank", "grid2"], metavar="S"),
+                        arg(["--badge"], "角标样式", kind="choice", choices=["rank", "label"], metavar="B"),
+                        arg(["--status"], "状态", kind="choice", choices=["active", "inactive"], metavar="S"),
+                    ],
+                    examples=["minitv group update 4 --style grid2 --position 1"],
+                    outputs="更新后的分组对象",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "add",
+                    "把剧加进分组（不带 --confirm 只返回容量预览）",
+                    "minitv group add <id> <drama_id> [--confirm]",
+                    cmd_group_add,
+                    args=[pos("id", "分组 id"), pos("drama", "剧集 id"),
+                          arg(["--confirm"], "真正写入", kind="bool")],
+                    examples=["minitv group add 4 184", "minitv group add 4 184 --confirm"],
+                    outputs="written / selected / limit / already_in_group",
+                    exits=GLOBAL_EXITS,
+                    errors=[("conflict", "分组已满（上限 100）")],
+                ),
+                cmd(
+                    "remove",
+                    "把剧移出分组",
+                    "minitv group remove <id> <drama_id>",
+                    cmd_group_remove,
+                    args=[pos("id", "分组 id"), pos("drama", "剧集 id")],
+                    examples=["minitv group remove 4 184"],
+                    outputs="removed",
+                    exits=GLOBAL_EXITS,
+                    errors=[("not_found", "该剧不在此分组")],
+                ),
+                cmd(
+                    "move",
+                    "调整组内位置",
+                    "minitv group move <id> <drama_id> --position N",
+                    cmd_group_move,
+                    args=[pos("id", "分组 id"), pos("drama", "剧集 id"),
+                          arg(["--position"], "组内位置", kind="int", required=True, metavar="N")],
+                    examples=["minitv group move 4 184 --position 0"],
+                    outputs="position_in_group",
                     exits=GLOBAL_EXITS,
                 ),
             ],
@@ -1050,6 +1283,24 @@ def _build_spec():
                     exits="0 成功",
                     with_globals=False,
                     next_steps=["minitv --help  查看全部命令"],
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
+            "name": "schedule",
+            "summary": "定时上架",
+            "commands": [
+                cmd(
+                    "apply",
+                    "把已到期的定时排期推上线（后台没有 cron，需要外部触发）",
+                    "minitv schedule apply",
+                    cmd_schedule_apply,
+                    examples=["minitv schedule apply"],
+                    outputs="published（本次上线数量）",
+                    exits=GLOBAL_EXITS,
                 ),
             ],
         }
@@ -1308,23 +1559,45 @@ def _upload_one(args, client, episode_id, path: Path):
     if getattr(args, "dry_run", False):
         print(f"将上传 {path.name}（{size} 字节）→ 分集 {episode_id}")
         return {"status": "dry-run"}
-    session = client.request(
-        "POST",
-        f"/admin/v1/episodes/{episode_id}/upload-session",
-        body={
-            "filename": path.name,
-            "mime": _mime_for(path),
-            "size_bytes": size,
-            "width": 0,
-            "height": 0,
-            "duration_seconds": 0,
-        },
-    )
+    body = {
+        "filename": path.name,
+        "mime": _mime_for(path),
+        "size_bytes": size,
+        "width": 0,
+        "height": 0,
+        "duration_seconds": 0,
+    }
+    resume = bool(getattr(args, "resume", False))
+    session = None
+    if resume:
+        try:
+            session = client.request("POST", f"/admin/v1/episodes/{episode_id}/upload-headers")
+        except CliError:
+            session = None  # nothing in flight → start a fresh upload below
+    if session is None:
+        try:
+            session = client.request(
+                "POST", f"/admin/v1/episodes/{episode_id}/upload-session", body=body
+            )
+        except CliError as exc:
+            if "in progress" in (exc.message or ""):
+                raise CliError(
+                    exc.message,
+                    code=exc.code,
+                    exit_code=exc.exit_code,
+                    hint="该集正在上传；加 --resume 从断点续传",
+                ) from exc
+            raise
     started = time.time()
-    client.tus_upload(session, path)
+    transfer = client.tus_upload(session, path, resume=resume)
     elapsed = time.time() - started
     state = client.request("POST", f"/admin/v1/episodes/{episode_id}/sync-status") or {}
-    return {"status": state.get("status"), "seconds": round(elapsed, 1), "size": size}
+    return {
+        "status": state.get("status"),
+        "seconds": round(elapsed, 1),
+        "size": size,
+        "resumed": bool(transfer.get("resumed")),
+    }
 
 
 def cmd_episode_upload(args):
@@ -1401,6 +1674,226 @@ def cmd_episode_upload_all(args):
     else:
         print(f"汇总：成功 {len(results)} · 失败 {len(failures)} · 已发布 {len(published)}")
     return EXIT_CONFLICT if failures else EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# media / tag / group / schedule commands
+# ---------------------------------------------------------------------------
+
+
+def _multipart(filename: str, content: bytes, content_type: str, field: str = "file"):
+    boundary = "----minitv" + secrets.token_hex(12)
+    head = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="{field}"; filename="{filename}"\r\n'
+        f"Content-Type: {content_type}\r\n\r\n"
+    ).encode()
+    tail = f"\r\n--{boundary}--\r\n".encode()
+    return head + content + tail, f"multipart/form-data; boundary={boundary}"
+
+
+_COVER_MIME = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+_SUBTITLE_MIME = {".vtt": "text/vtt", ".srt": "application/x-subrip"}
+
+
+def _read_upload(path: Path, limit: int, allowed: dict, label: str):
+    if not path.is_file():
+        raise usage_error(f"文件不存在：{path}")
+    ext = path.suffix.lower()
+    if ext not in allowed:
+        raise usage_error(f"{label} 只支持 {', '.join(sorted(allowed))}")
+    data = path.read_bytes()
+    if not data:
+        raise usage_error(f"{path.name} 是空文件")
+    if len(data) > limit:
+        raise usage_error(f"{path.name} 超过 {limit // (1024 * 1024)}MB")
+    return data, allowed[ext]
+
+
+def cmd_drama_cover_set(args):
+    path = Path(args.file).expanduser()
+    data, mime = _read_upload(path, 5 * 1024 * 1024, _COVER_MIME, "封面")
+    if getattr(args, "dry_run", False):
+        print(f"将上传封面 {path.name}（{len(data)} 字节）→ 剧 {args.id}")
+        return EXIT_OK
+    body, content_type = _multipart(path.name, data, mime)
+    client = Client(resolve_settings(args))
+    payload = client.request_raw("POST", f"/admin/v1/dramas/{args.id}/cover", body, content_type)
+    output(args, payload or {})
+    return EXIT_OK
+
+
+def cmd_drama_cover_clear(args):
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "DELETE", f"/admin/v1/dramas/{args.id}/cover")
+    if payload is None:
+        return EXIT_OK
+    output(args, payload or {"cover_url": ""})
+    return EXIT_OK
+
+
+def _parse_when(raw: str) -> str:
+    text = raw.strip().replace(" ", "T", 1)
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise usage_error(
+            f"时间格式不认识：{raw}",
+            hint='用 ISO8601，如 2026-10-25T20:00+08:00（不带时区按本机时区）',
+        ) from exc
+    if moment.tzinfo is None:
+        moment = moment.astimezone()
+    return moment.isoformat()
+
+
+def cmd_drama_schedule(args):
+    when = _parse_when(args.at)
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "POST", f"/admin/v1/dramas/{args.id}/schedule", {"at": when})
+    if payload is None:
+        return EXIT_OK
+    output(args, {"id": int(args.id), **payload})
+    return EXIT_OK
+
+
+def cmd_schedule_apply(args):
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "POST", "/admin/v1/schedules/apply")
+    if payload is None:
+        return EXIT_OK
+    output(args, payload or {})
+    return EXIT_OK
+
+
+def cmd_episode_subtitle(args):
+    path = Path(args.file).expanduser()
+    data, mime = _read_upload(path, 2 * 1024 * 1024, _SUBTITLE_MIME, "字幕")
+    if getattr(args, "dry_run", False):
+        print(f"将上传字幕 {path.name}（{len(data)} 字节）→ 分集 {args.id}")
+        return EXIT_OK
+    body, content_type = _multipart(path.name, data, mime)
+    client = Client(resolve_settings(args))
+    payload = client.request_raw("POST", f"/admin/v1/episodes/{args.id}/subtitle", body, content_type)
+    output(args, payload or {})
+    return EXIT_OK
+
+
+def cmd_tag_create(args):
+    body = {"name_en": args.name_en}
+    if args.name_zh is not None:
+        body["name_zh"] = args.name_zh
+    if args.category is not None:
+        body["category"] = args.category
+    if args.status is not None:
+        body["status"] = args.status
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "POST", "/admin/v1/tags", body)
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_tag_update(args):
+    body = {}
+    for field in ("name_en", "name_zh", "category", "status"):
+        value = getattr(args, field)
+        if value is not None:
+            body[field] = value
+    if not body:
+        raise usage_error("没有要修改的字段", hint="至少给一个 --name-en/--name-zh/--category/--status")
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "PATCH", f"/admin/v1/tags/{args.id}", body)
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_tag_delete(args):
+    _require_confirm(args, args.id)
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "DELETE", f"/admin/v1/tags/{args.id}")
+    if payload is None:
+        return EXIT_OK
+    output(args, payload or {"deleted": True})
+    return EXIT_OK
+
+
+def cmd_group_create(args):
+    body = {"name": args.name, "position": args.position}
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "POST", "/admin/v1/groups", body)
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_group_update(args):
+    body = {}
+    for field in ("name", "position", "status", "style", "badge"):
+        value = getattr(args, field)
+        if value is not None:
+            body[field] = value
+    if not body:
+        raise usage_error(
+            "没有要修改的字段",
+            hint="至少给一个 --name/--position/--status/--style/--badge",
+        )
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "PATCH", f"/admin/v1/groups/{args.id}", body)
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_group_add(args):
+    client = Client(resolve_settings(args))
+    payload = _write(
+        args,
+        client,
+        "POST",
+        f"/admin/v1/groups/{args.id}/dramas",
+        {"drama_id": args.drama, "confirm": bool(args.confirm)},
+    )
+    if payload is None:
+        return EXIT_OK
+    if not payload.get("written") and not args.confirm and not payload.get("already_in_group"):
+        # Preview only: the API refuses nothing here, it just does not write.
+        payload["hint"] = "确认无误后加 --confirm 真正写入"
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_group_remove(args):
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "DELETE", f"/admin/v1/groups/{args.id}/dramas/{args.drama}")
+    if payload is None:
+        return EXIT_OK
+    output(args, payload or {"removed": True})
+    return EXIT_OK
+
+
+def cmd_group_move(args):
+    client = Client(resolve_settings(args))
+    payload = _write(
+        args,
+        client,
+        "PATCH",
+        f"/admin/v1/groups/{args.id}/dramas/{args.drama}",
+        {"position": args.position},
+    )
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
 
 
 def _find(group_name, cmd_name=None):

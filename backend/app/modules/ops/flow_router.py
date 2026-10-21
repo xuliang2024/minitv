@@ -59,7 +59,11 @@ from app.modules.content.publish_service import (
     schedule_publish,
 )
 from app.modules.content.service import InvalidTransition, transition_episode
-from app.modules.content.upload_service import UploadRejected, create_upload_session
+from app.modules.content.upload_service import (
+    UploadRejected,
+    create_upload_session,
+    sign_callback,
+)
 from app.modules.ops.config_models import (
     Banner,
     ChannelTab,
@@ -644,6 +648,52 @@ def start_transcode_reconciler() -> None:
     threading.Thread(target=_reconcile_forever, name="transcode-reconcile", daemon=True).start()
 
 
+@router.post("/episodes/{episode_id}/upload-headers")
+def episode_upload_headers(
+    episode_id: int,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_content_writer),
+):
+    """Re-mint TUS authorization for an upload that is already in flight.
+
+    TUS signatures expire (1h). Without this endpoint an interrupted upload can
+    only be restarted from byte 0, because ``upload-session`` refuses to run
+    while the episode is ``transcoding``. This call changes no state — it just
+    hands back fresh headers plus the video id the client should resume.
+    """
+    episode = db.get(Episode, episode_id)
+    if episode is None:
+        raise HTTPException(status_code=404, detail="episode not found")
+    if episode.status != "transcoding":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "upload_not_resumable",
+                "message": f"分集当前是 {episode.status}，只有 transcoding 状态可以续传",
+            },
+        )
+    upload = _latest_media_upload(db, episode.id, episode.bunny_video_id)
+    if upload is None or upload.status != "created" or not episode.bunny_video_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "upload_not_resumable", "message": "没有可续传的上传会话"},
+        )
+    if bunny.live():
+        return {
+            "video_id": episode.bunny_video_id,
+            "upload_url": bunny.STREAM_TUS_ENDPOINT,
+            "headers": bunny.tus_headers(episode.bunny_video_id),
+        }
+    return {
+        "video_id": episode.bunny_video_id,
+        "upload_url": f"/admin/v1/dev-tus/{episode.bunny_video_id}",
+        "headers": {
+            "AuthorizationExpire": "300",
+            "AuthorizationSignature": sign_callback(episode.bunny_video_id.encode()),
+        },
+    }
+
+
 @router.post("/episodes/{episode_id}/sync-status")
 def sync_episode_status(episode_id: int, db: Session = Depends(get_db), user: AdminUser = Depends(require_content_writer)):
     """Poll Bunny once and advance a ``transcoding`` episode.
@@ -767,6 +817,28 @@ def dev_tus_create(video_id: str, db: Session = Depends(get_db), user: AdminUser
     return Response(
         status_code=201,
         headers={"Location": f"/admin/v1/dev-tus/{video_id}", "Tus-Resumable": "1.0.0"},
+    )
+
+
+@router.head("/dev-tus/{video_id}")
+def dev_tus_head(
+    video_id: str,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_content_writer),
+):
+    """TUS HEAD for the fake receiver: how many bytes are already stored."""
+    _require_fake_mode()
+    upload = db.scalar(select(MediaUpload).where(MediaUpload.video_id == video_id))
+    if upload is None:
+        raise HTTPException(status_code=404, detail="unknown video id")
+    offset = upload.size_bytes if upload.status == "completed" else 0
+    return Response(
+        status_code=200,
+        headers={
+            "Upload-Offset": str(offset),
+            "Upload-Length": str(upload.size_bytes),
+            "Tus-Resumable": "1.0.0",
+        },
     )
 
 

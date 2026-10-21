@@ -477,3 +477,43 @@ doctor → 建剧(draft) → 重名(409) → --upsert 复用 → 改简介/免�
 - `upload-all` 目前**串行**，计划里的并发 2 放在后续。
 - 封面 / 字幕 / 排期 / `tag` 与 `group` 的写命令仍未进 CLI。
 - 上传时 CLI 不探测分辨率与时长（传 0），分集列表里时长显示 `-`；真实 Bunny 转码后由回调回填。
+
+## 12. 补全第二批：续传 + 媒资 + 标签/分组/排期（0.3.0，2026-10-21 15:35）
+
+按「先修硬伤、再补覆盖」的顺序补齐，命令数 34 → **47**。
+
+### 新能力
+
+| 能力 | CLI | 后端 |
+|---|---|---|
+| 断点续传 | `episode upload --resume`、`upload-all --resume` | `POST /episodes/{id}/upload-headers`（重签 TUS，不改状态）+ fake 接收器 `HEAD` |
+| 封面 | `drama cover-set <id> <file>`、`cover-clear` | 复用现有 multipart 接口 |
+| 字幕 | `episode subtitle <id> <file>` | 复用现有 multipart 接口 |
+| 标签 | `tag create / update / delete` | 复用现有接口 |
+| 分组 | `group create / update / add / remove / move` | 复用现有接口（`add` 默认只预览，`--confirm` 才写） |
+| 排期 | `drama schedule <id> --at ISO`、`schedule apply` | 复用现有接口 |
+
+### 续传怎么工作
+
+```
+upload --resume
+  → POST /episodes/{id}/upload-headers   （签名过期也能拿到新头）
+  → HEAD {...}/tusupload/{video_id}      （Upload-Offset）
+  → PATCH 从 offset 开始（seek 后只发剩余字节）
+  → 拿不到 HEAD / 没有在途会话 → 自动退回新建 upload-session
+```
+
+不带 `--resume` 时，如果该集正在上传，会收到 422 并提示「加 --resume」。
+
+### 验收
+
+- 隔离库 + fake 模式：**20/20 PASS**（标签 CRUD、建剧+标签+排期、续传补完 2 集、分组增删改排、`schedule apply`、被引用标签拒删、清理）。
+- 封面/字幕需要 real 模式（fake 直接 503），单独起 real 实例验证：`cover.png` → `https://minitv-dev-img.b-cdn.net/covers/8/cover.png`，`sub.vtt` → `subs/7/sub.vtt` 且 CDN 200；`cover-clear` 后字段清空。测试对象已从存储删除。
+- 后端 **360 passed**。
+
+### 仍未做 / 已知缺口
+
+- **删除分集或整剧时，不清理 Bunny 上的字幕/封面对象**（只清数据库）。运营删除后会留下孤儿文件，需要单独清理任务。
+- `upload-all` 仍串行（并发 2 未做）。
+- 无 `episode subtitle` 删除命令（后端也没有）。
+- `drama cover-set` 依赖 real 模式；fake 环境会得到 503，属预期。
