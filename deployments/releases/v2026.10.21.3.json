@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.21.3",
+  "target": "server",
+  "status": "published",
+  "sha": "e04410f025d5d63b25fbc7c6a10c9e932e3d2aea",
+  "short_sha": "e04410f0",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-21T11:02:21+08:00",
+  "finished_at": "2026-10-21T11:02:35+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 95440,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "API Key 体系：admin_api_keys + api_key_events + 8 端点 + require_admin 分流（其他会话的 app/docs 未提交改动不参与本次 payload）",
+  "dirty": true
+}
