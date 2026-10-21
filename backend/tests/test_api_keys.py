@@ -381,3 +381,32 @@ def test_session_auth_is_unchanged(make, client):
     bad = client.get("/admin/v1/dramas", headers={"Authorization": "Bearer nope"})
     assert bad.status_code == 401
     assert bad.json()["detail"]["code"] == "invalid_session"
+
+
+def test_empty_scope_list_is_rejected(make, client):
+    """Regression: ``[]`` used to mean "follow role", i.e. full power.
+
+    A PATCH with an empty list must not be able to widen a read-only key into
+    one that can read /staff and /finance.
+    """
+    headers, _ = _admin_headers(make, client)
+    ops = make.admin(role="ops", username="agent-ops")
+
+    r = client.post(
+        "/admin/v1/api-keys",
+        json={"user_id": ops.id, "name": "empty", "scopes": []},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+
+    created = _issue(client, headers, ops.id, scopes=["read"])
+    patched = client.patch(
+        f"/admin/v1/api-keys/{created['id']}", json={"scopes": []}, headers=headers
+    )
+    assert patched.status_code == 422, patched.text
+
+    # The key is unchanged and still read-only.
+    assert client.get("/admin/v1/dramas", headers=_key_headers(created)).status_code == 200
+    denied = client.get("/admin/v1/staff", headers=_key_headers(created))
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "scope_denied"

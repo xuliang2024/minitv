@@ -342,3 +342,42 @@ Query：`user_id` `status` `q`（匹配 name / prefix / username）`page` `page_
 
 - **生产部署未执行**：需 `commit` 后走 `python3 scripts/release.py run --target server -- ./scripts/deploy_server.sh` + admin R2 发布。
 - `staff` / `billing` scope 的界面不提供勾选，后端也未硬性禁止 admin 签发含 `staff` 的 key（有审计兜底），如需强约束可再加校验。
+
+## 15. 线上验收发现（2026-10-21 11:35）
+
+用真实 key 打生产接口（read/write/delete、绑定 `admin`、365 天）后的结论：
+
+| 项 | 结果 |
+|---|---|
+| 鉴权与身份 | `GET /auth/me` 返回绑定账号 `admin`；`/auth/keys` 只回前缀，无明文 |
+| 读接口 | `/dramas`、`/tags` 200 |
+| 写接口 | `POST /dramas` 空体返回 422（说明已通过鉴权，只缺字段） |
+| 删接口 | `POST /dramas/99999999/delete` 返回 404（说明 delete scope 生效） |
+| 越权拦截 | `/staff`、`/finance/orders`、`/auth/password` 均 `scope_denied` |
+| 事件 | `api_key_events` 记到了 404 与 422 两次写尝试（失败的也记，符合预期） |
+| `last_used_at` | 每次调用后刷新（60s 节流） |
+
+### BUG-1（严重，已修）空 scopes 会把只读 key 放大成全权
+
+`PATCH /api-keys/{id}` 传 `{"scopes": []}` 时，`granted_scopes()` 把空数组解释为「跟随账号角色」，
+于是一把 `["read"]` 的 key 立刻可以读 `/staff`、`/finance/orders`（实测均 200）。
+
+成因：空数组在历史语义里表示「跟随角色」（key 表默认值），而接口没有区分「调用方显式传空」。
+修复：`normalise_scopes()` 对显式空数组返回 422（并提示「省略 scopes 表示跟随角色」），
+新增回归测试 `test_empty_scope_list_is_rejected`。前端表单本来就要求至少勾一项，所以线上未触发。
+
+### BUG-2（轻微，已修）「有效」筛选会混进已过期密钥
+
+过期 key 的 `status` 仍是 `active`，服务端 `?status=active` 会把它带回来，而前端只对
+`expiring/expired` 做了二次过滤。修复：前端统一按派生 `state` 过滤。
+
+### 风险-3（未修，属设计取舍）`read` 覆盖了用户数据
+
+`read` 目前等于「所有 GET」，所以只读内容 key 也能读 `/admin/v1/users`、`/comments`、`/dashboard`。
+给 Agent 用的 key 建议后续拆出 `users:read`，或把非内容 GET 归到 `staff`。当前靠「绑到 ops 账号」兜底。
+
+### 运维建议
+
+- 这把 key 绑定的是 `admin` 且带 `delete`，等价于超管令牌；给自动化使用时建议换成专用 `agent-ops`（`ops` 角色），
+  这样即使带 `delete` 也只能删内容，碰不到 `staff`/`billing`。
+- key 名建议写成「用途/实例」（如 `agent-ops/upload-bot`），便于在事件表里定位。

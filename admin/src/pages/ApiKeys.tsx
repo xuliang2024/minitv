@@ -127,10 +127,11 @@ export default function ApiKeys() {
   );
 
   const rows = useMemo(() => {
-    if (stateFilter === "expiring" || stateFilter === "expired") {
-      return data.items.filter((row) => row.state === stateFilter);
-    }
-    return data.items;
+    // `expiring` / `expired` are derived states, and an expired key still has
+    // status=active in the database — so every non-empty filter has to be
+    // applied on the painted state, not only on the server-side status.
+    if (!stateFilter) return data.items;
+    return data.items.filter((row) => row.state === stateFilter);
   }, [data.items, stateFilter]);
 
   const onCreate = async (values: any) => {

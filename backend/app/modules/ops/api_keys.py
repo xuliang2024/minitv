@@ -192,8 +192,21 @@ def authenticate(
 
 
 def normalise_scopes(raw: list[str] | None) -> list[str]:
+    """Validate a caller-supplied scope list.
+
+    ``None`` means "use the default set". An **empty** list is rejected on
+    purpose: ``granted_scopes`` treats an empty stored list as "follow the
+    account role" (the legacy meaning for keys created before scopes existed),
+    so accepting ``[]`` here would silently upgrade a read-only key to full
+    account power — a privilege escalation through a plain PATCH.
+    """
     if raw is None:
         return list(DEFAULT_SCOPES)
+    if not raw:
+        raise HTTPException(
+            status_code=422,
+            detail="至少选择一个权限；如需跟随账号角色请省略 scopes 字段",
+        )
     unknown = [item for item in raw if item not in SCOPES]
     if unknown:
         raise HTTPException(
