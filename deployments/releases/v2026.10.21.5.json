@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.21.5",
+  "target": "r2",
+  "status": "published",
+  "sha": "cc080083b1866addb500576013b52bf1fb866955",
+  "short_sha": "cc080083",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.21.5/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "4e170e0c3faab46d3bddde28e826e8548dcc42860f5dc9f9a74e2e3971d2dc26",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-BuqI5e9A.js",
+      "size": 1475492
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-21T11:21:40+08:00",
+  "finished_at": "2026-10-21T11:22:24+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 2062,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "修复 admin 登录：构建注入 VITE_API_BASE，请求直连 api.minitv.us",
+  "dirty": false
+}
