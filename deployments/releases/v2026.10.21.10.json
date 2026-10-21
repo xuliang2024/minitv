@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.21.10",
+  "target": "server",
+  "status": "published",
+  "sha": "59420fb8a4b6fd5bc6c2073732569a3bf3d77277",
+  "short_sha": "59420fb8",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-21T15:06:29+08:00",
+  "finished_at": "2026-10-21T15:06:44+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 71259,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "API Key：被拒绝的写请求也落事件表（其他会话改动不参与 payload）",
+  "dirty": true
+}
