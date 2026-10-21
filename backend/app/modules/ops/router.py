@@ -62,12 +62,12 @@ def require_admin(request: Request, db: Session = Depends(get_db)) -> AdminUser:
     """
     credential = _bearer_token(request)
     if api_key_service.looks_like_key(credential):
-        user, key = api_key_service.authenticate(
-            db, credential, request.method, request.url.path
-        )
-        # Read back by the event middleware after the response is produced.
+        user, key = api_key_service.resolve_credential(db, credential)
+        # Stamp the key before the scope check: a denied write must still be
+        # recorded in api_key_events (the middleware reads these after response).
         request.state.api_key_id = key.id
         request.state.api_key_staff_id = user.id
+        api_key_service.authorize(key, request.method, request.url.path)
         return user
     try:
         user = ops_service.resolve_session_token(db, credential)

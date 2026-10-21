@@ -410,3 +410,19 @@ def test_empty_scope_list_is_rejected(make, client):
     denied = client.get("/admin/v1/staff", headers=_key_headers(created))
     assert denied.status_code == 403
     assert denied.json()["detail"]["code"] == "scope_denied"
+
+
+def test_denied_write_is_recorded(make, client, session):
+    """A 403 from the scope check must still leave an audit trail."""
+    headers, _ = _admin_headers(make, client)
+    ops = make.admin(role="ops", username="agent-ops")
+    created = _issue(client, headers, ops.id, scopes=["read"])
+
+    denied = client.post("/admin/v1/dramas", json={"title": "Nope"}, headers=_key_headers(created))
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "scope_denied"
+
+    events = session.query(ApiKeyEvent).all()
+    assert len(events) == 1
+    assert events[0].status_code == 403
+    assert events[0].path == "/admin/v1/dramas"

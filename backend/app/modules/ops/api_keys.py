@@ -160,13 +160,12 @@ def _touch(db: Session, key: AdminApiKey) -> None:
     db.commit()
 
 
-def authenticate(
-    db: Session, credential: str, method: str, path: str
-) -> tuple[AdminUser, AdminApiKey]:
-    """Resolve a ``mk_live_...`` credential into its bound account.
+def resolve_credential(db: Session, credential: str) -> tuple[AdminUser, AdminApiKey]:
+    """Verify a ``mk_live_...`` credential and return its bound account.
 
-    Raises ``HTTPException`` with a machine-readable ``code`` on every failure
-    path so the CLI can distinguish "rotate me" from "ask an admin".
+    Split from :func:`authorize` so the caller can stamp the key on the request
+    *before* the scope check — a denied write then still shows up in
+    ``api_key_events`` (401s have no identity to record).
     """
     prefix = credential[:KEY_PREFIX_LEN]
     key = db.scalar(select(AdminApiKey).where(AdminApiKey.key_prefix == prefix))
@@ -180,11 +179,23 @@ def authenticate(
     user = db.get(AdminUser, key.admin_user_id)
     if user is None or user.status != STATUS_ACTIVE:
         raise _reject(401, "account_disabled", "密钥绑定的账号已被禁用")
+    _enforce_rate_limit(key.id)
+    _touch(db, key)
+    return user, key
+
+
+def authorize(key: AdminApiKey, method: str, path: str) -> None:
     needed = scope_for_request(method, path)
     if needed not in granted_scopes(key):
         raise _reject(403, "scope_denied", f"该密钥缺少 {needed} 权限")
-    _enforce_rate_limit(key.id)
-    _touch(db, key)
+
+
+def authenticate(
+    db: Session, credential: str, method: str, path: str
+) -> tuple[AdminUser, AdminApiKey]:
+    """Resolve + authorize in one call (kept for callers that do not need audit)."""
+    user, key = resolve_credential(db, credential)
+    authorize(key, method, path)
     return user, key
 
 
