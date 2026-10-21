@@ -5,6 +5,7 @@
 # public build targets for the static sites (no secrets inside)
 !h5/.env.production
 !web/.env.production
+!admin/.env.production
 
 # local runtimes
 .venv/
