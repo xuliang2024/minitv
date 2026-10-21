@@ -1,0 +1,4764 @@
+
+########## 1. 版本 / 配置 / 身份 ##########
+$ /Users/m007/codes/lite_tv/cli/minitv version
+{"ok": true, "data": {"version": "0.3.0"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  version 输出 0.3.0
+$ /Users/m007/codes/lite_tv/cli/minitv config path
+/tmp/cli-report-config/config.json
+/tmp/cli-report-config/credentials
+  ↳ exit 0
+PASS  config show 不泄露明文
+$ /Users/m007/codes/lite_tv/cli/minitv config test --profile report
+{"ok": true, "data": {"username": "report-admin", "role": "admin", "scopes": ["read", "write", "delete"], "expires_at": "2026-11-20T07:39:50.076193+00:00", "warnings": ["该密钥绑定 admin 且含 delete，等同超管；给自动化用建议换 agent-ops"]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv auth whoami --profile report
+{"ok": true, "data": {"username": "report-admin", "role": "admin", "scopes": ["read", "write", "delete"], "expires_at": "2026-11-20T07:39:50.076193+00:00", "warnings": ["该密钥绑定 admin 且含 delete，等同超管；给自动化用建议换 agent-ops"]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  身份是 report-admin
+PASS  config use 切换 profile
+
+########## 2. 标签 CRUD ##########
+$ /Users/m007/codes/lite_tv/cli/minitv tag list --profile report
+{"ok": true, "data": {"items": [{"id": 1, "name_en": "Action", "name_zh": "动作", "category": "main", "status": "enabled", "drama_count": 0}, {"id": 3, "name_en": "Rebirth", "name_zh": "重生", "category": "sub", "status": "enabled", "drama_count": 0}, {"id": 2, "name_en": "Romance", "name_zh": "爱情", "category": "main", "status": "enabled", "drama_count": 0}]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  tag create
+$ /Users/m007/codes/lite_tv/cli/minitv tag update 6 --name-zh 狼人族 --profile report
+{"ok": true, "data": {"id": 6, "name_en": "Werewolf", "name_zh": "狼人族", "category": "sub", "status": "enabled", "drama_count": 0}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  tag update
+
+########## 3. 建剧（含重名与 upsert） ##########
+PASS  drama create → draft
+$ /Users/m007/codes/lite_tv/cli/minitv drama create --title Full Cycle 1792568545 --profile report
+{"ok": false, "error": {"code": "title_exists", "message": "同名剧已存在", "hint": null, "detail": {"drama_id": 12}}}
+  ↳ exit 5
+PASS  重名 409 + exit 5
+PASS  upsert 复用同 id
+
+########## 4. 元数据 / 标签 / 封面 / 排期 ##########
+$ /Users/m007/codes/lite_tv/cli/minitv drama update 12 --title Full Cycle 1792568545 --synopsis CLI 0.3.0 全链路验收：3 秒测试片 --free 1 --coin 60 --profile report
+{"ok": true, "data": {"id": 12, "title": "Full Cycle 1792568545", "synopsis": "CLI 0.3.0 全链路验收：3 秒测试片", "cover_url": "", "status": "draft", "free_episode_count": 1, "coin_price_per_episode": 60, "tags": [], "episode_count": 0, "play_count": 0, "updated_at": "2026-10-21T07:42:26.565364+00:00"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv drama tag 12 1,6 --profile report
+{"ok": true, "data": {"id": 12, "tags": [{"id": 1, "name_en": "Action", "name_zh": "动作"}, {"id": 6, "name_en": "Werewolf", "name_zh": "狼人族"}]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  标签已挂载
+$ /Users/m007/codes/lite_tv/cli/minitv drama cover-set 12 /tmp/report-assets/cover.jpg --profile report-real
+{"ok": true, "data": {"cover_url": "https://minitv-dev-img.b-cdn.net/covers/12/cover.jpg?v=1792568551488497000"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  封面已设置
+$ /Users/m007/codes/lite_tv/cli/minitv drama cover-clear 12 --profile report-real
+{"ok": true, "data": {"cover_url": ""}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  封面已清除
+$ /Users/m007/codes/lite_tv/cli/minitv drama schedule 12 --at 2026-10-22T20:00:00+08:00 --profile report
+{"ok": true, "data": {"id": 12, "scheduled_publish_at": "2026-10-22T20:00:00+08:00"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv schedule apply --profile report
+{"ok": true, "data": {"published": 0}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+
+########## 5. 分集：建 / 批量 / 改 / 上传 / 字幕 / 发布 ##########
+PASS  episode create
+$ /Users/m007/codes/lite_tv/cli/minitv episode bulk --drama 12 --count 3 --profile report
+{"ok": true, "data": {"created": [2, 3], "total": 3}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode update 9 --title 第 1 集（改） --profile report
+{"ok": true, "data": {"id": 9, "episode_number": 1, "title": "第 1 集（改）", "status": "not_uploaded"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  episode update
+$ /Users/m007/codes/lite_tv/cli/minitv episode upload 9 /tmp/report-assets/S01E01.mp4 --profile report
+{"ok": true, "data": {"episode_id": 9, "file": "S01E01.mp4", "status": "in_review", "seconds": 0.0, "size": 32396, "resumed": false}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  单集上传 → in_review
+$ /Users/m007/codes/lite_tv/cli/minitv episode sync 9 --profile report
+{"ok": true, "data": {"id": 9, "status": "in_review"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode subtitle 9 /tmp/report-assets/ep1.vtt --profile report-real
+{"ok": true, "data": {"subtitle_url": "subs/9/sub.vtt"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode upload-all --drama 12 --dir /tmp/report-assets/one --start 2 --title-rule cn --publish --profile report
+{"ok": true, "data": {"uploaded": [{"number": 2, "episode_id": 10, "file": "S01E02.mp4", "status": "in_review", "seconds": 0.0, "size": 32430, "resumed": false}], "published": [10], "failed": []}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode publish 9 --profile report
+{"ok": true, "data": {"id": 9, "status": "published"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode unpublish 9 --profile report
+{"ok": true, "data": {"id": 9, "status": "unpublished"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode publish 9 --profile report
+{"ok": true, "data": {"id": 9, "status": "published"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode publish-all --drama 12 --profile report
+{"ok": true, "data": {"published": [], "skipped": [9, 10, 11]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  2 集有视频且已发布（第 3 集是空壳）
+$ /Users/m007/codes/lite_tv/cli/minitv episode delete 11 --confirm 11 --profile report
+  ↳ exit 0
+PASS  空壳分集可删
+
+########## 6. 分组 ##########
+$ /Users/m007/codes/lite_tv/cli/minitv group list --profile report
+{"ok": true, "data": {"items": [{"id": 1, "name": "验收楼层 1792568457", "position": 7, "status": "active", "style": "grid2", "badge": "rank", "drama_count": 0, "limit": 100}, {"id": 2, "name": "验收楼层 1792568503", "position": 7, "status": "active", "style": "grid2", "badge": "rank", "drama_count": 0, "limit": 100}]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  group create
+$ /Users/m007/codes/lite_tv/cli/minitv group update 3 --style grid2 --status active --profile report
+{"ok": true, "data": {"id": 3, "name": "验收楼层 1792568577", "position": 7, "status": "active", "style": "grid2", "badge": "rank", "drama_count": 0, "limit": 100}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv group add 3 12 --profile report
+{"ok": true, "data": {"written": false, "selected": 0, "limit": 100, "already_in_group": false, "hint": "确认无误后加 --confirm 真正写入"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  add 默认只预览
+$ /Users/m007/codes/lite_tv/cli/minitv group add 3 12 --confirm --profile report
+{"ok": true, "data": {"written": true, "selected": 1, "limit": 100}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  add --confirm 写入
+$ /Users/m007/codes/lite_tv/cli/minitv group move 3 12 --position 0 --profile report
+{"ok": true, "data": {"position_in_group": 0}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv group dramas 3 --profile report
+{"ok": true, "data": {"group": {"id": 3, "name": "验收楼层 1792568577", "position": 7, "status": "active", "style": "grid2", "badge": "rank", "drama_count": 1, "limit": 100}, "items": [{"id": 12, "title": "Full Cycle 1792568545", "status": "draft", "cover_url": "", "position_in_group": 0}]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv group remove 3 12 --profile report
+{"ok": true, "data": {"removed": true}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  移出分组
+
+########## 7. 上线 / 下架 / 重新上线（自动补跳） ##########
+$ /Users/m007/codes/lite_tv/cli/minitv drama publish 12 --profile report
+{"ok": true, "data": {"id": 12, "status": "published", "hops": ["draft → in_review", "in_review → published"]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  drama publish
+$ /Users/m007/codes/lite_tv/cli/minitv drama unpublish 12 --profile report
+{"ok": true, "data": {"id": 12, "status": "unpublished"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  drama unpublish
+$ /Users/m007/codes/lite_tv/cli/minitv drama publish 12 --profile report
+{"ok": true, "data": {"id": 12, "status": "published", "hops": ["unpublished → published"]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+
+########## 8. 对外可见性（未登录） ##########
+{"title":"Full Cycle 1792568545","episodes":2,"free":1,"tags":["Action","Werewolf"],"items":[{"n":1,"free":true},{"n":2,"free":false}]}
+{"items":[{"n":1,"free":true,"locked":false},{"n":2,"free":false,"locked":true}],"entitlement":{"member":false,"unlocked_episode_ids":[]}}
+
+########## 9. 守卫与边界 ##########
+$ /Users/m007/codes/lite_tv/cli/minitv --profile report-ro drama create --title should fail 1792568579
+{"ok": false, "error": {"code": "scope_denied", "message": "该密钥缺少 write 权限", "hint": "当前密钥缺少该操作的 scope"}}
+  ↳ exit 3
+PASS  只读 key 建剧被拒
+$ /Users/m007/codes/lite_tv/cli/minitv episode delete 9 --confirm 9 --profile report
+{"ok": false, "error": {"code": "episode_not_empty", "message": "第 1 集是 published，只有空壳可以删；请先下架", "hint": null}}
+  ↳ exit 5
+PASS  非空分集拒删
+$ /Users/m007/codes/lite_tv/cli/minitv drama delete 12 --confirm 999 --profile report
+{"ok": false, "error": {"code": "usage", "message": "--confirm 与目标不一致（目标 12，收到 999）", "hint": "确认无误请用 --confirm 12"}}
+  ↳ exit 2
+$ /Users/m007/codes/lite_tv/cli/minitv drama delete 12 --confirm 12 --dry-run --profile report
+将发送 POST /admin/v1/dramas/12/delete {"confirm": true}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv tag delete 6 --confirm 6 --profile report
+{"ok": false, "error": {"code": "conflict", "message": "tag is in use; resolve references before deleting", "hint": null, "detail": {"affected_dramas": [{"id": 12, "title": "Full Cycle 1792568545"}]}}}
+  ↳ exit 5
+PASS  被引用标签拒删
+
+########## 10. 导出 ##########
+$ /Users/m007/codes/lite_tv/cli/minitv export dramas --out /tmp/report-export.json --profile report
+{"ok": true, "data": {"count": 1, "out": "/tmp/report-export.json"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  导出包含本剧
+
+########## 11. 清理 ##########
+$ /Users/m007/codes/lite_tv/cli/minitv tag delete 6 --confirm 6 --profile report
+{"ok": true, "data": {"ok": true}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv drama delete 12 --confirm 12 --profile report
+{"ok": true, "data": {"deleted": true, "impact": {"groups": [], "banner_count": 0, "push_count": 0, "episode_count": 2}}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+PASS  整剧已删
+========================================
+PASS=28 FAIL=0
+
+########## 12. 首次初始化（config init / rm-key） ##########
+配置目录  /tmp/cli-init-test
+配置文件  /tmp/cli-init-test/config.json
+{"ok": true, "data": {"profile": "fresh", "base_url": "http://127.0.0.1:18121", "username": "report-admin", "role": "admin", "scopes": ["read", "write", "delete"], "expires_at": "2026-11-20T07:39:50.076193+00:00", "saved_to": "/tmp/cli-init-test/credentials", "warnings": ["该密钥绑定 admin 且含 delete，等同超管；给自动化用建议换 agent-ops"]}, "meta": {"version": "0.3.0"}}
+  ↳ 文件:
+-rw-r--r--@ 1 m007  wheel  332 Oct 21 15:43 config.json
+-rw-------@ 1 m007  wheel   67 Oct 21 15:43 credentials
+$ env MINITV_CONFIG_DIR=/tmp/cli-init-test /Users/m007/codes/lite_tv/cli/minitv config rm-key --profile fresh
+已删除 profile 'fresh' 的密钥
+  ↳ exit 0
+  ↳ 删除后 credentials:
+(空)
+
+########## 13. 单步状态机（drama status） ##########
+$ /Users/m007/codes/lite_tv/cli/minitv drama status 16 --to in_review --profile report
+{"ok": true, "data": {"id": 16, "status": "in_review"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv drama status 16 --to bogus --profile report
+usage: minitv drama status [--json] [--quiet] [--fields FIELDS]
+                           [--profile PROFILE] [--base-url BASE_URL]
+                           [--timeout TIMEOUT] [--dry-run] --to S
+                           id
+minitv drama status: error: argument --to: invalid choice: 'bogus' (choose from draft, in_review, published, unpublished)
+  ↳ exit 2
+$ /Users/m007/codes/lite_tv/cli/minitv drama delete 16 --confirm 16 --profile report
+{"ok": true, "data": {"deleted": true, "impact": {"groups": [], "banner_count": 0, "push_count": 0, "episode_count": 0}}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+
+########## 14. 续传路径（upload --resume） ##########
+$ /Users/m007/codes/lite_tv/cli/minitv episode upload 12 /tmp/report-assets/S01E01.mp4 --resume --profile report
+{"ok": true, "data": {"episode_id": 12, "file": "S01E01.mp4", "status": "in_review", "seconds": 0.0, "size": 32396, "resumed": false}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode publish 12 --profile report
+{"ok": true, "data": {"id": 12, "status": "published"}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv drama publish 17 --profile report
+{"ok": true, "data": {"id": 17, "status": "published", "hops": ["draft → in_review", "in_review → published"]}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv drama delete 17 --confirm 17 --profile report
+{"ok": true, "data": {"deleted": true, "impact": {"groups": [], "banner_count": 0, "push_count": 0, "episode_count": 1}}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+
+########## 15. 帮助与手册 ##########
+$ /Users/m007/codes/lite_tv/cli/minitv --help (tty)
+^Dminitv 0.3.0 — MiniTV 剧集管理 CLI
+
+开始
+  config set-key          配置 API Key（首次）
+  doctor                  自检：连通 / 身份 / 权限 / 限流
+
+能做什么
+  auth                  身份
+  drama                 剧集：列表、详情、建改、上下线、排期、封面、标签
+  episode               分集：列表、建改删、发布、上传、转码对账
+  tag                   标签库
+  group                 首页分组与排序
+  export                批量导出（给模型做上下文）
+  version               显示 CLI 版本
+  schedule              定时上架
+
+给程序 / Agent
+  --json                  结构化输出（非 TTY 自动启用）
+  help --json             机器可读的命令目录
+  guide                   完整手册（可重定向成 markdown）
+
+更多
+  version                 显示 CLI 版本（等同 --version）
+  help errors             错误码与退出码
+  help output             输出约定
+  <group> --help          分组内命令
+  <group> <cmd> --help    单条命令的完整说明
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode upload --help (tty)
+^Dminitv episode upload — 上传一集的视频（TUS 直传，不过 API）
+
+用途
+  上传一集的视频（TUS 直传，不过 API）
+
+用法
+  minitv episode upload <id> <file>
+
+参数
+  <id>          必填  分集 id
+  <file>        必填  本地 .mp4 / .mov，≤200MB
+  --resume      可选  从已上传的字节续传（签名过期后仍可用）
+  --json        可选  结构化输出（非 TTY 自动启用）
+  --quiet       可选  只输出 id，便于脚本串联
+  --fields LIST  可选  裁剪输出字段，如 id,title
+  --profile P   可选  profile 名，默认取 default_profile
+  --base-url URL  可选  覆盖 base_url
+  --timeout N   可选  HTTP 超时秒数，默认 20
+  --dry-run     可选  只打印将要发送的请求，不执行
+
+示例
+  minitv episode upload 552 ./S01E01.mp4
+  minitv episode upload 552 ./S01E01.mp4 --json
+
+输出
+  episode_id · status · seconds · size
+
+退出码
+  0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络 · 6 上传失败
+
+常见错误
+  upload_failed       网络中断或 TUS 拒绝；重跑会新建会话
+  conflict            该集正在上传或状态不允许
+
+相关命令
+  minitv episode publish <id>
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv help errors
+错误码与退出码
+
+退出码
+  0   成功
+  2   用法错误
+  3   认证 / 权限（过期、撤销、账号禁用、scope 不足）
+  4   对象不存在
+  5   状态冲突（重复、非法迁移、限流）
+  6   上传失败
+  7   网络错误
+
+错误码（响应 error.code）
+  missing_credential   没有携带密钥
+  invalid_key          密钥不存在或已损坏
+  key_expired          密钥过期，需要轮换
+  key_revoked          密钥已被撤销
+  account_disabled     绑定的账号被禁用
+  scope_denied         当前密钥缺少该操作的 scope
+  rate_limited         超过 600 次/分钟
+  title_exists         同名剧已存在（建剧时）
+  conflict             状态机不允许该迁移
+  not_found            对象不存在
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv help --json
+{
+  "version": "0.3.0",
+  "commands": [
+    {
+      "path": "config init",
+      "summary": "首次初始化：创建配置目录并写入 API Key",
+      "usage": "minitv config init [--profile P] [--base-url URL] [--stdin]",
+      "args": [
+        {
+          "flags": [
+            "--stdin"
+          ],
+          "help": "从标准输入读取 key（管道用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv config init",
+        "echo \"$KEY\" | minitv config init --stdin"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "config_invalid"
+      ]
+    },
+    {
+      "path": "config set-key",
+      "summary": "设置或替换当前 profile 的 API Key（先校验再落盘）",
+      "usage": "minitv config set-key [--profile P] [--stdin]",
+      "args": [
+        {
+          "flags": [
+            "--stdin"
+          ],
+          "help": "从标准输入读取 key（管道用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv config set-key",
+        "echo \"$KEY\" | minitv config set-key --stdin"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "invalid_key",
+        "missing_credential"
+      ]
+    },
+    {
+      "path": "config show",
+      "summary": "查看当前配置（永不打印明文密钥）",
+      "usage": "minitv config show",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv config show"
+      ],
+      "exits": "0 成功",
+      "errors": []
+    },
+    {
+      "path": "config test",
+      "summary": "在线校验密钥：身份、权限、到期",
+      "usage": "minitv config test",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv config test",
+        "minitv config test --json"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "config use",
+      "summary": "切换默认 profile",
+      "usage": "minitv config use <profile>",
+      "args": [
+        {
+          "flags": [
+            "profile_name"
+          ],
+          "help": "要切换到的 profile",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv config use local"
+      ],
+      "exits": "0 成功 · 2 用法（profile 不存在）",
+      "errors": []
+    },
+    {
+      "path": "config path",
+      "summary": "打印配置文件与凭据文件的路径",
+      "usage": "minitv config path",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv config path"
+      ],
+      "exits": "0 成功",
+      "errors": []
+    },
+    {
+      "path": "config rm-key",
+      "summary": "删除某个 profile 的密钥（保留其余配置）",
+      "usage": "minitv config rm-key [--profile P]",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv config rm-key"
+      ],
+      "exits": "0 成功",
+      "errors": []
+    },
+    {
+      "path": "auth whoami",
+      "summary": "打印当前密钥绑定的账号与权限",
+      "usage": "minitv auth whoami",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv auth whoami"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "drama list",
+      "summary": "列出剧集（按更新时间倒序）",
+      "usage": "minitv drama list [--status S] [--q 关键字] [--tag ID] [--page N] [--page-size N]",
+      "args": [
+        {
+          "flags": [
+            "--status"
+          ],
+          "help": "按状态筛选",
+          "required": false,
+          "default": null,
+          "choices": [
+            "draft",
+            "in_review",
+            "published",
+            "unpublished"
+          ]
+        },
+        {
+          "flags": [
+            "--q"
+          ],
+          "help": "标题关键字（只匹配标题）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--tag"
+          ],
+          "help": "按标签 id 过滤",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--page"
+          ],
+          "help": "页码",
+          "required": false,
+          "default": 1,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--page-size"
+          ],
+          "help": "每页条数（最大 100）",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama list --status draft",
+        "minitv drama list --json --fields id,title,status"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "drama get",
+      "summary": "查看单部剧的详情（含标签、集数、播放量）",
+      "usage": "minitv drama get <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama get 184",
+        "minitv drama get 184 --json"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "drama create",
+      "summary": "新建一部剧（默认 draft），标题全局唯一",
+      "usage": "minitv drama create --title <T> [--upsert]",
+      "args": [
+        {
+          "flags": [
+            "--title"
+          ],
+          "help": "剧名，1–200 字，全局唯一",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--upsert"
+          ],
+          "help": "同名已存在时复用并返回已有 id",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama create --title \"Love in the Dark\"",
+        "minitv drama create --title \"Love in the Dark\" --upsert --json"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "title_exists",
+        "scope_denied"
+      ]
+    },
+    {
+      "path": "drama update",
+      "summary": "修改剧集元数据（只传要改的字段）",
+      "usage": "minitv drama update <id> [--title T] [--synopsis S] [--cover-url U] [--free N] [--coin N] [--tags 1,2]",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--title"
+          ],
+          "help": "新标题",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--synopsis"
+          ],
+          "help": "简介",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--cover-url"
+          ],
+          "help": "封面 URL",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--free"
+          ],
+          "help": "免费集数",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--coin"
+          ],
+          "help": "每集金币价",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--tags"
+          ],
+          "help": "标签 id 列表，逗号分隔；传空串清空",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama update 184 --synopsis '一句话简介' --free 3 --coin 60",
+        "minitv drama update 184 --tags 1,15,17"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "title_exists",
+        "not_found"
+      ]
+    },
+    {
+      "path": "drama status",
+      "summary": "单步切换剧集状态（不走自动补跳）",
+      "usage": "minitv drama status <id> --to draft|in_review|published|unpublished",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--to"
+          ],
+          "help": "目标状态",
+          "required": true,
+          "default": null,
+          "choices": [
+            "draft",
+            "in_review",
+            "published",
+            "unpublished"
+          ]
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama status 184 --to in_review"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "conflict"
+      ]
+    },
+    {
+      "path": "drama publish",
+      "summary": "上线：按状态机自动补跳直到 published",
+      "usage": "minitv drama publish <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama publish 184",
+        "minitv drama publish 184 --dry-run"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "conflict"
+      ]
+    },
+    {
+      "path": "drama unpublish",
+      "summary": "下架剧集（同时作废已签发的播放地址）",
+      "usage": "minitv drama unpublish <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama unpublish 184"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "drama tag",
+      "summary": "覆盖设置剧集的标签（全量替换）",
+      "usage": "minitv drama tag <id> <tag_ids>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "tags"
+          ],
+          "help": "逗号分隔的标签 id，如 1,15,17",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama tag 184 1,15,17"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "validation_error"
+      ]
+    },
+    {
+      "path": "drama delete",
+      "summary": "删除剧集（不可恢复；会连带删除分集与用户权益）",
+      "usage": "minitv drama delete <id> --confirm <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--confirm"
+          ],
+          "help": "必须等于剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama delete 184 --confirm 184 --dry-run",
+        "minitv drama delete 184 --confirm 184"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络 · 权限不足(3) · 参数不符(2)",
+      "errors": [
+        "not_found"
+      ]
+    },
+    {
+      "path": "drama cover-set",
+      "summary": "上传封面（JPG/PNG/WebP，≤5MB）",
+      "usage": "minitv drama cover-set <id> <file>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "file"
+          ],
+          "help": "本地图片",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama cover-set 184 ./cover.jpg"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络 · 6 上传失败",
+      "errors": [
+        "validation_error"
+      ]
+    },
+    {
+      "path": "drama cover-clear",
+      "summary": "清除封面",
+      "usage": "minitv drama cover-clear <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama cover-clear 184"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "drama schedule",
+      "summary": "设置定时上线时间（需要外部触发 apply 才生效）",
+      "usage": "minitv drama schedule <id> --at 2026-10-25T20:00+08:00",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--at"
+          ],
+          "help": "ISO8601 时间",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv drama schedule 184 --at 2026-10-25T20:00+08:00"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "episode list",
+      "summary": "列出某部剧的分集",
+      "usage": "minitv episode list --drama ID [--status S] [--page N] [--page-size N]",
+      "args": [
+        {
+          "flags": [
+            "--drama"
+          ],
+          "help": "剧集 id（必填）",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--status"
+          ],
+          "help": "分集状态",
+          "required": false,
+          "default": null,
+          "choices": [
+            "not_uploaded",
+            "transcoding",
+            "transcode_failed",
+            "in_review",
+            "published",
+            "unpublished"
+          ]
+        },
+        {
+          "flags": [
+            "--page"
+          ],
+          "help": "页码",
+          "required": false,
+          "default": 1,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--page-size"
+          ],
+          "help": "每页条数（最大 200）",
+          "required": false,
+          "default": 50,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode list --drama 184",
+        "minitv episode list --drama 184 --status in_review"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "episode create",
+      "summary": "登记一集（空壳，尚无视频）",
+      "usage": "minitv episode create --drama ID --number N [--title T]",
+      "args": [
+        {
+          "flags": [
+            "--drama"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--number"
+          ],
+          "help": "集号",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--title"
+          ],
+          "help": "分集标题，缺省 Episode N",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode create --drama 184 --number 1 --title '第 1 集'"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "conflict"
+      ]
+    },
+    {
+      "path": "episode bulk",
+      "summary": "批量登记 1..N 集（已存在的跳过）",
+      "usage": "minitv episode bulk --drama ID --count N",
+      "args": [
+        {
+          "flags": [
+            "--drama"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--count"
+          ],
+          "help": "登记到第几集",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode bulk --drama 184 --count 64"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "episode update",
+      "summary": "修改分集标题或集号",
+      "usage": "minitv episode update <id> [--title T] [--number N]",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--title"
+          ],
+          "help": "新标题",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--number"
+          ],
+          "help": "新集号",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode update 552 --title '第 12 集'"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "conflict"
+      ]
+    },
+    {
+      "path": "episode delete",
+      "summary": "删除空壳分集（not_uploaded / transcode_failed）",
+      "usage": "minitv episode delete <id> --confirm <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--confirm"
+          ],
+          "help": "必须等于分集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode delete 552 --confirm 552"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "episode_not_empty"
+      ]
+    },
+    {
+      "path": "episode publish",
+      "summary": "发布单集",
+      "usage": "minitv episode publish <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode publish 552"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "conflict"
+      ]
+    },
+    {
+      "path": "episode unpublish",
+      "summary": "下架单集（已签发的播放地址立即失效）",
+      "usage": "minitv episode unpublish <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode unpublish 552"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "episode publish-all",
+      "summary": "批量发布某剧里所有待发布/已下架的集",
+      "usage": "minitv episode publish-all --drama ID",
+      "args": [
+        {
+          "flags": [
+            "--drama"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode publish-all --drama 184"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "episode sync",
+      "summary": "手动对账转码状态",
+      "usage": "minitv episode sync <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode sync 552"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "episode upload",
+      "summary": "上传一集的视频（TUS 直传，不过 API）",
+      "usage": "minitv episode upload <id> <file>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "file"
+          ],
+          "help": "本地 .mp4 / .mov，≤200MB",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--resume"
+          ],
+          "help": "从已上传的字节续传（签名过期后仍可用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode upload 552 ./S01E01.mp4",
+        "minitv episode upload 552 ./S01E01.mp4 --json"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络 · 6 上传失败",
+      "errors": [
+        "upload_failed",
+        "conflict"
+      ]
+    },
+    {
+      "path": "episode upload-all",
+      "summary": "把目录里的视频按自然序灌进一部剧",
+      "usage": "minitv episode upload-all --drama ID --dir DIR [--start N] [--title-rule en|cn|none] [--publish]",
+      "args": [
+        {
+          "flags": [
+            "--drama"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dir"
+          ],
+          "help": "视频目录",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--start"
+          ],
+          "help": "起始集号，默认 1",
+          "required": false,
+          "default": 1,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--title-rule"
+          ],
+          "help": "标题规则：en=Episode N / cn=第 N 集 / none=留空",
+          "required": false,
+          "default": "en",
+          "choices": [
+            "en",
+            "cn",
+            "none"
+          ]
+        },
+        {
+          "flags": [
+            "--publish"
+          ],
+          "help": "全部上传完成后逐集发布",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--resume"
+          ],
+          "help": "已在上传的分集从断点续传",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode upload-all --drama 184 --dir ./S01 --start 1 --publish",
+        "minitv episode upload-all --drama 184 --dir ./S01 --json"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络 · 5 有失败项",
+      "errors": [
+        "upload_failed"
+      ]
+    },
+    {
+      "path": "episode subtitle",
+      "summary": "上传字幕（.vtt / .srt，≤2MB）",
+      "usage": "minitv episode subtitle <id> <file>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "file"
+          ],
+          "help": "本地字幕文件",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv episode subtitle 552 ./ep12.vtt"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络 · 6 上传失败",
+      "errors": [
+        "validation_error"
+      ]
+    },
+    {
+      "path": "tag list",
+      "summary": "列出全部标签及其剧集数",
+      "usage": "minitv tag list",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv tag list"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "tag create",
+      "summary": "新建标签",
+      "usage": "minitv tag create --name-en Name [--name-zh 中文] [--category main|sub]",
+      "args": [
+        {
+          "flags": [
+            "--name-en"
+          ],
+          "help": "英文名，全局唯一",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--name-zh"
+          ],
+          "help": "中文名",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--category"
+          ],
+          "help": "分类",
+          "required": false,
+          "default": "main",
+          "choices": [
+            "main",
+            "sub"
+          ]
+        },
+        {
+          "flags": [
+            "--status"
+          ],
+          "help": "状态",
+          "required": false,
+          "default": "enabled",
+          "choices": [
+            "enabled",
+            "disabled"
+          ]
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv tag create --name-en Werewolf --name-zh 狼人 --category sub"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "conflict"
+      ]
+    },
+    {
+      "path": "tag update",
+      "summary": "修改标签",
+      "usage": "minitv tag update <id> [--name-en N] [--name-zh N] [--category C] [--status S]",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "标签 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--name-en"
+          ],
+          "help": "英文名",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--name-zh"
+          ],
+          "help": "中文名",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--category"
+          ],
+          "help": "分类",
+          "required": false,
+          "default": null,
+          "choices": [
+            "main",
+            "sub"
+          ]
+        },
+        {
+          "flags": [
+            "--status"
+          ],
+          "help": "状态",
+          "required": false,
+          "default": null,
+          "choices": [
+            "enabled",
+            "disabled"
+          ]
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv tag update 12 --status disabled"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "tag delete",
+      "summary": "删除标签（仍被剧集引用时会 409 并列出引用）",
+      "usage": "minitv tag delete <id> --confirm <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "标签 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--confirm"
+          ],
+          "help": "必须等于标签 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv tag delete 12 --confirm 12"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "conflict"
+      ]
+    },
+    {
+      "path": "group list",
+      "summary": "列出首页分组",
+      "usage": "minitv group list",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv group list"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "group dramas",
+      "summary": "列出某个分组里的剧",
+      "usage": "minitv group dramas <id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分组 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv group dramas 12"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "group create",
+      "summary": "新建首页分组（楼层）",
+      "usage": "minitv group create --name NAME [--position N]",
+      "args": [
+        {
+          "flags": [
+            "--name"
+          ],
+          "help": "分组名",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--position"
+          ],
+          "help": "排序位置，默认 0",
+          "required": false,
+          "default": 0,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv group create --name \"New Releases\" --position 4"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "group update",
+      "summary": "改分组名 / 排序 / 样式 / 角标 / 上下线",
+      "usage": "minitv group update <id> [--name N] [--position N] [--style S] [--badge B] [--status S]",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分组 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--name"
+          ],
+          "help": "分组名",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--position"
+          ],
+          "help": "排序位置",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--style"
+          ],
+          "help": "楼层样式",
+          "required": false,
+          "default": null,
+          "choices": [
+            "poster3",
+            "rank",
+            "grid2"
+          ]
+        },
+        {
+          "flags": [
+            "--badge"
+          ],
+          "help": "角标样式",
+          "required": false,
+          "default": null,
+          "choices": [
+            "rank",
+            "label"
+          ]
+        },
+        {
+          "flags": [
+            "--status"
+          ],
+          "help": "状态",
+          "required": false,
+          "default": null,
+          "choices": [
+            "active",
+            "inactive"
+          ]
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv group update 4 --style grid2 --position 1"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "group add",
+      "summary": "把剧加进分组（不带 --confirm 只返回容量预览）",
+      "usage": "minitv group add <id> <drama_id> [--confirm]",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分组 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "drama"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--confirm"
+          ],
+          "help": "真正写入",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv group add 4 184",
+        "minitv group add 4 184 --confirm"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "conflict"
+      ]
+    },
+    {
+      "path": "group remove",
+      "summary": "把剧移出分组",
+      "usage": "minitv group remove <id> <drama_id>",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分组 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "drama"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv group remove 4 184"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": [
+        "not_found"
+      ]
+    },
+    {
+      "path": "group move",
+      "summary": "调整组内位置",
+      "usage": "minitv group move <id> <drama_id> --position N",
+      "args": [
+        {
+          "flags": [
+            "id"
+          ],
+          "help": "分组 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "drama"
+          ],
+          "help": "剧集 id",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--position"
+          ],
+          "help": "组内位置",
+          "required": true,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv group move 4 184 --position 0"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "export dramas",
+      "summary": "导出全部剧集为 JSON",
+      "usage": "minitv export dramas [--status S] [--out FILE]",
+      "args": [
+        {
+          "flags": [
+            "--status"
+          ],
+          "help": "只要某个状态",
+          "required": false,
+          "default": null,
+          "choices": [
+            "draft",
+            "in_review",
+            "published",
+            "unpublished"
+          ]
+        },
+        {
+          "flags": [
+            "--out"
+          ],
+          "help": "写入文件；省略则打到 stdout",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv export dramas --out dramas.json",
+        "minitv export dramas --status published --json"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "version",
+      "summary": "显示当前安装的 minitv 版本",
+      "usage": "minitv version",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv version",
+        "minitv version --json"
+      ],
+      "exits": "0 成功",
+      "errors": []
+    },
+    {
+      "path": "schedule apply",
+      "summary": "把已到期的定时排期推上线（后台没有 cron，需要外部触发）",
+      "usage": "minitv schedule apply",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv schedule apply"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    },
+    {
+      "path": "doctor",
+      "summary": "一次性检查网络、密钥、权限与服务端",
+      "usage": "minitv doctor",
+      "args": [
+        {
+          "flags": [
+            "--json"
+          ],
+          "help": "结构化输出（非 TTY 自动启用）",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--quiet"
+          ],
+          "help": "只输出 id，便于脚本串联",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--fields"
+          ],
+          "help": "裁剪输出字段，如 id,title",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--profile"
+          ],
+          "help": "profile 名，默认取 default_profile",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--base-url"
+          ],
+          "help": "覆盖 base_url",
+          "required": false,
+          "default": null,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--timeout"
+          ],
+          "help": "HTTP 超时秒数",
+          "required": false,
+          "default": 20,
+          "choices": null
+        },
+        {
+          "flags": [
+            "--dry-run"
+          ],
+          "help": "只打印将要发送的请求，不执行",
+          "required": false,
+          "default": null,
+          "choices": null
+        }
+      ],
+      "examples": [
+        "minitv doctor",
+        "minitv doctor --json"
+      ],
+      "exits": "0 成功 · 2 用法 · 3 认证 / 权限 · 4 不存在 · 5 冲突 · 7 网络",
+      "errors": []
+    }
+  ]
+}
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv guide | head -12
+# minitv 0.3.0 — MiniTV 剧集管理 CLI
+
+单文件、零依赖（Python >= 3.8）。TTY 输出表格，非 TTY 输出 JSON。
+
+## 快速开始
+
+```bash
+minitv version    # 当前版本
+```
+
+```bash
+curl -fsSL https://minitv.us/cli/install.sh | sh
+
+########## 16. 人类可读输出（TTY） ##########
+$ /Users/m007/codes/lite_tv/cli/minitv drama list --page-size 3 --profile report (tty)
+^DID  标题                     状态   集数  更新            
+18  表格输出验证 1792568582  draft  1     2026-10-21 15:43
+draft 1 · in_review 0 · published 0 · unpublished 0
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv drama get 18 --profile report (tty)
+^Did                      18
+title                   表格输出验证 1792568582
+synopsis                
+cover_url               
+status                  draft
+free_episode_count      0
+coin_price_per_episode  0
+tags                    -
+episode_count           1
+play_count              0
+updated_at              2026-10-21 15:43
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv episode list --drama 18 --profile report (tty)
+^DID  集号  标题       状态          时长
+13  1     Episode 1  not_uploaded  -   
+  ↳ exit 0
+$ /Users/m007/codes/lite_tv/cli/minitv drama delete 18 --confirm 18 --profile report
+{"ok": true, "data": {"deleted": true, "impact": {"groups": [], "banner_count": 0, "push_count": 0, "episode_count": 1}}, "meta": {"version": "0.3.0"}}
+  ↳ exit 0
+
+########## 12. 首次初始化（config init / rm-key） ##########
+配置目录  /tmp/cli-init-test
+配置文件  /tmp/cli-init-test/config.json
+{"ok": true, "data": {"profile": "fresh", "base_url": "http://127.0.0.1:18121", "username": "report-admin", "role": "admin", "scopes": ["read", "write", "delete"], "expires_at": "2026-11-20T07:39:50.076193+00:00", "saved_to": "/tmp/cli-init-test/credentials", "warnings": ["该密钥绑定 admin 且含 delete，等同超管；给自动化用建议换 agent-ops"]}, "meta": {"version": "0.3.0"}}
+  ↳ 文件:
+-rw-r--r--@ 1 m007  wheel  332 Oct 21 15:43 config.json
+-rw-------@ 1 m007  wheel   67 Oct 21 15:43 credentials
+$ env MINITV_CONFIG_DIR=/tmp/cli-init-test /Users/m007/codes/lite_tv/cli/minitv config rm-key --profile fresh
+已删除 profile 'fresh' 的密钥
+  ↳ exit 0
+  ↳ 删除后 credentials:
+(空)
