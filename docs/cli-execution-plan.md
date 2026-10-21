@@ -189,6 +189,7 @@ $ minitv config set-key
 minitv config init | set-key | show | test | use | path | rm-key
 minitv doctor                      # 连通 / 身份 / 权限 / 服务端 / 限流
 minitv auth whoami                 # 由 /auth/me + /auth/keys 组合
+minitv version                     # 显示 CLI 版本（等同 --version）
 minitv guide [--format md|json]
 minitv help [--json] [errors|output|auth|upload]
 minitv drama list   [--status S] [--q 关键字] [--tag ID] [--page N]

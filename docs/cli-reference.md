@@ -1,8 +1,12 @@
-# minitv 0.1.0 — MiniTV 剧集管理 CLI
+# minitv 0.1.1 — MiniTV 剧集管理 CLI
 
 单文件、零依赖（Python >= 3.8）。TTY 输出表格，非 TTY 输出 JSON。
 
 ## 快速开始
+
+```bash
+minitv version    # 当前版本
+```
 
 ```bash
 curl -fsSL https://minitv.us/cli/install.sh | sh
@@ -47,6 +51,10 @@ minitv doctor
 ### export — 批量导出（给模型做上下文）
 
 - `minitv export dramas [--status S] [--out FILE]` — 导出全部剧集为 JSON
+
+### version — 显示 CLI 版本
+
+- `minitv version` — 显示当前安装的 minitv 版本
 
 ### doctor — 自检：连通 / 身份 / 权限 / 服务端
 

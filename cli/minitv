@@ -23,7 +23,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 DEFAULT_BASE = "https://api.minitv.us"
 # Cloudflare blocks urllib's default UA, so every request carries this one.
 UA = f"minitv/{VERSION} (+https://minitv.us)"
@@ -440,7 +440,7 @@ def pos(name, help_text):
     }
 
 
-def cmd(name, summary, usage, fn, *, args=(), examples=(), outputs="", exits="", errors=(), next_steps=()):
+def cmd(name, summary, usage, fn, *, args=(), examples=(), outputs="", exits="", errors=(), next_steps=(), with_globals=True):
     return {
         "name": name,
         "summary": summary,
@@ -452,6 +452,7 @@ def cmd(name, summary, usage, fn, *, args=(), examples=(), outputs="", exits="",
         "exits": exits,
         "errors": list(errors),
         "next_steps": list(next_steps),
+        "with_globals": with_globals,
     }
 
 
@@ -718,6 +719,26 @@ def _build_spec():
 
     groups.append(
         {
+            "name": "version",
+            "summary": "显示 CLI 版本",
+            "commands": [
+                cmd(
+                    "version",
+                    "显示当前安装的 minitv 版本",
+                    "minitv version",
+                    cmd_version,
+                    examples=["minitv version", "minitv version --json"],
+                    outputs="语义化版本号，如 0.1.1",
+                    exits="0 成功",
+                    with_globals=False,
+                    next_steps=["minitv --help  查看全部命令"],
+                ),
+            ],
+        }
+    )
+
+    groups.append(
+        {
             "name": "doctor",
             "summary": "自检：连通 / 身份 / 权限 / 服务端",
             "commands": [
@@ -775,6 +796,7 @@ def render_top_help():
         "  guide                   完整手册（可重定向成 markdown）",
         "",
         "更多",
+        "  version                 显示 CLI 版本（等同 --version）",
         "  help errors             错误码与退出码",
         "  help output             输出约定",
         "  <group> --help          分组内命令",
@@ -795,8 +817,9 @@ def render_group_help(group):
 
 
 def render_command_help(group, entry):
+    path = group["name"] if group["name"] == entry["name"] else f"{group['name']} {entry['name']}"
     lines = [
-        f"minitv {group['name']} {entry['name']} — {entry['summary']}",
+        f"minitv {path} — {entry['summary']}",
         "",
         "用途",
         f"  {entry['summary']}",
@@ -806,7 +829,7 @@ def render_command_help(group, entry):
         "",
         "参数",
     ]
-    all_args = list(entry["args"]) + GLOBAL_ARGS
+    all_args = list(entry["args"]) + (GLOBAL_ARGS if entry.get("with_globals", True) else [JSON_FLAG])
     if all_args:
         flag_width = max(_width(", ".join(a["flags"])) for a in all_args) + 2
         for item in all_args:
@@ -921,7 +944,9 @@ def catalog():
         for entry in group["commands"]:
             commands.append(
                 {
-                    "path": f"{group['name']} {entry['name']}",
+                    "path": group["name"]
+                    if group["name"] == entry["name"]
+                    else f"{group['name']} {entry['name']}",
                     "summary": entry["summary"],
                     "usage": entry["usage"],
                     "args": [
@@ -932,7 +957,8 @@ def catalog():
                             "default": item.get("default"),
                             "choices": item.get("choices"),
                         }
-                        for item in entry["args"] + GLOBAL_ARGS
+                        for item in entry["args"]
+                        + (GLOBAL_ARGS if entry.get("with_globals", True) else [JSON_FLAG])
                     ],
                     "examples": entry["examples"],
                     "exits": entry["exits"] or GLOBAL_EXITS,
@@ -949,6 +975,10 @@ def render_guide():
         "单文件、零依赖（Python >= 3.8）。TTY 输出表格，非 TTY 输出 JSON。",
         "",
         "## 快速开始",
+        "",
+        "```bash",
+        "minitv version    # 当前版本",
+        "```",
         "",
         "```bash",
         "curl -fsSL https://minitv.us/cli/install.sh | sh",
@@ -1135,6 +1165,14 @@ def cmd_config_rm_key(args):
 # ---------------------------------------------------------------------------
 
 
+def cmd_version(args):
+    if _is_json(args):
+        output(args, {"version": VERSION})
+    else:
+        print(VERSION)
+    return EXIT_OK
+
+
 def cmd_auth_whoami(args):
     return cmd_config_test(args)
 
@@ -1187,6 +1225,7 @@ def _print_doctor(args, settings, results, warnings=()):
                 {
                     "ok": all(item["ok"] for item in results),
                     "data": {
+                        "cli_version": VERSION,
                         "profile": settings.profile,
                         "base_url": settings.base_url,
                         "checks": results,
@@ -1197,6 +1236,7 @@ def _print_doctor(args, settings, results, warnings=()):
             )
         )
         return
+    print(f"minitv {VERSION}")
     for item in results:
         mark = "[ok]" if item["ok"] else "[!!]"
         print(f"{mark:<5}{item['name']:<6}{item['detail']}")
@@ -1354,8 +1394,8 @@ def build_parser():
 
     for group in SPEC:
         group_parser = subparsers.add_parser(group["name"], add_help=False, parents=[parents])
-        if group["name"] == "doctor":
-            # `minitv doctor` has no subcommand; bind the handler to the group.
+        if len(group["commands"]) == 1 and group["commands"][0]["name"] == group["name"]:
+            # `minitv doctor` / `minitv version` have no subcommand.
             group_parser.set_defaults(func=group["commands"][0]["fn"])
             continue
         command_parsers = group_parser.add_subparsers(dest="command")
@@ -1386,7 +1426,7 @@ def build_parser():
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    if argv and argv[0] in ("-v", "--version", "version"):
+    if argv and argv[0] in ("-v", "--version"):
         print(VERSION)
         return EXIT_OK
     if not argv or argv[0] in ("-h", "--help"):
