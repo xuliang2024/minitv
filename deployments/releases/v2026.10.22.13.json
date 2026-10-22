@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.22.13",
+  "target": "server",
+  "status": "published",
+  "sha": "5095b6da97e24c51eca45f4b1dcf1233735ceafb",
+  "short_sha": "5095b6da",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-22T15:42:37+08:00",
+  "finished_at": "2026-10-22T15:42:53+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 78123,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "伙伴上传失败释放与停滞回收",
+  "dirty": true
+}
