@@ -2,7 +2,7 @@
 
 > 范围：`docs/supplier-role-plan.md` P1（隔离 + 归因 + 供应商管理 + 菜单分流）
 > 日期：2026-10-22　环境：本地（Docker `minitv-postgres` / `minitv-redis`，API :18110，Vite :5173）
-> 结论：**P1 功能完成，测试全绿，可发布；尚未部署到线上。**
+> 结论：**P1 功能完成，测试全绿，已上线（admin v2026.10.22.1 / server v2026.10.22.2）并通过线上验收。**
 
 ## 1. 本阶段交付
 
@@ -91,7 +91,7 @@ cd admin && npm run build       # tsc --noEmit && vite build
 | 6 | 禁用供应商不自动下架剧 | 按方案约定由运营决定；当前只停账号与会话 |
 | 7 | 本地 dev 代理 | `admin/vite.config.ts` 新增 `/partner/v1` 代理，仅开发环境生效 |
 
-## 5. 上线前检查清单（未执行）
+## 5. 上线步骤（已于 2026-10-22 10:05 执行）
 
 1. 备份线上库（`pg_dump` 到 `/opt/minitv/backups/`）
 2. 确认线上 `alembic_version`：应为 `f1a7c2e93b64`（API Key 迁移）或更早 `b7f2c9d41e03`
@@ -110,7 +110,64 @@ cd admin && npm run build       # tsc --noEmit && vite build
 6. 线上回归：admin/ops/finance 登录与菜单、`GET /admin/v1/dramas` 200、`GET /partner/v1/me` 用员工 token 应 403
 7. 回滚：R2 `release.py rollback r2 --to <上一版>`；DB `alembic downgrade b7f2c9d41e03`（**前提：没有任何 partner 剧**，否则恢复剧名全局唯一会失败）
 
-## 6. 结论
+## 6. 线上验收（2026-10-22 10:05）
+
+发布记录：
+
+| 目标 | 版本 | 提交 |
+|---|---|---|
+| 管理后台（R2） | `v2026.10.22.1` | `73bbb2b` |
+| 后端（YOUR_SERVER_IP） | `v2026.10.22.2` | 迁移 `f1a7c2e93b64 → d3f8b1c6a940` |
+
+迁移前备份：`/opt/minitv/backups/pre-p1-20261022-1003.dump`（1.1 MB）。
+
+### 6.1 数据库自检
+
+| 项 | 结果 |
+|---|---|
+| `alembic_version` | `d3f8b1c6a940` ✅ |
+| `suppliers` 行数 | 0（无存量供应商）✅ |
+| 剧集归属 | 212 部全部 `supplier_id NULL` ✅ |
+| `orders` 新列 | `source_drama_id`、`refunded_at` 均存在 ✅ |
+| 剧名索引 | `uq_dramas_title_self` / `uq_dramas_title_supplier` 两条 ✅ |
+
+### 6.2 接口验收（真实线上）
+
+| # | 请求 | 期望 | 实测 |
+|---|---|---|---|
+| 1 | 临时管理员登录 | 200 | ✅（说明：原 `admin` 口令已被本人修改，验收改用临时管理员，结束后删除） |
+| 2 | `GET /admin/v1/dramas` | 200 | ✅ 212 部 |
+| 3 | `GET /admin/v1/suppliers` | 200，空列表 | ✅ |
+| 4 | `GET /partner/v1/me`（staff token） | 403 `partner_only` | ✅ |
+| 5 | 新建供应商「验收影视（临时）」 | 201，分成 8000 | ✅ |
+| 6 | 为其创建 partner 账号 | 201 | ✅ |
+| 7 | partner 登录 + `/partner/v1/me` | 200，supplier 正确 | ✅ |
+| 8 | partner `GET /partner/v1/dramas` | 200，空 | ✅ |
+| 9 | partner 调 `/admin/v1/dramas`、`/suppliers` | 403 `staff_only` | ✅ |
+| 10 | 改分成 8000 → 7000 | 200，历史 2 条 | ✅ |
+| 11 | 禁用供应商 | 200，`revoked_sessions=2` | ✅ |
+| 12 | 禁用后 partner 旧 token / 重新登录 | 401 / 401 | ✅ |
+| 13 | ops 登录 + 看剧集；finance 登录 + 看订单 | 200 / 200 | ✅ |
+
+### 6.3 线上 UI（Playwright 真实点击）
+
+| 场景 | 结果 |
+|---|---|
+| admin 侧栏 | 含「上剧方管理」「账号管理」「API 密钥」✅ |
+| 上剧方管理页 | 显示供应商、绑定账号、80% 分成、启停按钮 ✅ |
+| partner 登录 | 落到 `/partner/dramas`，侧栏仅「我的剧集」✅ |
+| partner 深链 `/dramas` | 重定向回 `/partner/dramas` ✅ |
+| 线上包自检 | `上剧方管理` 与 `partner/v1` 均命中 ✅ |
+
+截图：`/tmp/prod-p1-suppliers.png`、`/tmp/prod-p1-partner.png`。
+
+### 6.4 验收数据清理
+
+临时数据已全部删除，线上恢复「无供应商」状态：`suppliers=0`、`admin_users=3`（ops/finance/admin）、`dramas=212` 全部自营。删除范围：临时供应商、其分成历史、partner 账号、临时管理员、相关审计记录。
+
+未在线上制造真实支付：归因链路（checkout → metadata → order/subscription）由本地测试覆盖，线上仅验证了列与接口契约。
+
+## 7. 结论
 
 P1 的三条目标全部达成：
 
