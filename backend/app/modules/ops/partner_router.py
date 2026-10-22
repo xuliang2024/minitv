@@ -161,7 +161,8 @@ class EpisodeCreateIn(BaseModel):
 
 
 class EpisodeUpdateIn(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    episode_number: int | None = Field(default=None, ge=1, le=MAX_EPISODES)
 
 
 class UploadIn(BaseModel):
@@ -257,6 +258,7 @@ def _drama_out(db: Session, drama: Drama, *, with_episodes: bool = False) -> dic
         "free_episode_count": drama.free_episode_count,
         # Read-only on this surface: pricing belongs to the platform.
         "coin_price_per_episode": drama.coin_price_per_episode,
+        "play_count": drama.play_count,
         "episode_count": _episode_count(db, drama.id),
         "submitted_at": _iso(drama.submitted_at),
         "reviewed_at": _iso(drama.reviewed_at),
@@ -372,16 +374,66 @@ def list_tags(
 def list_dramas(
     status: str | None = None,
     review_state: str | None = None,
+    q: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     user: AdminUser = Depends(require_partner),
     db: Session = Depends(get_db),
 ):
-    stmt = select(Drama).where(Drama.supplier_id == user.supplier_id)
+    base = select(Drama).where(Drama.supplier_id == user.supplier_id)
     if status:
-        stmt = stmt.where(Drama.status == status)
+        base = base.where(Drama.status == status)
     if review_state:
-        stmt = stmt.where(Drama.review_state == review_state)
-    rows = db.scalars(stmt.order_by(Drama.updated_at.desc()).limit(200)).all()
-    return {"items": [_drama_out(db, row) for row in rows]}
+        base = base.where(Drama.review_state == review_state)
+    if q and q.strip():
+        base = base.where(Drama.title.ilike(f"%{q.strip()}%"))
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = db.scalars(
+        base.order_by(Drama.updated_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    counts = dict(
+        db.execute(
+            select(Drama.status, func.count(Drama.id))
+            .where(Drama.supplier_id == user.supplier_id)
+            .group_by(Drama.status)
+        ).all()
+    )
+    counts["all"] = db.scalar(
+        select(func.count(Drama.id)).where(Drama.supplier_id == user.supplier_id)
+    ) or 0
+    review_counts = dict(
+        db.execute(
+            select(Drama.review_state, func.count(Drama.id))
+            .where(Drama.supplier_id == user.supplier_id)
+            .group_by(Drama.review_state)
+        ).all()
+    )
+    def _count(*where) -> int:
+        return db.scalar(
+            select(func.count(Drama.id)).where(Drama.supplier_id == user.supplier_id, *where)
+        ) or 0
+
+    stage_counts = {
+        "all": total,
+        "draft": _count(Drama.status == "draft", Drama.review_state.in_(["none", "rejected"])),
+        "pending": _count(Drama.review_state == "pending"),
+        "approved": _count(
+            Drama.review_state == "approved", Drama.status.in_(["draft", "in_review"])
+        ),
+        "published": _count(Drama.status == "published"),
+        "unpublished": _count(Drama.status == "unpublished"),
+    }
+    return {
+        "items": [_drama_out(db, row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "status_counts": counts,
+        "review_counts": review_counts,
+        "stage_counts": stage_counts,
+    }
 
 
 @router.post("/dramas", status_code=201)
@@ -571,9 +623,25 @@ def update_episode(
     episode = _episode_or_404(db, user, episode_id)
     drama = db.get(Drama, episode.drama_id)
     _editable(drama)
-    episode.title = body.title.strip()
+    if body.episode_number is not None and body.episode_number != episode.episode_number:
+        taken = db.scalar(
+            select(Episode.id).where(
+                Episode.drama_id == episode.drama_id,
+                Episode.episode_number == body.episode_number,
+                Episode.id != episode.id,
+            )
+        )
+        if taken:
+            raise HTTPException(status_code=409, detail=f"第 {body.episode_number} 集已存在")
+        episode.episode_number = body.episode_number
+    if body.title is not None:
+        episode.title = body.title.strip()
     db.commit()
-    return {"id": episode.id, "title": episode.title}
+    return {
+        "id": episode.id,
+        "title": episode.title,
+        "episode_number": episode.episode_number,
+    }
 
 
 @router.delete("/episodes/{episode_id}", status_code=204)
@@ -768,6 +836,31 @@ def upload_status(
         "video_id": episode.bunny_video_id,
         "upload_status": upload.status if upload else None,
     }
+
+
+@router.delete("/dramas/{drama_id}", status_code=204)
+def delete_drama(
+    drama_id: int,
+    user: AdminUser = Depends(require_partner),
+    db: Session = Depends(get_db),
+):
+    """Suppliers may delete their own drafts; anything with video or review is locked."""
+    drama = _partner_drama_or_404(db, user, drama_id)
+    _editable(drama)
+    episodes = db.scalars(select(Episode).where(Episode.drama_id == drama.id)).all()
+    if any(item.status != "not_uploaded" for item in episodes):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "drama_has_video", "message": "已上传视频的剧集不能删除"},
+        )
+    title = drama.title
+    for item in episodes:
+        db.delete(item)
+    db.execute(delete(DramaTag).where(DramaTag.drama_id == drama.id))
+    db.delete(drama)
+    _audit(db, user, "partner_drama_delete", None, {"title": title, "drama_id": drama_id})
+    db.commit()
+    return None
 
 
 @router.post("/dramas/{drama_id}/submit")

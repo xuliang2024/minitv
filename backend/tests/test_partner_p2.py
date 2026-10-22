@@ -402,3 +402,72 @@ def test_partner_cannot_revoke_another_suppliers_key(make, session, client):
 
     r = client.post(f"/partner/v1/api-keys/{issued['id']}/revoke", headers=partner_b)
     assert r.status_code == 404
+
+
+def test_list_filters_and_stage_counts(make, session, client):
+    headers = _admin_headers(make, client)
+    _, partner = _supplier_with_partner(client, headers)
+    _create_drama(client, partner, title="阿尔法")
+    _create_drama(client, partner, title="贝塔")
+
+    r = client.get("/partner/v1/dramas?q=阿尔法", headers=partner)
+    assert r.status_code == 200
+    assert [row["title"] for row in r.json()["items"]] == ["阿尔法"]
+
+    all_rows = client.get("/partner/v1/dramas", headers=partner).json()
+    assert all_rows["total"] == 2
+    assert all_rows["stage_counts"]["all"] == 2
+    assert all_rows["stage_counts"]["draft"] == 2
+    assert all_rows["stage_counts"]["pending"] == 0
+
+
+def test_delete_draft_only_when_no_video(make, session, client):
+    headers = _admin_headers(make, client)
+    _, partner = _supplier_with_partner(client, headers)
+    drama = _create_drama(client, partner)
+    client.post(f"/partner/v1/dramas/{drama['id']}/episodes", json={}, headers=partner)
+
+    ok = client.delete(f"/partner/v1/dramas/{drama['id']}", headers=partner)
+    assert ok.status_code == 204
+    assert session.get(Drama, drama["id"]) is None
+
+    locked = _create_drama(client, partner, title="有视频")
+    ep = client.post(
+        f"/partner/v1/dramas/{locked['id']}/episodes", json={}, headers=partner
+    ).json()
+    from app.modules.content.service import transition_episode
+
+    row = session.get(Episode, ep["id"])
+    transition_episode(session, row, "transcoding")
+    transition_episode(session, row, "in_review")
+    session.commit()
+    blocked = client.delete(f"/partner/v1/dramas/{locked['id']}", headers=partner)
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "drama_has_video"
+
+
+def test_episode_number_can_be_edited(make, session, client):
+    headers = _admin_headers(make, client)
+    _, partner = _supplier_with_partner(client, headers)
+    drama = _create_drama(client, partner)
+    first = client.post(f"/partner/v1/dramas/{drama['id']}/episodes", json={}, headers=partner).json()
+    second = client.post(
+        f"/partner/v1/dramas/{drama['id']}/episodes", json={"episode_number": 2}, headers=partner
+    ).json()
+
+    conflict = client.patch(
+        f"/partner/v1/episodes/{second['id']}",
+        json={"episode_number": 1},
+        headers=partner,
+    )
+    assert conflict.status_code == 409
+
+    moved = client.patch(
+        f"/partner/v1/episodes/{second['id']}",
+        json={"episode_number": 5, "title": "第五集"},
+        headers=partner,
+    )
+    assert moved.status_code == 200
+    assert moved.json()["episode_number"] == 5
+    assert moved.json()["title"] == "第五集"
+    assert first["episode_number"] == 1
