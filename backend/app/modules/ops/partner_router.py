@@ -249,6 +249,8 @@ def _drama_out(db: Session, drama: Drama, *, with_episodes: bool = False) -> dic
         "review_state": drama.review_state,
         "review_note": drama.review_note,
         "free_episode_count": drama.free_episode_count,
+        # Read-only on this surface: pricing belongs to the platform.
+        "coin_price_per_episode": drama.coin_price_per_episode,
         "episode_count": _episode_count(db, drama.id),
         "submitted_at": _iso(drama.submitted_at),
         "reviewed_at": _iso(drama.reviewed_at),
@@ -336,6 +338,28 @@ def logout(request: Request, user: AdminUser = Depends(require_partner_session))
 
 
 # ---- dramas ----
+
+
+@router.get("/tags")
+def list_tags(
+    user: AdminUser = Depends(require_partner),
+    db: Session = Depends(get_db),
+):
+    """Only enabled tags; suppliers may pick from the platform taxonomy."""
+    rows = db.scalars(
+        select(Tag).where(Tag.status == "enabled").order_by(Tag.category, Tag.id)
+    ).all()
+    return {
+        "items": [
+            {
+                "id": tag.id,
+                "name_zh": tag.name_zh,
+                "name_en": tag.name_en,
+                "category": tag.category,
+            }
+            for tag in rows
+        ]
+    }
 
 
 @router.get("/dramas")

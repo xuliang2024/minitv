@@ -2,7 +2,7 @@
 
 > 范围：`docs/supplier-role-plan.md` P2（上剧能力 + 自助 API Key + CLI 0.4.0）
 > 日期：2026-10-22　环境：本地（Docker Postgres/Redis，API :18110，Vite :5173）
-> 结论：**P2 功能完成，测试全绿；尚未部署线上。**
+> 结论：**P2 功能完成（含网页编辑器与密钥页），测试全绿；尚未部署线上。**
 
 ## 1. 本阶段交付
 
@@ -85,6 +85,37 @@ minitv auth whoami                                    → role=partner、surface
 3. **封面上传依赖 Bunny Storage**；`BUNNY_MODE` 非 live 时返回 503，与后台现有行为一致。
 4. **上传配额**（方案 §5.4.4 的 200 session/天/供应商）未实现，留到 P3 与限流一起做。
 
-## 6. 结论
+## 6. 网页编辑器（P2.5，同日补充）
 
-P2 打通了「上剧方自己建剧 → 建集 → 上传 → 提交审核」的完整链路，并给出了配套的密钥与 CLI。下一步 P3：运营侧待审核/待上架、批量通过、通知与配额。
+供应商不能用命令行上片，所以补了三个页面：
+
+| 路由 | 页面 | 能力 |
+|---|---|---|
+| `/partner/dramas` | 我的剧集 | 新建剧集（弹窗）、状态/集数/免费集数、进入编辑 |
+| `/partner/dramas/:id` | 剧集编辑 | 基本信息 + 标签 + 免费集数、只读价格、封面上传、分集新增/上传/删除、保存、提交审核 |
+| `/partner/api-keys` | API 密钥 | 新建（scope 勾选、有效期）、明文一次性展示、轮换、撤销、最近使用 |
+
+实现要点：
+
+- 上传复用 `episodeUpload.ts` 的 `probeVideo` + `directUpload`（Bunny 直传），页面自己轮询 `/partner/v1/episodes/{id}/upload-status`，最多 2 分钟。
+- 编辑锁定与后端一致：`editable=false` 时表单、封面、分集按钮全部禁用，顶部提示「审核中 / 已上架只读」。
+- 提交失败直接把后端的 `detail.message` 弹出来（缺封面、简介短、分集未转码、免费集数越界）。
+- 新增 `GET /partner/v1/tags`（只返回 enabled）与 `coin_price_per_episode` 只读字段。
+
+浏览器验收（Playwright，真实点击）：
+
+```
+partner 侧栏            = 我的剧集 / API 密钥
+新建剧集 → 跳转编辑页    = /partner/dramas/120
+编辑器要素              = 免费集数提示「最少 1 集 · 共 1 集」、价格「平台定价，不可修改」、添加分集
+保存                    = 200，toast「已保存」
+添加分集                = 第 1 集，状态「待上传」
+提交（无封面）          = 422 cover_required，页面提示「请先上传封面」，review_state 仍为 none
+新建密钥                = 明文弹窗 + 列表出现前缀；关闭后不可再查看
+```
+
+截图：`/tmp/partner-editor.png`、`/tmp/partner-keys.png`。
+
+## 7. 结论
+
+P2 打通了「上剧方自己建剧 → 建集 → 上传 → 提交审核」的完整链路，网页端与 CLI 都能走通，并配套了自助密钥。下一步 P3：运营侧待审核/待上架、批量通过、通知与配额。

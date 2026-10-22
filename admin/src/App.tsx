@@ -24,6 +24,8 @@ import Staff from "./pages/Staff";
 import ApiKeys from "./pages/ApiKeys";
 import Suppliers from "./pages/Suppliers";
 import PartnerDramas from "./pages/PartnerDramas";
+import PartnerDramaEdit from "./pages/PartnerDramaEdit";
+import PartnerApiKeys from "./pages/PartnerApiKeys";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
 import {
   CommentsPage,
@@ -64,6 +66,7 @@ const ITEMS: { key: string; label: string; roles?: string[] }[] = [
   { key: "/suppliers", label: "上剧方管理", roles: ["admin"] },
   // 上剧方（partner）只看到自己的剧集；其它入口一律不渲染。
   { key: "/partner/dramas", label: "我的剧集", roles: ["partner"] },
+  { key: "/partner/api-keys", label: "API 密钥", roles: ["partner"] },
 ];
 
 export default function App() {
@@ -306,6 +309,8 @@ export default function App() {
               <Route path="/staff" element={<Staff />} />
               <Route path="/suppliers" element={<Suppliers />} />
               <Route path="/partner/dramas" element={<PartnerDramas />} />
+              <Route path="/partner/dramas/:id" element={<PartnerDramaEdit />} />
+              <Route path="/partner/api-keys" element={<PartnerApiKeys />} />
               <Route path="/api-keys" element={<ApiKeys />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
