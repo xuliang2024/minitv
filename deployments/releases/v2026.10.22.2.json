@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.22.2",
+  "target": "server",
+  "status": "published",
+  "sha": "7c017b2ada9c7a64f66bcac7da2921eaa7ed9135",
+  "short_sha": "7c017b2a",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-22T10:04:50+08:00",
+  "finished_at": "2026-10-22T10:05:08+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 38663,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "P1 上剧方租户隔离：迁移 f1a→d3f（suppliers/评审字段/归因）；其它会话仅 docs 未提交",
+  "dirty": true
+}
