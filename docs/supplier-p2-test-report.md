@@ -2,7 +2,7 @@
 
 > 范围：`docs/supplier-role-plan.md` P2（上剧能力 + 自助 API Key + CLI 0.4.0）
 > 日期：2026-10-22　环境：本地（Docker Postgres/Redis，API :18110，Vite :5173）
-> 结论：**P2 功能完成（含网页编辑器与密钥页），测试全绿；尚未部署线上。**
+> 结论：**P2 功能完成（含网页编辑器与密钥页），测试全绿，已上线（admin v2026.10.22.3 / server v2026.10.22.4）。**
 
 ## 1. 本阶段交付
 
@@ -116,6 +116,25 @@ partner 侧栏            = 我的剧集 / API 密钥
 
 截图：`/tmp/partner-editor.png`、`/tmp/partner-keys.png`。
 
-## 7. 结论
+## 7. 线上验收（2026-10-22 10:48）
+
+发布：admin `v2026.10.22.3`、server `v2026.10.22.4`；P2 无新迁移。
+
+| # | 检查 | 结果 |
+|---|---|---|
+| 1 | 临时管理员创建供应商 / partner 账号 | 201 / 201 ✅ |
+| 2 | partner 登录 + `/partner/v1/me` | 200 ✅ |
+| 3 | `GET /partner/v1/tags` | 200，返回启用标签 ✅ |
+| 4 | `POST /partner/v1/dramas` | 201，免费 5、价格 0 ✅ |
+| 5 | `POST /dramas/{id}/episodes` | 201，第 1 集 ✅ |
+| 6 | `POST /dramas/{id}/submit`（无封面） | 422 `cover_required` ✅ |
+| 7 | partner 建 API Key（read/write/upload） | 201 ✅ |
+| 8 | 该 key 调 `/admin/v1/dramas` | 403 `partner_scope_denied` ✅ |
+| 9 | partner 侧栏（线上） | 我的剧集 / API 密钥 ✅ |
+| 10 | 线上编辑器加载 | 标题、免费集数、添加分集均渲染 ✅ |
+
+测试数据已清理：线上恢复 `suppliers=0 / accounts=3 / dramas=212`。
+
+## 8. 结论
 
 P2 打通了「上剧方自己建剧 → 建集 → 上传 → 提交审核」的完整链路，网页端与 CLI 都能走通，并配套了自助密钥。下一步 P3：运营侧待审核/待上架、批量通过、通知与配额。
