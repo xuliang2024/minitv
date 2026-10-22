@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.22.1",
+  "target": "r2",
+  "status": "published",
+  "sha": "73bbb2b0cd0fbc8088d6ced68c2f34344cf897ee",
+  "short_sha": "73bbb2b0",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.22.1/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "dc84e1371e1efe1b112a80157ffb757d388a0d29e19b5be1223030c0bdb4facd",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-_C_U_wqp.js",
+      "size": 1486406
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-22T10:03:56+08:00",
+  "finished_at": "2026-10-22T10:04:46+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 38128,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "P1：上剧方管理、我的剧集、菜单按角色分流、会员归因",
+  "dirty": false
+}
