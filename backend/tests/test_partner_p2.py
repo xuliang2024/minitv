@@ -471,3 +471,33 @@ def test_episode_number_can_be_edited(make, session, client):
     assert moved.json()["episode_number"] == 5
     assert moved.json()["title"] == "第五集"
     assert first["episode_number"] == 1
+
+
+def test_key_summary_and_edit(make, session, client):
+    headers = _admin_headers(make, client)
+    _, partner = _supplier_with_partner(client, headers)
+    key = client.post(
+        "/partner/v1/api-keys",
+        json={"name": "ci-upload", "scopes": ["read"], "expires_in_days": 30},
+        headers=partner,
+    ).json()
+
+    listed = client.get("/partner/v1/api-keys", headers=partner).json()
+    assert listed["summary"]["total"] == 1
+    assert listed["summary"]["active"] == 1
+
+    edited = client.patch(
+        f"/partner/v1/api-keys/{key['id']}",
+        json={"name": "ci-upload-v2", "scopes": ["read", "upload"]},
+        headers=partner,
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["name"] == "ci-upload-v2"
+    assert set(edited.json()["scopes"]) == {"read", "upload"}
+
+    forbidden = client.patch(
+        f"/partner/v1/api-keys/{key['id']}",
+        json={"scopes": ["staff"]},
+        headers=partner,
+    )
+    assert forbidden.status_code == 422

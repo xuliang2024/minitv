@@ -184,6 +184,11 @@ class PartnerKeyRevokeIn(BaseModel):
     reason: str | None = Field(default=None, max_length=200)
 
 
+class PartnerKeyUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    scopes: list[str] | None = None
+
+
 # ---- helpers ----
 
 
@@ -1170,7 +1175,15 @@ def list_keys(
         .where(AdminApiKey.admin_user_id == user.id)
         .order_by(AdminApiKey.id.desc())
     ).all()
-    return {"items": [_key_out(key) for key in rows]}
+    items = [_key_out(key) for key in rows]
+    summary = {
+        "active": sum(1 for item in items if item["state"] == "active"),
+        "expiring": sum(1 for item in items if item["state"] == "expiring"),
+        "expired": sum(1 for item in items if item["state"] == "expired"),
+        "revoked": sum(1 for item in items if item["state"] == "revoked"),
+        "total": len(items),
+    }
+    return {"items": items, "summary": summary}
 
 
 @router.get("/auth/keys")
@@ -1226,6 +1239,31 @@ def create_key(
         actor_id=user.id,
     )
     return {**_key_out(key), "key": plaintext}
+
+
+@router.patch("/api-keys/{key_id}")
+def update_key(
+    key_id: int,
+    body: PartnerKeyUpdateIn,
+    user: AdminUser = Depends(require_partner_session),
+    db: Session = Depends(get_db),
+):
+    key = _own_key(db, user, key_id)
+    scopes = (
+        api_key_service.normalise_scopes(body.scopes, api_key_service.PARTNER_SCOPES)
+        if body.scopes is not None
+        else None
+    )
+    key = api_key_service.update_key(
+        db,
+        key,
+        name=body.name,
+        scopes=scopes,
+        expires_at=None,
+        expires_at_set=False,
+        actor_id=user.id,
+    )
+    return _key_out(key)
 
 
 @router.post("/api-keys/{key_id}/rotate", status_code=201)
