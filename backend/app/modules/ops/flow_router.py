@@ -238,8 +238,8 @@ class CommentModIn(BaseModel):
 
 
 class ModerationSettingsIn(BaseModel):
-    """Admin-editable policy. The API key is deliberately absent: it lives in
-    ``OPENAI_API_KEY`` so rotating it never writes to the database."""
+    """Admin-editable policy. ``api_key`` is write-only: it is encrypted into the
+    row, never echoed back, and left untouched when omitted."""
 
     enabled: bool
     base_url: str = Field(default="https://api.openai.com/v1", max_length=200)
@@ -250,6 +250,14 @@ class ModerationSettingsIn(BaseModel):
     block_threshold: float = Field(ge=0, le=1)
     fallback_action: str = "pending"
     timeout_seconds: int = Field(ge=1, le=30)
+    api_key: str | None = Field(default=None, max_length=200)
+    clear_api_key: bool = False
+
+    @field_validator("api_key")
+    @classmethod
+    def _blank_key_is_none(cls, value: str | None) -> str | None:
+        text = (value or "").strip()
+        return text or None
 
     @field_validator("categories")
     @classmethod
@@ -279,6 +287,14 @@ class ModerationSettingsIn(BaseModel):
 
 class ModerationTestIn(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
+    # Optional draft credential: the admin page verifies a key before saving it.
+    api_key: str | None = Field(default=None, max_length=200)
+
+    @field_validator("api_key")
+    @classmethod
+    def _blank_key_is_none(cls, value: str | None) -> str | None:
+        text = (value or "").strip()
+        return text or None
 
 
 # require_admin_role now lives in ops.router so the staff endpoints and the
@@ -1771,7 +1787,9 @@ def _moderation_payload(row: ModerationSettings) -> dict:
         "timeout_seconds": row.timeout_seconds,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         "updated_by": row.updated_by,
-        "key": moderation.key_status(),
+        "key": moderation.key_status(row),
+        "key_from_database": bool((row.api_key_secret or "").strip()),
+        "key_env_configured": bool(moderation.env_key()),
         "default_base_url": moderation.default_base_url(),
         "default_categories": moderation.DEFAULT_CATEGORIES,
         "default_prompt": moderation.DEFAULT_SYSTEM_PROMPT,
@@ -1789,7 +1807,7 @@ def update_moderation_settings(
     db: Session = Depends(get_db),
     user: AdminUser = Depends(require_admin_role),
 ):
-    """Save the OpenAI moderation policy and record the change in audit_logs."""
+    """Save the moderation policy (and optionally a new key); audit the change."""
     row = moderation.get_settings(db)
     before = {
         "enabled": row.enabled,
@@ -1800,7 +1818,18 @@ def update_moderation_settings(
         "fallback_action": row.fallback_action,
         "timeout_seconds": row.timeout_seconds,
         "categories": list(row.categories or []),
+        "key_source": moderation.key_status(row)["source"],
     }
+    key_action = "unchanged"
+    if body.clear_api_key:
+        moderation.clear_api_key(row)
+        key_action = "cleared"
+    elif body.api_key:
+        try:
+            moderation.set_api_key(row, body.api_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        key_action = "set"
     row.enabled = body.enabled
     row.base_url = body.base_url
     row.model = body.model.strip()
@@ -1829,7 +1858,11 @@ def update_moderation_settings(
                     "fallback_action": body.fallback_action,
                     "timeout_seconds": body.timeout_seconds,
                     "categories": body.categories,
+                    "key_source": moderation.key_status(row)["source"],
                 },
+                # Never the credential itself: action + masked tail only.
+                "key_action": key_action,
+                "key_masked": moderation.key_status(row)["masked"],
                 "prompt_chars": len(body.system_prompt),
             },
         )
@@ -1845,10 +1878,14 @@ def test_moderation(
     db: Session = Depends(get_db),
     user: AdminUser = Depends(require_admin),
 ):
-    """Dry-run one piece of text against the saved policy. Writes nothing."""
+    """Dry-run one piece of text against the saved policy. Writes nothing.
+
+    ``body.api_key`` lets the admin page verify a key before saving it; the
+    draft credential is only used for this call and never persisted or logged.
+    """
     settings = moderation.get_settings(db)
     try:
-        result = moderation.classify(body.text, settings)
+        result = moderation.classify(body.text, settings, key=body.api_key)
     except moderation.ModerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {

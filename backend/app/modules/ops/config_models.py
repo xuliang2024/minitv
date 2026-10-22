@@ -174,9 +174,9 @@ class TaskClaim(Base):
 class ModerationSettings(Base):
     """Single-row config for OpenAI-backed comment pre-moderation.
 
-    The API key never lives in this table: it is read from ``OPENAI_API_KEY`` so
-    rotating it stays an environment change, not a database write. Everything
-    that operations actually tune (model, prompt, thresholds, fallback) is here.
+    Everything operations tune (model, prompt, thresholds, fallback) lives here.
+    ``api_key_secret`` is the Fernet-encrypted credential edited from the admin
+    page; when it is empty the key falls back to ``OPENAI_API_KEY``.
     """
 
     __tablename__ = "moderation_settings"
@@ -191,6 +191,7 @@ class ModerationSettings(Base):
     block_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.75)
     fallback_action: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=6)
+    api_key_secret: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     updated_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

@@ -27,16 +27,18 @@ import {
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { api, errorText } from "../api";
+import { useConfirm } from "../confirm";
 
 /**
  * 自动审核配置：用 OpenAI 模型在评论落库前给出 allow / review / block 判定。
- * 密钥只从服务器环境变量 OPENAI_API_KEY 读取，本页不下发、不回显、不保存。
+ * 密钥可以直接在本页填写（加密后存库、只回显尾号），留空/清除时回退到服务器
+ * 环境变量 OPENAI_API_KEY。
  */
 
 type KeyStatus = {
   configured: boolean;
   masked: string;
-  source: string;
+  source: "database" | "env" | "none";
   name: string;
 };
 
@@ -53,6 +55,8 @@ type Settings = {
   updated_at: string | null;
   updated_by: number | null;
   key: KeyStatus;
+  key_from_database: boolean;
+  key_env_configured: boolean;
   default_base_url: string;
   default_categories: string[];
   default_prompt: string;
@@ -103,6 +107,7 @@ const SAMPLE = "Best episode yet! Where can I watch the next one?";
 
 export default function Moderation() {
   const [form] = Form.useForm<Settings>();
+  const { confirm, confirmModal } = useConfirm();
   const [data, setData] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,6 +115,11 @@ export default function Moderation() {
   const [testOpen, setTestOpen] = useState(false);
   const [testText, setTestText] = useState(SAMPLE);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [keyOpen, setKeyOpen] = useState(false);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keySaving, setKeySaving] = useState(false);
+  const [keyChecking, setKeyChecking] = useState(false);
+  const [keyCheck, setKeyCheck] = useState<TestResult | null>(null);
 
   const apply = (next: Settings) => {
     setData(next);
@@ -180,6 +190,91 @@ export default function Moderation() {
     }
   };
 
+  /** Only the policy fields, so key changes never carry unsaved prompt edits. */
+  const policyBody = (source: Settings) => ({
+    enabled: source.enabled,
+    base_url: source.base_url,
+    model: source.model,
+    categories: source.categories ?? [],
+    system_prompt: source.system_prompt ?? "",
+    approve_threshold: source.approve_threshold,
+    block_threshold: source.block_threshold,
+    fallback_action: source.fallback_action,
+    timeout_seconds: source.timeout_seconds,
+  });
+
+  const closeKey = () => {
+    setKeyOpen(false);
+    setKeyDraft("");
+    setKeyCheck(null);
+  };
+
+  const submitKey = async (payload: { api_key?: string; clear_api_key?: boolean }) => {
+    if (!data) return;
+    setKeySaving(true);
+    try {
+      const next = await api<Settings>("/admin/v1/moderation/settings", {
+        method: "POST",
+        body: JSON.stringify({ ...policyBody(data), ...payload }),
+      });
+      apply(next);
+      closeKey();
+      message.success(
+        payload.clear_api_key
+          ? "已清除后台密钥，改用服务器环境变量"
+          : `密钥已保存，当前生效：${next.key.masked}`,
+      );
+    } catch (e) {
+      message.error(`密钥保存失败：${errorText(e)}`);
+    } finally {
+      setKeySaving(false);
+    }
+  };
+
+  const saveKey = () => {
+    const value = keyDraft.trim();
+    if (value.length < 8) {
+      message.warning("密钥至少 8 位，且不能包含空格");
+      return;
+    }
+    void submitKey({ api_key: value });
+  };
+
+  const clearKey = () => {
+    confirm({
+      title: "清除后台保存的密钥",
+      content: data?.key_env_configured
+        ? "清除后将改用服务器环境变量 OPENAI_API_KEY。"
+        : "清除后自动审核将无法调用模型，评论会按降级策略进入待审核。",
+      danger: true,
+      okText: "清除",
+      onOk: () => submitKey({ clear_api_key: true }),
+    });
+  };
+
+  /** Verify the pasted key with a sample comment; nothing is written. */
+  const checkKey = async () => {
+    const value = keyDraft.trim();
+    if (value.length < 8) {
+      message.warning("先粘贴要验证的密钥");
+      return;
+    }
+    setKeyChecking(true);
+    setKeyCheck(null);
+    try {
+      setKeyCheck(
+        await api<TestResult>("/admin/v1/moderation/test", {
+          method: "POST",
+          body: JSON.stringify({ text: SAMPLE, api_key: value }),
+        }),
+      );
+    } catch (e) {
+      message.error(`验证失败：${errorText(e)}`);
+    } finally {
+      setKeyChecking(false);
+    }
+  };
+
   const key = data?.key;
 
   return (
@@ -216,8 +311,15 @@ export default function Moderation() {
           type="success"
           showIcon
           icon={<KeyOutlined />}
-          message={`${key.name} 已配置（${key.masked}）`}
-          description="密钥从服务器环境变量读取，后台不保存、不回显完整值。更换密钥请修改 /opt/minitv/.env 后重启 api。"
+          message={`审核密钥已配置（${key.masked} · ${
+            key.source === "database" ? "后台配置，加密存储" : "服务器环境变量"
+          }）`}
+          description="更换或清除密钥可直接在右侧操作，保存后立即生效、无需重启；完整密钥不会回显。"
+          action={
+            <Button size="small" icon={<KeyOutlined />} onClick={() => setKeyOpen(true)}>
+              更换密钥
+            </Button>
+          }
           style={{ borderRadius: 8 }}
         />
       ) : (
@@ -225,8 +327,13 @@ export default function Moderation() {
           type="warning"
           showIcon
           icon={<KeyOutlined />}
-          message="未配置 OPENAI_API_KEY"
-          description="自动审核无法调用模型。请在服务器 /opt/minitv/.env 增加 OPENAI_API_KEY=sk-... 并重启 api；在此之前所有评论仍按「待审核」处理。"
+          message="未配置自动审核密钥"
+          description="自动审核无法调用模型，评论会按降级策略处理。点右侧填写密钥（加密存库），或写入服务器 /opt/minitv/.env 的 OPENAI_API_KEY。"
+          action={
+            <Button size="small" type="primary" icon={<KeyOutlined />} onClick={() => setKeyOpen(true)}>
+              配置密钥
+            </Button>
+          }
           style={{ borderRadius: 8 }}
         />
       )}
@@ -429,6 +536,66 @@ export default function Moderation() {
           )}
         </Space>
       </Modal>
+
+      <Modal
+        open={keyOpen}
+        title="自动审核密钥"
+        width={560}
+        onCancel={closeKey}
+        footer={
+          <Space>
+            {data?.key_from_database && (
+              <Button danger type="text" onClick={clearKey} loading={keySaving}>
+                清除后台密钥
+              </Button>
+            )}
+            <Button onClick={closeKey}>取消</Button>
+            <Button
+              type="primary"
+              onClick={saveKey}
+              loading={keySaving}
+              disabled={keyDraft.trim().length < 8}
+            >
+              保存密钥
+            </Button>
+          </Space>
+        }
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Text type="secondary">
+            密钥加密后保存在数据库，保存即刻生效、无需重启服务；页面只回显尾号，完整值无法再读出。
+          </Typography.Text>
+          <Input.Password
+            value={keyDraft}
+            onChange={(event) => setKeyDraft(event.target.value)}
+            placeholder="sk-..."
+            autoComplete="new-password"
+            prefix={<KeyOutlined style={{ color: "#bfbfbf" }} />}
+          />
+          <Space wrap size={8}>
+            <Button size="small" onClick={() => void checkKey()} loading={keyChecking}>
+              验证密钥
+            </Button>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {data?.key_env_configured
+                ? "服务器环境变量 OPENAI_API_KEY：已配置（清除后台密钥后自动兜底）"
+                : "服务器环境变量 OPENAI_API_KEY：未配置"}
+            </Typography.Text>
+          </Space>
+          {keyCheck && (
+            <Space wrap size={8}>
+              <Tag color={VERDICT_META[keyCheck.result.verdict]?.color ?? "default"}>
+                验证通过 · {VERDICT_META[keyCheck.result.verdict]?.label ?? keyCheck.result.verdict}
+              </Tag>
+              <Typography.Text type="secondary">
+                {keyCheck.result.model} · {keyCheck.result.latency_ms} ms
+              </Typography.Text>
+            </Space>
+          )}
+        </Space>
+      </Modal>
+
+      {confirmModal}
     </Space>
   );
 }

@@ -169,7 +169,7 @@ block  + score >= block_threshold   → deleted
 其余（review / 低分 / 模型失败）      → pending
 ```
 
-- 密钥只读 `OPENAI_API_KEY`（可选 `OPENAI_BASE_URL`），后台不回显完整值、不写库；未配置时按降级策略处理。
+- 密钥优先取后台「自动审核」页保存的副本（Fernet 加密存 `moderation_settings.api_key_secret`，只回显尾号、不回显完整值）；未保存时回退到环境变量 `OPENAI_API_KEY`。主密钥 `MODERATION_KEY_SECRET` 只在服务器 .env，更换后旧密文解不开会退回环境变量。未配置密钥时按降级策略处理。
 - 每次判定把 `verdict / score / reason / model / moderated_at` 写进 `comments`，后台评论列表可追溯，人工通过或删除始终优先。
 - 模型只接收评论正文，不发送邮箱、用户 ID 或剧集信息。
 

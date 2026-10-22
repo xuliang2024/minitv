@@ -1,12 +1,15 @@
 """OpenAI-backed comment moderation.
 
-The admin page only stores policy (model, prompt, thresholds). The credential
-stays in the environment, so rotating it never touches the database.
+The admin page stores the policy (model, prompt, thresholds) and, since the key
+became editable there, an encrypted copy of the credential. ``OPENAI_API_KEY``
+stays as the bootstrap / rollback path: it is used whenever the row has no key.
 """
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
+import hashlib
 import json
 import logging
 import os
@@ -15,6 +18,12 @@ import time
 from dataclasses import dataclass
 
 import httpx
+
+try:  # ships with PyJWT[crypto]; guarded so a missing dep degrades, not crashes
+    from cryptography.fernet import Fernet, InvalidToken
+except ModuleNotFoundError:  # pragma: no cover - dependency is pinned in requirements
+    Fernet = None  # type: ignore[assignment]
+    InvalidToken = Exception  # type: ignore[assignment,misc]
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -70,7 +79,52 @@ class ModerationResult:
         }
 
 
-def api_key() -> str:
+# ---- credential ------------------------------------------------------------
+# Two sources, database first: the admin page can rotate the key without a
+# redeploy, and OPENAI_API_KEY remains the bootstrap/rollback path. The stored
+# copy is encrypted so a database dump never yields a working credential; the
+# master secret stays in the environment.
+
+KEY_SECRET_ENV = "MODERATION_KEY_SECRET"
+KEY_BLOB_PREFIX = "v1:"
+MIN_KEY_LENGTH = 8
+
+
+def _fernet():
+    if Fernet is None:  # pragma: no cover
+        raise ModerationError("缺少 cryptography 依赖，无法保存密钥")
+    secret = os.environ.get(KEY_SECRET_ENV, "").strip()
+    if not secret:
+        # Local/test convenience only. Production sets MODERATION_KEY_SECRET;
+        # without it this is obfuscation, not real encryption.
+        secret = "|minitv-moderation|" + (os.environ.get("DATABASE_URL", "") or "local")
+    digest = hashlib.sha256(secret.encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def encrypt_key(raw: str) -> str:
+    return KEY_BLOB_PREFIX + _fernet().encrypt(raw.encode("utf-8")).decode("ascii")
+
+
+def decrypt_key(blob: str) -> str:
+    """Decrypt a stored key. An unreadable blob degrades to '' (env fallback)."""
+    body = blob[len(KEY_BLOB_PREFIX) :] if blob.startswith(KEY_BLOB_PREFIX) else blob
+    try:
+        return _fernet().decrypt(body.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError, TypeError):
+        logger.warning(
+            "stored moderation key cannot be decrypted (MODERATION_KEY_SECRET changed?); "
+            "falling back to OPENAI_API_KEY"
+        )
+        return ""
+
+
+def stored_key(settings: ModerationSettings | None) -> str:
+    blob = ((getattr(settings, "api_key_secret", "") or "").strip()) if settings is not None else ""
+    return decrypt_key(blob) if blob else ""
+
+
+def env_key() -> str:
     return os.environ.get("OPENAI_API_KEY", "").strip()
 
 
@@ -78,17 +132,52 @@ def default_base_url() -> str:
     return os.environ.get("OPENAI_BASE_URL", "").strip() or DEFAULT_BASE
 
 
-def key_status() -> dict:
-    key = api_key()
-    if not key:
-        return {"configured": False, "masked": "", "source": "env", "name": "OPENAI_API_KEY"}
-    tail = key[-4:] if len(key) >= 8 else ""
-    return {
-        "configured": True,
-        "masked": f"sk-...{tail}" if tail else "configured",
-        "source": "env",
-        "name": "OPENAI_API_KEY",
-    }
+def api_key(settings: ModerationSettings | None = None, override: str | None = None) -> str:
+    """Resolve the credential: explicit override → database → environment."""
+    if override and override.strip():
+        return override.strip()
+    return stored_key(settings) or env_key()
+
+
+def mask_key(key: str) -> str:
+    key = key.strip()
+    tail = key[-4:] if len(key) >= MIN_KEY_LENGTH else ""
+    return f"sk-...{tail}" if tail else ("configured" if key else "")
+
+
+def key_status(settings: ModerationSettings | None = None) -> dict:
+    """Masked status for the admin page. Never returns the full key."""
+    db_key = stored_key(settings)
+    if db_key:
+        return {
+            "configured": True,
+            "masked": mask_key(db_key),
+            "source": "database",
+            "name": "OPENAI_API_KEY",
+        }
+    current = env_key()
+    if current:
+        return {
+            "configured": True,
+            "masked": mask_key(current),
+            "source": "env",
+            "name": "OPENAI_API_KEY",
+        }
+    return {"configured": False, "masked": "", "source": "none", "name": "OPENAI_API_KEY"}
+
+
+def set_api_key(settings: ModerationSettings, raw: str) -> None:
+    """Encrypt and stage a new key on the row. Caller commits."""
+    key = raw.strip()
+    if len(key) < MIN_KEY_LENGTH or any(ch.isspace() for ch in key):
+        raise ValueError("密钥格式不正确：至少 8 位且不能包含空格")
+    settings.api_key_secret = encrypt_key(key)
+
+
+def clear_api_key(settings: ModerationSettings) -> None:
+    """Drop the database copy so the environment variable takes over again."""
+    settings.api_key_secret = ""
+
 
 
 def get_settings(db: Session) -> ModerationSettings:
@@ -151,11 +240,17 @@ def _normalise(data: dict, model: str, latency_ms: int) -> ModerationResult:
     return ModerationResult(verdict, round(score, 3), reason, model, latency_ms)
 
 
-def classify(text: str, settings: ModerationSettings) -> ModerationResult:
-    """Call the chat completions endpoint once. Raises ModerationError on failure."""
-    key = api_key()
-    if not key:
-        raise ModerationError("OPENAI_API_KEY 未配置")
+def classify(
+    text: str, settings: ModerationSettings, key: str | None = None
+) -> ModerationResult:
+    """Call the chat completions endpoint once. Raises ModerationError on failure.
+
+    ``key`` overrides the stored credential; the admin page uses it to verify a
+    draft key before saving it.
+    """
+    resolved = api_key(settings, key)
+    if not resolved:
+        raise ModerationError("自动审核密钥未配置，请先在后台「自动审核」页填写")
 
     base = (settings.base_url or default_base_url()).rstrip("/")
     url = f"{base}/chat/completions"
@@ -168,7 +263,7 @@ def classify(text: str, settings: ModerationSettings) -> ModerationResult:
         "max_tokens": 900,
         "response_format": {"type": "json_object"},
     }
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {resolved}", "Content-Type": "application/json"}
     timeout = max(1, min(30, int(settings.timeout_seconds or 6)))
 
     started = time.monotonic()
@@ -264,7 +359,7 @@ def queue_state(db: Session) -> str | None:
     human queue instead of burning three retries.
     """
     settings = get_settings(db)
-    if not settings.enabled or not api_key():
+    if not settings.enabled or not api_key(settings):
         return None
     return "queued"
 
