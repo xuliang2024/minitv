@@ -2,7 +2,7 @@
 
 > 范围：`docs/supplier-role-plan.md` P4（数据中心、月度结算单）
 > 日期：2026-10-22　环境：本地（Docker Postgres/Redis，API :18110，Vite :5173）
-> 结论：**P4 功能完成，测试全绿；尚未部署线上（需执行新迁移）。**
+> 结论：**P4 功能完成，测试全绿，已上线（admin v2026.10.22.5 / server v2026.10.22.6）。**
 
 ## 1. 本阶段交付
 
@@ -87,6 +87,26 @@ partner 回看          = 已打款
 - 结算读取 `orders.source_drama_id`，P1 之前的存量订单为 NULL，不会计入任何供应商。
 - 建议先在线上跑一次空月份生成（无订单 → 0 条），确认无异常后再等真实订单。
 
-## 6. 结论
+## 6. 线上验收（2026-10-22 11:28）
+
+发布：admin `v2026.10.22.5`、server `v2026.10.22.6`；迁移 `d3f8b1c6a940 → e5b2a9c741d3`。
+迁移前备份：`/opt/minitv/backups/pre-p4-20261022-1125.dump`（1.2 MB）。
+
+| # | 检查 | 结果 |
+|---|---|---|
+| 1 | `alembic_version` | `e5b2a9c741d3` ✅ |
+| 2 | `supplier_settlements` 表 | 存在，0 行 ✅ |
+| 3 | finance `GET /admin/v1/settlements` | 200，空列表 ✅ |
+| 4 | ops 同接口 | 403 `role cannot access settlements` ✅ |
+| 5 | finance 生成当月（无订单） | `created=0 / updated=0 / skipped=0` ✅ |
+| 6 | partner `stats/overview` | 200，播放/观众/首单/金额全 0 ✅ |
+| 7 | partner `stats/dramas`、`settlements` | 200，空数组 ✅ |
+| 8 | partner 线上菜单 | 我的剧集 / 数据中心 / 结算单 / API 密钥 ✅ |
+| 9 | finance 线上菜单 | 含「结算单」，无「剧集管理」✅ |
+| 10 | 线上结算页生成按钮 | toast「生成完成」✅ |
+
+验收数据已清理：`suppliers=0 / admin_users=3 / dramas=212 / settlements=0`。
+
+## 7. 结论
 
 P4 补齐了「内容 → 转化 → 收益」的完整可见性，并把分成结算做成可复核的月度对账单。至此方案 P1–P4 全部落地，仅剩运营侧细节（撤回提交、SLA 提醒、排期守卫）可作为 P5 打磨。
