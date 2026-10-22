@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.22.16",
+  "target": "server",
+  "status": "published",
+  "sha": "73a1765895c75451e9065d85eec645a70728778b",
+  "short_sha": "73a17658",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-22T20:33:26+08:00",
+  "finished_at": "2026-10-22T20:33:41+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 81590,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "自动审核：后台可配置密钥（迁移 a3c9f1e28b70，新增 api_key_secret）；工作区其余脏文件为并行 App 会话，不参与 server 同步（脚本只 rsync backend/）",
+  "dirty": true
+}
