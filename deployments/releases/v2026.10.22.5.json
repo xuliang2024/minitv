@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.22.5",
+  "target": "r2",
+  "status": "published",
+  "sha": "beb04b90f774eb5c5be5e7cc01e26e37cb63e1e1",
+  "short_sha": "beb04b90",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.22.5/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "afabfe2d8542a07736cb4aa3bc6c07951cc5855888c9de218a2a8b244804edad",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-DmnY3wOI.js",
+      "size": 1512170
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-22T11:25:28+08:00",
+  "finished_at": "2026-10-22T11:26:15+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 81168,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "P4：数据中心与月度结算单",
+  "dirty": false
+}
