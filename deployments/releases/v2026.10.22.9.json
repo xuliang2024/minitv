@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.22.9",
+  "target": "server",
+  "status": "published",
+  "sha": "00454a2b11bf1090d52e1d86cfbc894e7e7c2778",
+  "short_sha": "00454a2b",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-22T14:53:22+08:00",
+  "finished_at": "2026-10-22T14:53:38+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 52773,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "上剧方剧集列表分页筛选、stage_counts、删除草稿、改集号",
+  "dirty": true
+}
