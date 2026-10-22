@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.22.12",
+  "target": "r2",
+  "status": "published",
+  "sha": "a2d93b2e0be4d5b26f8dbe4f99f199c66942b48e",
+  "short_sha": "a2d93b2e",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.22.12/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "56410ee362ee4e63c6c7b575e81726278a3e7f552887a6ea96e9d1c8e1740f9c",
+  "files": [
+    {
+      "path": "assets/index-62BU_Yvk.js",
+      "size": 1522742
+    },
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-22T15:41:43+08:00",
+  "finished_at": "2026-10-22T15:42:36+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 77864,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "上剧方上传中断处理：等待上传/取消上传/30分钟自动失败",
+  "dirty": false
+}
