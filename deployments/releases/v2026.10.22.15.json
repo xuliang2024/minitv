@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.22.15",
+  "target": "r2",
+  "status": "published",
+  "sha": "0e2bf131bc6baa9d722c59a558b9ff1d10806240",
+  "short_sha": "0e2bf131",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.22.15/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "6bf0da228cb735812b59654eb0db5660dd3a127b6e80358fcee23e3954a77204",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-CqkIAjDh.js",
+      "size": 1525913
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-22T20:32:32+08:00",
+  "finished_at": "2026-10-22T20:32:59+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 81297,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "自动审核页支持直接配置密钥（加密存库、只回显尾号、可清除回退环境变量）",
+  "dirty": false
+}
