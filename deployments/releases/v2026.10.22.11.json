@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.22.11",
+  "target": "server",
+  "status": "published",
+  "sha": "575aa9070abd23bc496c6d3e5018f3ade75fb67a",
+  "short_sha": "575aa907",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-22T15:14:42+08:00",
+  "finished_at": "2026-10-22T15:14:55+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 65883,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "伙伴密钥 summary 与编辑接口",
+  "dirty": true
+}
