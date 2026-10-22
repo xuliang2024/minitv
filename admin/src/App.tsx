@@ -15,6 +15,7 @@ import { MeContext, ROLE_LABELS, type Me } from "./me";
 import Login from "./pages/Login";
 import Dramas from "./pages/Dramas";
 import DramaEdit from "./pages/DramaEdit";
+import Reviews from "./pages/Reviews";
 import Tags from "./pages/Tags";
 import GroupsPage, { GroupDetailPage } from "./pages/Groups";
 import { HomeOpsPage } from "./pages/HomeOps";
@@ -47,6 +48,7 @@ const DESKTOP_QUERY = "(min-width: 992px)";
 const ITEMS: { key: string; label: string; roles?: string[] }[] = [
   { key: "/dashboard", label: "数据看板", roles: ["ops", "finance", "admin"] },
   { key: "/dramas", label: "剧集管理", roles: ["ops", "admin"] },
+  { key: "/reviews", label: "待审核", roles: ["ops", "admin"] },
   { key: "/groups", label: "首页分组", roles: ["ops", "admin"] },
   { key: "/users", label: "用户管理", roles: ["finance", "admin"] },
   // 运营中心（推送记录）暂不开放：当前只是台账占位，没有真实推送通道，先隐藏入口。
@@ -294,6 +296,7 @@ export default function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/dramas" element={<Dramas />} />
               <Route path="/dramas/:id" element={<DramaEdit />} />
+              <Route path="/reviews" element={<Reviews />} />
               <Route path="/groups" element={<GroupsPage />} />
               <Route path="/groups/:id" element={<GroupDetailPage />} />
               <Route path="/users" element={<UsersPage />} />

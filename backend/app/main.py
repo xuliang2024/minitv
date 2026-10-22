@@ -83,6 +83,7 @@ def _register_routers() -> None:
     from app.modules.ops.api_key_router import router as admin_api_key_router
     from app.modules.ops.flow_router import router as admin_flow_router
     from app.modules.ops.partner_router import router as partner_router
+    from app.modules.ops.review_router import router as review_router
     from app.modules.ops.router import router as admin_router
     from app.modules.public_flow import router as public_flow_router
     from app.modules.recommend.router import router as feed_router
@@ -91,6 +92,7 @@ def _register_routers() -> None:
     app.include_router(admin_api_key_router)
     app.include_router(admin_flow_router)
     app.include_router(partner_router)
+    app.include_router(review_router)
     app.include_router(public_router)
     app.include_router(public_flow_router)
     app.include_router(feed_router)

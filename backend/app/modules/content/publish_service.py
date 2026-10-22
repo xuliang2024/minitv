@@ -69,6 +69,16 @@ def invalidate_drama(session: Session, drama: Drama, reason: str) -> None:
 
 
 def change_drama_status(session: Session, drama: Drama, to_status: str, *, actor_id: int) -> Drama:
+    # Supplier content becomes visible only after review: the old drama page
+    # must not be able to bypass the queue.
+    if (
+        to_status == "published"
+        and drama.supplier_id is not None
+        and drama.review_state != "approved"
+    ):
+        raise PublishError(
+            409, {"code": "not_approved", "message": "上剧方剧集需审核通过后才能上架"}
+        )
     try:
         transition_drama(session, drama, to_status)
     except InvalidTransition as exc:
