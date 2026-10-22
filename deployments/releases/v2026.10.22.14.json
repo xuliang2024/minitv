@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.22.14",
+  "target": "server",
+  "status": "published",
+  "sha": "a4cc72020b59454192d6e6176849887b341d4f13",
+  "short_sha": "a4cc7202",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-22T15:56:03+08:00",
+  "finished_at": "2026-10-22T15:56:19+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 83460,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "慢速上传不被误判失败（hasOriginal 作为存活信号）",
+  "dirty": true
+}
