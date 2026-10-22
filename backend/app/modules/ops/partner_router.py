@@ -293,6 +293,9 @@ def _drama_out(db: Session, drama: Drama, *, with_episodes: bool = False) -> dic
                 "upload_status": uploads.get(item.id),
                 "duration_seconds": item.duration_seconds,
                 "size_bytes": item.size_bytes,
+                # Drives the row-level 预览 button: an episode without a Bunny
+                # video has nothing to sign, so the UI must not offer playback.
+                "has_video": bool(item.bunny_video_id),
             }
             for item in episodes
         ]
@@ -677,6 +680,38 @@ def delete_episode(
     _audit(db, user, "partner_episode_delete", drama.id, {"episode": number})
     db.commit()
     return None
+
+
+@router.get("/episodes/{episode_id}/preview-url")
+def episode_preview_url(
+    episode_id: int,
+    user: AdminUser = Depends(require_partner),
+    db: Session = Depends(get_db),
+):
+    """Signed Bunny player URL so a supplier can review its own episode.
+
+    Read-only and ownership-scoped (a key with only ``read`` may use it), and
+    deliberately available in every state — reviewing a clip while it waits in
+    the review queue or is already published is the point.
+    """
+    from app.modules.common import bunny
+
+    episode = _episode_or_404(db, user, episode_id)
+    if not episode.bunny_video_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "no_video", "message": "该集还没有可预览的视频"},
+        )
+    try:
+        signed = bunny.stream_embed_url(episode.bunny_video_id, ttl=3600)
+    except bunny.BunnyError as exc:
+        raise HTTPException(status_code=503, detail=f"preview signing unavailable: {exc}") from exc
+    return {
+        **signed,
+        "episode_id": episode.id,
+        "episode_number": episode.episode_number,
+        "video_id": episode.bunny_video_id,
+    }
 
 
 @router.post("/episodes/{episode_id}/upload-session")

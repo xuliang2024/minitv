@@ -48,6 +48,15 @@ type Episode = {
   upload_status: string | null;
   duration_seconds: number;
   size_bytes: number;
+  /** Server-side flag: only an episode with a Bunny video can be previewed. */
+  has_video?: boolean;
+};
+
+type EpisodePreview = {
+  open: boolean;
+  /** Bunny iframe embed URL; absent while signing or after a failure. */
+  url?: string;
+  title: string;
 };
 
 type Drama = {
@@ -109,6 +118,8 @@ export default function PartnerDramaEdit() {
   const [editForm] = Form.useForm();
   const [uploadingId, setUploadingId] = useState<number | null>(null);
   const [progress, setProgress] = useState(0);
+  const [preview, setPreview] = useState<EpisodePreview>({ open: false, title: "" });
+  const closePreview = () => setPreview({ open: false, title: "" });
   const fileRef = useRef<HTMLInputElement | null>(null);
   const uploadTarget = useRef<number | null>(null);
 
@@ -254,6 +265,21 @@ export default function PartnerDramaEdit() {
       await reload();
     } catch (e) {
       message.error(errorText(e));
+    }
+  };
+
+  const openPreview = async (episode: Episode) => {
+    try {
+      const signed = await api<{ url: string; embed_url?: string }>(
+        `/partner/v1/episodes/${episode.id}/preview-url`
+      );
+      setPreview({
+        open: true,
+        url: signed.embed_url ?? signed.url,
+        title: `预览 · 第 ${episode.episode_number} 集`,
+      });
+    } catch (e) {
+      message.error(`预览失败：${errorText(e)}`);
     }
   };
 
@@ -601,9 +627,17 @@ export default function PartnerDramaEdit() {
           {
             title: "操作",
             key: "actions",
-            width: 190,
+            width: 230,
             render: (_, row) => (
               <Space size={4}>
+                <Button
+                  type="link"
+                  size="small"
+                  disabled={!row.has_video}
+                  onClick={() => openPreview(row)}
+                >
+                  预览
+                </Button>
                 <Button
                   type="link"
                   size="small"
@@ -774,6 +808,26 @@ export default function PartnerDramaEdit() {
             <Input maxLength={200} />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        open={preview.open}
+        title={preview.title}
+        footer={null}
+        width={460}
+        centered
+        destroyOnHidden
+        onCancel={closePreview}
+        styles={{ body: { padding: 0, background: "#000" } }}
+      >
+        {preview.url ? (
+          <iframe
+            src={preview.url}
+            title="episode preview"
+            style={{ display: "block", width: "100%", height: "74vh", border: 0, background: "#000" }}
+            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+        ) : null}
       </Modal>
     </Space>
   );
