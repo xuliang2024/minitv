@@ -1,0 +1,24 @@
+{
+  "version": "v2026.10.22.17",
+  "target": "server",
+  "status": "published",
+  "sha": "e4c5fe20bf56ca96d01173686763f0e7d84db51b",
+  "short_sha": "e4c5fe20",
+  "command": [
+    "./scripts/deploy_server.sh",
+    "--wait",
+    "180"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-22T20:50:54+08:00",
+  "finished_at": "2026-10-22T20:51:11+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 88380,
+    "agent_session": null,
+    "cwd": "/private/tmp/minitv-deploy-preview"
+  },
+  "note": "",
+  "dirty": false
+}
