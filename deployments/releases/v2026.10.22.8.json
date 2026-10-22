@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.22.8",
+  "target": "r2",
+  "status": "published",
+  "sha": "cbf4947161ac6d5e8c2805ead8ce57715de0ab3e",
+  "short_sha": "cbf49471",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.22.8/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "daf9cc113381735c3d1e85ddfc00ba71b5c11a2ad9c53fe4c7d6e32a902a2337",
+  "files": [
+    {
+      "path": "assets/index-BHMa_9tW.js",
+      "size": 1517807
+    },
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-22T14:51:07+08:00",
+  "finished_at": "2026-10-22T14:53:22+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 51951,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "上剧方剧集管理统一为平台布局：统计卡/筛选/Steps/Tabs/分集编辑",
+  "dirty": false
+}
