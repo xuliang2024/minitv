@@ -858,8 +858,13 @@ def upload_status(
             if bunny.live() and episode.bunny_video_id:
                 try:
                     remote = bunny.stream_video(episode.bunny_video_id)
+                    # hasOriginal flips true as soon as the first TUS bytes
+                    # arrive and stays true for the whole (possibly hours-long)
+                    # upload, so it is the liveness signal here. Size/length
+                    # only appear after the last byte.
                     has_bytes = bool(
-                        int(remote.get("storageSize") or 0) > 0
+                        remote.get("hasOriginal")
+                        or int(remote.get("storageSize") or 0) > 0
                         or int(remote.get("length") or 0) > 0
                         or int(remote.get("status") or 0) >= 3
                         or int(remote.get("encodeProgress") or 0) > 0
