@@ -1,0 +1,37 @@
+{
+  "version": "v2026.10.22.18",
+  "target": "r2",
+  "status": "published",
+  "sha": "e4c5fe20bf56ca96d01173686763f0e7d84db51b",
+  "short_sha": "e4c5fe20",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.10.22.18/",
+  "promote_prefix": "admin/",
+  "promoted_root": true,
+  "dist_digest": "487fdad67de03687a89e26a77a7d79a6d9bc76db9b3af287e9f9f03f3486f22e",
+  "files": [
+    {
+      "path": "assets/index-BacAvgs7.css",
+      "size": 2944
+    },
+    {
+      "path": "assets/index-Bl282H45.js",
+      "size": 1530397
+    },
+    {
+      "path": "index.html",
+      "size": 419
+    }
+  ],
+  "started_at": "2026-10-22T20:51:20+08:00",
+  "finished_at": "2026-10-22T20:51:55+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 88514,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "合作方分集列表：新增预览按钮 + Bunny 签名播放弹窗（无视频置灰）",
+  "dirty": false
+}
