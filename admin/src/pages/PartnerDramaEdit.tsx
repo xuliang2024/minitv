@@ -45,6 +45,7 @@ type Episode = {
   episode_number: number;
   title: string;
   status: string;
+  upload_status: string | null;
   duration_seconds: number;
   size_bytes: number;
 };
@@ -110,6 +111,16 @@ export default function PartnerDramaEdit() {
   const [progress, setProgress] = useState(0);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const uploadTarget = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (uploadingId === null) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [uploadingId]);
 
   const floor = drama ? Math.min(5, drama.episode_count) : 0;
   const coverUrl = drama?.cover_url ?? "";
@@ -342,10 +353,33 @@ export default function PartnerDramaEdit() {
       else message.info("Bunny 仍在转码，稍后刷新查看");
       await reload();
     } catch (e) {
+      // Release the session server-side: create_upload_session already moved
+      // the episode to transcoding, so a silent abort would look like a
+      // never-ending transcode and block retries.
+      try {
+        await api(`/partner/v1/episodes/${episodeId}/upload-failed`, { method: "POST" });
+      } catch {
+        /* the stale sweeper will catch it */
+      }
       message.error(errorText(e));
+      await reload();
     } finally {
       setUploadingId(null);
       setProgress(0);
+    }
+  };
+
+  const cancelUpload = async (episode: Episode) => {
+    try {
+      const res = await api<{ updated?: boolean; status: string }>(
+        `/partner/v1/episodes/${episode.id}/upload-failed`,
+        { method: "POST" }
+      );
+      if (res.updated === false) message.info("文件其实已经传完，等待转码即可");
+      else message.success("已取消，可以重新上传");
+      await reload();
+    } catch (e) {
+      message.error(errorText(e));
     }
   };
 
@@ -545,6 +579,9 @@ export default function PartnerDramaEdit() {
             width: 120,
             render: (_, row) => {
               if (uploadingId === row.id) return <Tag color="blue">上传中 {progress}%</Tag>;
+              if (row.status === "transcoding" && row.upload_status === "created") {
+                return <Tag color="blue">等待上传完成</Tag>;
+              }
               const meta = EPISODE_STATUS[row.status] ?? { text: row.status };
               return <Tag color={meta.color}>{meta.text}</Tag>;
             },
@@ -575,6 +612,17 @@ export default function PartnerDramaEdit() {
                 >
                   {row.status === "not_uploaded" ? "上传" : "替换"}
                 </Button>
+                {row.status === "transcoding" && row.upload_status === "created" && (
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    disabled={uploadingId !== null}
+                    onClick={() => cancelUpload(row)}
+                  >
+                    取消上传
+                  </Button>
+                )}
                 <Button
                   type="link"
                   size="small"

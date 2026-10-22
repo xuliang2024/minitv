@@ -276,12 +276,21 @@ def _drama_out(db: Session, drama: Drama, *, with_episodes: bool = False) -> dic
             .where(Episode.drama_id == drama.id)
             .order_by(Episode.episode_number)
         ).all()
+        uploads = {
+            row.episode_id: row.status
+            for row in db.scalars(
+                select(MediaUpload)
+                .where(MediaUpload.episode_id.in_([item.id for item in episodes]))
+                .order_by(MediaUpload.id)
+            ).all()
+        }
         payload["episodes"] = [
             {
                 "id": item.id,
                 "episode_number": item.episode_number,
                 "title": item.title,
                 "status": item.status,
+                "upload_status": uploads.get(item.id),
                 "duration_seconds": item.duration_seconds,
                 "size_bytes": item.size_bytes,
             }
@@ -832,6 +841,38 @@ def upload_status(
         .where(MediaUpload.episode_id == episode.id)
         .order_by(MediaUpload.id.desc())
     ).first()
+    # A session that never received bytes would otherwise sit in "transcoding"
+    # forever (the supplier sees 转码中 and cannot retry). 30 minutes is beyond
+    # a realistic 200MB upload on a slow link, so it is safe to call it dead.
+    if (
+        episode.status == "transcoding"
+        and upload is not None
+        and upload.status == "created"
+        and upload.created_at is not None
+    ):
+        age = datetime.now(timezone.utc) - upload.created_at
+        if age > timedelta(minutes=30):
+            from app.modules.common import bunny
+
+            has_bytes = False
+            if bunny.live() and episode.bunny_video_id:
+                try:
+                    remote = bunny.stream_video(episode.bunny_video_id)
+                    has_bytes = bool(
+                        int(remote.get("storageSize") or 0) > 0
+                        or int(remote.get("length") or 0) > 0
+                        or int(remote.get("status") or 0) >= 3
+                        or int(remote.get("encodeProgress") or 0) > 0
+                    )
+                except bunny.BunnyError:
+                    has_bytes = False
+            if not has_bytes:
+                try:
+                    transition_episode(db, episode, "transcode_failed")
+                    upload.status = "failed"
+                    db.commit()
+                except InvalidTransition:
+                    db.rollback()
     return {
         "episode_id": episode.id,
         "episode_number": episode.episode_number,
@@ -841,6 +882,54 @@ def upload_status(
         "video_id": episode.bunny_video_id,
         "upload_status": upload.status if upload else None,
     }
+
+
+@router.post("/episodes/{episode_id}/upload-failed")
+def upload_failed(
+    episode_id: int,
+    body: dict | None = None,
+    user: AdminUser = Depends(require_partner),
+    db: Session = Depends(get_db),
+):
+    """Let the supplier release a dead upload session immediately."""
+    episode = _episode_or_404(db, user, episode_id)
+    drama = db.get(Drama, episode.drama_id)
+    _editable(drama)
+    if episode.status != "transcoding":
+        return {"episode_id": episode.id, "status": episode.status, "updated": False}
+    from app.modules.common import bunny
+
+    video_id = episode.bunny_video_id
+    if bunny.live() and video_id:
+        try:
+            remote = bunny.stream_video(video_id)
+        except bunny.BunnyError:
+            remote = None
+        if remote is not None and (
+            int(remote.get("storageSize") or 0) > 0
+            or int(remote.get("length") or 0) > 0
+            or int(remote.get("status") or 0) >= 3
+            or int(remote.get("encodeProgress") or 0) > 0
+        ):
+            return {
+                "episode_id": episode.id,
+                "status": episode.status,
+                "updated": False,
+                "ignored": "bytes already at bunny",
+            }
+    try:
+        transition_episode(db, episode, "transcode_failed")
+    except InvalidTransition as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    upload = db.scalars(
+        select(MediaUpload)
+        .where(MediaUpload.episode_id == episode.id)
+        .order_by(MediaUpload.id.desc())
+    ).first()
+    if upload is not None:
+        upload.status = "failed"
+    db.commit()
+    return {"episode_id": episode.id, "status": episode.status, "updated": True}
 
 
 @router.delete("/dramas/{drama_id}", status_code=204)

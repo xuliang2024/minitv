@@ -501,3 +501,38 @@ def test_key_summary_and_edit(make, session, client):
         headers=partner,
     )
     assert forbidden.status_code == 422
+
+
+def test_upload_failure_releases_transcoding(make, session, client):
+    headers = _admin_headers(make, client)
+    _, partner = _supplier_with_partner(client, headers)
+    drama = _create_drama(client, partner)
+    episode = client.post(
+        f"/partner/v1/dramas/{drama['id']}/episodes", json={}, headers=partner
+    ).json()
+    session_created = client.post(
+        f"/partner/v1/episodes/{episode['id']}/upload-session",
+        json={
+            "filename": "a.mp4",
+            "mime": "video/mp4",
+            "size_bytes": 1024,
+            "width": 720,
+            "height": 1280,
+            "duration_seconds": 3,
+        },
+        headers=partner,
+    )
+    assert session_created.status_code == 200, session_created.text
+    assert session.get(Episode, episode["id"]).status == "transcoding"
+
+    failed = client.post(
+        f"/partner/v1/episodes/{episode['id']}/upload-failed", headers=partner
+    )
+    assert failed.status_code == 200, failed.text
+    assert failed.json()["status"] == "transcode_failed"
+    assert session.get(Episode, episode["id"]).status == "transcode_failed"
+
+    again = client.post(
+        f"/partner/v1/episodes/{episode['id']}/upload-failed", headers=partner
+    )
+    assert again.json()["updated"] is False
