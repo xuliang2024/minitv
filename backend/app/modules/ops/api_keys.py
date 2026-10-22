@@ -40,8 +40,12 @@ KEY_PREFIX = "mk_live_"
 PREFIX_RANDOM_BYTES = 4  # 8 hex chars
 KEY_PREFIX_LEN = len(KEY_PREFIX) + PREFIX_RANDOM_BYTES * 2  # 16
 
-SCOPES = ("read", "write", "delete", "billing", "staff")
+SCOPES = ("read", "write", "upload", "delete", "billing", "staff")
 DEFAULT_SCOPES = ("read", "write")
+# Suppliers are external tenants: they may read/write their own content and
+# upload video, nothing else. `staff` would let them mint keys; `billing` and
+# `delete` are platform-side powers.
+PARTNER_SCOPES = ("read", "write", "upload")
 DEFAULT_TTL_DAYS = 90
 ALLOWED_TTL_DAYS = (30, 90, 180, 365)
 
@@ -52,6 +56,11 @@ RATE_LIMIT_ENV = "API_KEY_RATE_LIMIT"
 DEFAULT_RATE_LIMIT = 600  # requests per minute per key
 
 _STAFF_PATH = re.compile(r"^/admin/v1/(?:api-keys|staff)(?:/|$)")
+_PARTNER_KEY_PATH = re.compile(r"^/partner/v1/(?:api-keys|auth/keys)(?:/|$)")
+_PARTNER_UPLOAD_PATH = re.compile(
+    r"^/partner/v1/(?:episodes/\d+/(?:upload-session|upload-headers)"
+    r"|dramas/\d+/cover|dev-tus/[^/]+)$"
+)
 _SELF_CREDENTIAL = re.compile(r"^/admin/v1/auth/password$")
 _BILLING_PATH = re.compile(
     r"^/admin/v1/(?:finance|plans|rewards|coins|membership|billing)(?:/|$)"
@@ -99,6 +108,14 @@ def scope_for_request(method: str, path: str) -> str:
         return "staff"
     if _STAFF_PATH.match(path):
         return "staff"
+    if _PARTNER_KEY_PATH.match(path):
+        # A supplier key may read its own key list (read scope); every mutation
+        # and the full listing stay session-only so a key can never mint another.
+        if path == "/partner/v1/api-keys" and method.upper() == "GET":
+            return "read"
+        return "staff"
+    if _PARTNER_UPLOAD_PATH.match(path):
+        return "upload"
     if _BILLING_PATH.match(path):
         return "billing"
     if _DELETE_DRAMA.match(path):
@@ -110,9 +127,17 @@ def scope_for_request(method: str, path: str) -> str:
     return "write"
 
 
-def granted_scopes(key: AdminApiKey) -> set[str]:
-    """Empty ``scopes`` means "exactly what the account role allows"."""
-    return set(key.scopes or []) or set(SCOPES)
+def granted_scopes(key: AdminApiKey, role: str | None = None) -> set[str]:
+    """Empty ``scopes`` means "exactly what the account role allows".
+
+    For suppliers that must still be intersected with ``PARTNER_SCOPES``:
+    otherwise a key created without an explicit list would inherit ``staff``
+    and could reach the key-management endpoints.
+    """
+    scopes = set(key.scopes or []) or set(SCOPES)
+    if role == "partner":
+        scopes &= set(PARTNER_SCOPES)
+    return scopes
 
 
 # ---- runtime checks ----
@@ -184,9 +209,18 @@ def resolve_credential(db: Session, credential: str) -> tuple[AdminUser, AdminAp
     return user, key
 
 
-def authorize(key: AdminApiKey, method: str, path: str) -> None:
+def authorize(key: AdminApiKey, method: str, path: str, role: str | None = None) -> None:
+    # A supplier credential is valid on exactly one surface. Fail here (before
+    # any route-level role check) so the error is stable and greppable.
+    if role == "partner" and not path.startswith("/partner/v1/"):
+        raise _reject(403, "partner_scope_denied", "上剧方密钥只能访问合作方接口")
     needed = scope_for_request(method, path)
-    if needed not in granted_scopes(key):
+    granted = granted_scopes(key, role)
+    # `write` implies `upload` so keys created before the upload scope existed
+    # keep working; the reverse is not true (upload alone cannot edit metadata).
+    if needed == "upload" and "write" in granted:
+        return
+    if needed not in granted:
         raise _reject(403, "scope_denied", f"该密钥缺少 {needed} 权限")
 
 
@@ -202,7 +236,9 @@ def authenticate(
 # ---- validation helpers ----
 
 
-def normalise_scopes(raw: list[str] | None) -> list[str]:
+def normalise_scopes(
+    raw: list[str] | None, allowed: tuple[str, ...] | None = None
+) -> list[str]:
     """Validate a caller-supplied scope list.
 
     ``None`` means "use the default set". An **empty** list is rejected on
@@ -218,11 +254,18 @@ def normalise_scopes(raw: list[str] | None) -> list[str]:
             status_code=422,
             detail="至少选择一个权限；如需跟随账号角色请省略 scopes 字段",
         )
+    pool = allowed or SCOPES
     unknown = [item for item in raw if item not in SCOPES]
+    forbidden = [item for item in raw if item in SCOPES and item not in pool]
     if unknown:
         raise HTTPException(
             status_code=422,
             detail=f"unknown scope: {', '.join(unknown)}（可选 {', '.join(SCOPES)}）",
+        )
+    if forbidden:
+        raise HTTPException(
+            status_code=422,
+            detail=f"该角色不能授予 scope: {', '.join(forbidden)}（可选 {', '.join(pool)}）",
         )
     # dict.fromkeys keeps the caller's order while dropping duplicates.
     return list(dict.fromkeys(raw))

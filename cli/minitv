@@ -26,7 +26,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 DEFAULT_BASE = "https://api.minitv.us"
 # Cloudflare blocks urllib's default UA, so every request carries this one.
 UA = f"minitv/{VERSION} (+https://minitv.us)"
@@ -1324,6 +1324,141 @@ def _build_spec():
             ],
         }
     )
+    groups.append(
+        {
+            "name": "partner",
+            "summary": "上剧方：我的剧集、分集上传、提交审核、API 密钥",
+            "commands": [
+                cmd(
+                    "drama-list",
+                    "列出我名下的剧集",
+                    "minitv partner drama-list [--status S]",
+                    cmd_partner_drama_list,
+                    args=[arg(["--status"], "按状态筛选", metavar="S")],
+                    examples=["minitv partner drama-list", "minitv partner drama-list --status draft"],
+                    outputs="items[]：id、标题、状态、审核状态、集数、免费集数",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "drama-get",
+                    "查看我的剧集详情（含分集与审核结果）",
+                    "minitv partner drama-get <id>",
+                    cmd_partner_drama_get,
+                    args=[pos("id", "剧集 id")],
+                    examples=["minitv partner drama-get 301"],
+                    outputs="剧集字段 + episodes[] + tag_ids",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "drama-create",
+                    "新建剧集（草稿，免费集数默认 5）",
+                    "minitv partner drama-create --title T [--synopsis S] [--free N]",
+                    cmd_partner_drama_create,
+                    args=[
+                        arg(["--title"], "剧名（同一供应商内唯一）", required=True, metavar="T"),
+                        arg(["--synopsis"], "简介", metavar="S"),
+                        arg(["--free"], "免费集数，默认 5", kind="int", metavar="N"),
+                    ],
+                    examples=['minitv partner drama-create --title "我的剧"'],
+                    outputs="新剧的 id、status=draft、review_state=none",
+                    exits=GLOBAL_EXITS,
+                    errors=[("title_exists", "你已有同名剧")],
+                ),
+                cmd(
+                    "drama-update",
+                    "修改草稿剧集（只传要改的字段）",
+                    "minitv partner drama-update <id> [--title T] [--synopsis S] [--free N] [--tags 1,2]",
+                    cmd_partner_drama_update,
+                    args=[
+                        pos("id", "剧集 id"),
+                        arg(["--title"], "新标题", metavar="T"),
+                        arg(["--synopsis"], "简介（提交审核需 ≥30 字）", metavar="S"),
+                        arg(["--free"], "免费集数", kind="int", metavar="N"),
+                        arg(["--tags"], "标签 id，逗号分隔", metavar="LIST"),
+                    ],
+                    examples=['minitv partner drama-update 301 --synopsis "..." --free 6'],
+                    outputs="更新后的剧集对象",
+                    exits=GLOBAL_EXITS,
+                    errors=[("drama_locked", "非草稿不可编辑"), ("title_exists", "同名剧")],
+                ),
+                cmd(
+                    "drama-submit",
+                    "提交审核（封面、简介、转码、免费集数四项校验）",
+                    "minitv partner drama-submit <id>",
+                    cmd_partner_drama_submit,
+                    args=[pos("id", "剧集 id")],
+                    examples=["minitv partner drama-submit 301"],
+                    outputs="review_state=pending + submitted_at",
+                    exits=GLOBAL_EXITS,
+                    errors=[
+                        ("cover_required", "缺封面"),
+                        ("synopsis_too_short", "简介不足 30 字"),
+                        ("episodes_not_ready", "有分集未完成转码"),
+                        ("free_episode_count_out_of_range", "免费集数不在 min(5,总集数)–总集数"),
+                    ],
+                ),
+                cmd(
+                    "episode-add",
+                    "为草稿剧集新增一集",
+                    "minitv partner episode-add <drama_id> [--number N] [--title T]",
+                    cmd_partner_episode_add,
+                    args=[
+                        pos("drama", "剧集 id"),
+                        arg(["--number"], "集号，默认自动 +1", kind="int", metavar="N"),
+                        arg(["--title"], "分集标题", metavar="T"),
+                    ],
+                    examples=["minitv partner episode-add 301"],
+                    outputs="id、episode_number、status=not_uploaded",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "episode-list",
+                    "列出一部剧的分集",
+                    "minitv partner episode-list <drama_id>",
+                    cmd_partner_episode_list,
+                    args=[pos("drama", "剧集 id")],
+                    examples=["minitv partner episode-list 301"],
+                    outputs="items[]：id、集号、标题、状态",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "episode-upload",
+                    "上传分集视频（TUS，可断点续传）",
+                    "minitv partner episode-upload <id> <file> [--resume]",
+                    cmd_partner_episode_upload,
+                    args=[
+                        pos("id", "分集 id"),
+                        pos("file", "本地视频文件（≤200MB，MP4/MOV）"),
+                        arg(["--resume"], "从断点续传", kind="bool"),
+                    ],
+                    examples=["minitv partner episode-upload 9001 ./ep1.mp4 --resume"],
+                    outputs="status、size、resumed",
+                    exits=GLOBAL_EXITS,
+                    errors=[("scope_denied", "密钥缺 upload 或 write 权限")],
+                ),
+                cmd(
+                    "episode-status",
+                    "查看分集上传 / 转码状态",
+                    "minitv partner episode-status <id>",
+                    cmd_partner_episode_status,
+                    args=[pos("id", "分集 id")],
+                    examples=["minitv partner episode-status 9001"],
+                    outputs="status、size_bytes、duration_seconds、upload_status",
+                    exits=GLOBAL_EXITS,
+                ),
+                cmd(
+                    "keys-list",
+                    "列出我的 API 密钥（新建/轮换请到网页端）",
+                    "minitv partner keys-list",
+                    cmd_partner_keys_list,
+                    examples=["minitv partner keys-list"],
+                    outputs="items[]：id、名称、前缀、scopes、状态、到期",
+                    exits=GLOBAL_EXITS,
+                ),
+            ],
+        }
+    )
+
     return groups
 
 
@@ -1553,7 +1688,7 @@ def _mime_for(path: Path) -> str:
     return "video/quicktime" if path.suffix.lower() == ".mov" else "video/mp4"
 
 
-def _upload_one(args, client, episode_id, path: Path):
+def _upload_one(args, client, episode_id, path: Path, base: str = "/admin/v1", sync: bool = True):
     size = path.stat().st_size
     if size > 200 * 1024 * 1024:
         raise usage_error(f"{path.name} 超过 200MB")
@@ -1572,13 +1707,13 @@ def _upload_one(args, client, episode_id, path: Path):
     session = None
     if resume:
         try:
-            session = client.request("POST", f"/admin/v1/episodes/{episode_id}/upload-headers")
+            session = client.request("POST", f"{base}/episodes/{episode_id}/upload-headers")
         except CliError:
             session = None  # nothing in flight → start a fresh upload below
     if session is None:
         try:
             session = client.request(
-                "POST", f"/admin/v1/episodes/{episode_id}/upload-session", body=body
+                "POST", f"{base}/episodes/{episode_id}/upload-session", body=body
             )
         except CliError as exc:
             if "in progress" in (exc.message or ""):
@@ -1592,7 +1727,10 @@ def _upload_one(args, client, episode_id, path: Path):
     started = time.time()
     transfer = client.tus_upload(session, path, resume=resume)
     elapsed = time.time() - started
-    state = client.request("POST", f"/admin/v1/episodes/{episode_id}/sync-status") or {}
+    if sync:
+        state = client.request("POST", f"{base}/episodes/{episode_id}/sync-status") or {}
+    else:
+        state = client.request("GET", f"{base}/episodes/{episode_id}/upload-status") or {}
     return {
         "status": state.get("status"),
         "seconds": round(elapsed, 1),
@@ -2157,19 +2295,38 @@ def _read_key(args):
 
 
 def _identity(client):
-    me = client.request("GET", "/admin/v1/auth/me") or {}
+    """Who is this key? Returns (me, scopes, expires, surface).
+
+    Staff keys answer on /admin/v1; supplier keys are rejected there with
+    ``partner_scope_denied`` and are asked on their own surface instead, so
+    ``config set-key`` works for both without a separate binary.
+    """
+    surface = "staff"
+    try:
+        me = client.request("GET", "/admin/v1/auth/me") or {}
+        listing_path = "/admin/v1/auth/keys"
+    except CliError as exc:
+        if exc.code != "partner_scope_denied":
+            raise
+        surface = "partner"
+        me = client.request("GET", "/partner/v1/me") or {}
+        listing_path = "/partner/v1/auth/key-info"
+
     scopes, expires = [], None
     try:
-        listing = client.request("GET", "/admin/v1/auth/keys") or {}
+        listing = client.request("GET", listing_path) or {}
+        # `/partner/v1/auth/key-info` returns one object; the staff endpoint
+        # returns `{"items": [...]}`.
+        rows = [listing] if listing.get("key_prefix") else (listing.get("items") or [])
         prefix = client.settings.api_key[:16]
-        for row in listing.get("items") or []:
+        for row in rows:
             if row.get("key_prefix") == prefix:
                 scopes = row.get("scopes") or []
                 expires = row.get("expires_at")
                 break
     except CliError:
         pass
-    return me, scopes, expires
+    return me, scopes, expires, surface
 
 
 def _warnings(me, scopes):
@@ -2190,7 +2347,7 @@ def cmd_config_set_key(args):
         raise usage_error("API Key 格式不对（应以 mk_live_ 开头）", hint="到后台「API 密钥」页重新复制")
     settings.api_key = key
     client = Client(settings)
-    me, scopes, expires = _identity(client)
+    me, scopes, expires, surface = _identity(client)
 
     # Persist the endpoint alongside the key. Without this, `set-key
     # --profile X --base-url ...` would only store the credential and every
@@ -2200,6 +2357,7 @@ def cmd_config_set_key(args):
     prof = cfg["profiles"].setdefault(settings.profile, {"sandbox_drama_id": 0})
     if getattr(args, "base_url", None) or not prof.get("base_url"):
         prof["base_url"] = settings.base_url
+    prof["surface"] = surface
     save_config(cfg)
 
     creds = load_credentials()
@@ -2211,6 +2369,7 @@ def cmd_config_set_key(args):
         "base_url": settings.base_url,
         "username": me.get("username"),
         "role": me.get("role"),
+        "surface": surface,
         "scopes": scopes,
         "expires_at": expires,
         "saved_to": str(credentials_path()),
@@ -2223,6 +2382,7 @@ def cmd_config_set_key(args):
         [
             ("环境", f"{settings.profile} · {settings.base_url}"),
             ("身份", f"{me.get('username')}（{me.get('role')}）"),
+            ("入口", "合作方（上剧方）" if surface == "partner" else "平台员工"),
             ("权限", " · ".join(scopes) if scopes else "跟随账号角色"),
             ("到期", expires or "长期"),
             ("已保存", f"{credentials_path()}（0600）"),
@@ -2231,6 +2391,115 @@ def cmd_config_set_key(args):
     for note in payload["warnings"]:
         print(f"[提醒] {note}")
     print("下一步  minitv doctor")
+    return EXIT_OK
+
+
+
+# ---------------------------------------------------------------------------
+# partner surface (上剧方)
+# ---------------------------------------------------------------------------
+
+PARTNER_BASE = "/partner/v1"
+
+
+def cmd_partner_drama_list(args):
+    client = Client(resolve_settings(args))
+    path = f"{PARTNER_BASE}/dramas"
+    if getattr(args, "status", None):
+        path += f"?status={args.status}"
+    output(args, client.request("GET", path) or {})
+    return EXIT_OK
+
+
+def cmd_partner_drama_get(args):
+    client = Client(resolve_settings(args))
+    output(args, client.request("GET", f"{PARTNER_BASE}/dramas/{args.id}") or {})
+    return EXIT_OK
+
+
+def cmd_partner_drama_create(args):
+    client = Client(resolve_settings(args))
+    body = {"title": args.title}
+    if args.synopsis is not None:
+        body["synopsis"] = args.synopsis
+    if args.free is not None:
+        body["free_episode_count"] = args.free
+    payload = _write(args, client, "POST", f"{PARTNER_BASE}/dramas", body)
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_partner_drama_update(args):
+    client = Client(resolve_settings(args))
+    body = {}
+    if args.title is not None:
+        body["title"] = args.title
+    if args.synopsis is not None:
+        body["synopsis"] = args.synopsis
+    if args.free is not None:
+        body["free_episode_count"] = args.free
+    if args.tags is not None:
+        body["tag_ids"] = [int(part) for part in args.tags.split(",") if part.strip()]
+    if not body:
+        raise usage_error("没有要修改的字段", hint="至少给一个 --title/--synopsis/--free/--tags")
+    payload = _write(args, client, "PATCH", f"{PARTNER_BASE}/dramas/{args.id}", body)
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_partner_drama_submit(args):
+    client = Client(resolve_settings(args))
+    payload = _write(args, client, "POST", f"{PARTNER_BASE}/dramas/{args.id}/submit", {})
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_partner_episode_add(args):
+    client = Client(resolve_settings(args))
+    body = {}
+    if args.number is not None:
+        body["episode_number"] = args.number
+    if args.title is not None:
+        body["title"] = args.title
+    payload = _write(args, client, "POST", f"{PARTNER_BASE}/dramas/{args.drama}/episodes", body)
+    if payload is None:
+        return EXIT_OK
+    output(args, payload)
+    return EXIT_OK
+
+
+def cmd_partner_episode_list(args):
+    client = Client(resolve_settings(args))
+    drama = client.request("GET", f"{PARTNER_BASE}/dramas/{args.drama}") or {}
+    output(args, {"drama_id": drama.get("id"), "items": drama.get("episodes") or []})
+    return EXIT_OK
+
+
+def cmd_partner_episode_upload(args):
+    path = Path(args.file).expanduser()
+    if not path.is_file():
+        raise usage_error(f"文件不存在：{path}")
+    client = Client(resolve_settings(args))
+    result = _upload_one(args, client, args.id, path, base=PARTNER_BASE, sync=False)
+    output(args, {"episode_id": int(args.id), "file": path.name, **result})
+    return EXIT_OK
+
+
+def cmd_partner_episode_status(args):
+    client = Client(resolve_settings(args))
+    output(args, client.request("GET", f"{PARTNER_BASE}/episodes/{args.id}/upload-status") or {})
+    return EXIT_OK
+
+
+def cmd_partner_keys_list(args):
+    client = Client(resolve_settings(args))
+    output(args, client.request("GET", f"{PARTNER_BASE}/api-keys") or {})
     return EXIT_OK
 
 
@@ -2259,10 +2528,11 @@ def cmd_config_show(args):
 def cmd_config_test(args):
     settings = resolve_settings(args)
     client = Client(settings)
-    me, scopes, expires = _identity(client)
+    me, scopes, expires, surface = _identity(client)
     payload = {
         "username": me.get("username"),
         "role": me.get("role"),
+        "surface": surface,
         "scopes": scopes,
         "expires_at": expires,
         "warnings": _warnings(me, scopes),
@@ -2273,6 +2543,7 @@ def cmd_config_test(args):
     print_kv(
         [
             ("身份", f"{me.get('username')}（{me.get('role')}）"),
+            ("入口", "合作方（上剧方）" if surface == "partner" else "平台员工"),
             ("权限", " · ".join(scopes) if scopes else "跟随账号角色"),
             ("到期", expires or "长期"),
         ]
@@ -2354,7 +2625,7 @@ def cmd_doctor(args):
 
     client = Client(settings)
     try:
-        me, scopes, expires = _identity(client)
+        me, scopes, expires, surface = _identity(client)
         record("身份", True, f"{me.get('username')}（{me.get('role')}）")
         record("权限", True, " · ".join(scopes) if scopes else "跟随账号角色")
         record("到期", True, expires or "长期")

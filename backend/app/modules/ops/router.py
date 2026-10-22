@@ -72,7 +72,7 @@ def require_admin(request: Request, db: Session = Depends(get_db)) -> AdminUser:
         # recorded in api_key_events (the middleware reads these after response).
         request.state.api_key_id = key.id
         request.state.api_key_staff_id = user.id
-        api_key_service.authorize(key, request.method, request.url.path)
+        api_key_service.authorize(key, request.method, request.url.path, user.role)
     else:
         try:
             user = ops_service.resolve_session_token(db, credential)
