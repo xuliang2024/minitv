@@ -105,10 +105,13 @@ export default function PartnerDramaEdit() {
 
   useEffect(() => {
     if (!drama) return;
+    // Submission rejects free > episode_count. Clamp the form so a one-episode
+    // drama never starts at the default 5 and surprises the supplier at submit.
+    const cap = Math.max(drama.episode_count, 1);
     form.setFieldsValue({
       title: drama.title,
       synopsis: drama.synopsis,
-      free_episode_count: drama.free_episode_count,
+      free_episode_count: Math.min(drama.free_episode_count, cap),
       tag_ids: drama.tag_ids ?? [],
     });
   }, [drama, form]);
@@ -143,6 +146,11 @@ export default function PartnerDramaEdit() {
 
   const submit = () => {
     if (!drama) return;
+    const free = Number(form.getFieldValue("free_episode_count") ?? 0);
+    if (drama.episode_count > 0 && free > drama.episode_count) {
+      message.error(`免费集数不能超过总集数（当前 ${drama.episode_count} 集），请改小并保存`);
+      return;
+    }
     Modal.confirm({
       title: "提交审核",
       content: "提交后不可再修改，需等 MiniTV 运营审核。确认提交？",
@@ -352,9 +360,13 @@ export default function PartnerDramaEdit() {
                   <Form.Item
                     label="免费集数"
                     name="free_episode_count"
-                    extra={`最少 ${floor} 集 · 共 ${drama.episode_count} 集`}
+                    extra={`最少 ${floor} 集 · 最多 ${drama.episode_count || 5} 集`}
                   >
-                    <InputNumber min={0} max={Math.max(drama.episode_count, 5)} style={{ width: "100%" }} />
+                    <InputNumber
+                      min={0}
+                      max={Math.max(drama.episode_count, 1)}
+                      style={{ width: "100%" }}
+                    />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
