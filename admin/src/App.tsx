@@ -27,6 +27,9 @@ import Suppliers from "./pages/Suppliers";
 import PartnerDramas from "./pages/PartnerDramas";
 import PartnerDramaEdit from "./pages/PartnerDramaEdit";
 import PartnerApiKeys from "./pages/PartnerApiKeys";
+import PartnerStats from "./pages/PartnerStats";
+import PartnerSettlements from "./pages/PartnerSettlements";
+import Settlements from "./pages/Settlements";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
 import {
   CommentsPage,
@@ -59,6 +62,7 @@ const ITEMS: { key: string; label: string; roles?: string[] }[] = [
   { key: "/comments", label: "评论审核", roles: ["ops", "admin"] },
   { key: "/moderation", label: "自动审核", roles: ["ops", "admin"] },
   { key: "/finance", label: "财务订单", roles: ["finance", "admin"] },
+  { key: "/settlements", label: "结算单", roles: ["finance", "admin"] },
   { key: "/plans", label: "会员套餐", roles: ["finance", "admin"] },
   { key: "/tags", label: "标签库", roles: ["ops", "admin"] },
   // 员工账号只对管理员开放：运营/财务看到入口也只会拿到 403。
@@ -68,6 +72,8 @@ const ITEMS: { key: string; label: string; roles?: string[] }[] = [
   { key: "/suppliers", label: "上剧方管理", roles: ["admin"] },
   // 上剧方（partner）只看到自己的剧集；其它入口一律不渲染。
   { key: "/partner/dramas", label: "我的剧集", roles: ["partner"] },
+  { key: "/partner/stats", label: "数据中心", roles: ["partner"] },
+  { key: "/partner/settlements", label: "结算单", roles: ["partner"] },
   { key: "/partner/api-keys", label: "API 密钥", roles: ["partner"] },
 ];
 
@@ -314,6 +320,9 @@ export default function App() {
               <Route path="/partner/dramas" element={<PartnerDramas />} />
               <Route path="/partner/dramas/:id" element={<PartnerDramaEdit />} />
               <Route path="/partner/api-keys" element={<PartnerApiKeys />} />
+              <Route path="/partner/stats" element={<PartnerStats />} />
+              <Route path="/partner/settlements" element={<PartnerSettlements />} />
+              <Route path="/settlements" element={<Settlements />} />
               <Route path="/api-keys" element={<ApiKeys />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

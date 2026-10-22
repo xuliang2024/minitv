@@ -8,16 +8,18 @@ self-service API keys with a partner-only scope whitelist.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.modules.billing.models import Order
 from app.modules.common.models import AuditLog
+from app.modules.ops import settlements as settlement_service
 from app.modules.content import upload_service
 from app.modules.content.models import Drama, DramaTag, Episode, MediaUpload, Tag
 from app.modules.content.service import InvalidTransition, transition_episode
@@ -38,7 +40,11 @@ from app.modules.ops.models import (
     AdminApiKey,
     AdminUser,
     Supplier,
+    SupplierSettlement,
+    SupplierShareHistory,
 )
+from app.modules.playback.models import PlaybackEvent
+from app.modules.wallet.models import CoinLedgerEntry
 
 router = APIRouter(prefix="/partner/v1", tags=["partner"])
 
@@ -825,6 +831,214 @@ def submit_drama(
     db.commit()
     db.refresh(drama)
     return _drama_out(db, drama, with_episodes=True)
+
+
+
+# ---- stats (P4) ----
+
+
+def _supplier_episode_ids(user: AdminUser):
+    return select(Episode.id).join(Drama, Drama.id == Episode.drama_id).where(
+        Drama.supplier_id == user.supplier_id
+    )
+
+
+def _play_counts(db: Session, ids, start: datetime) -> tuple[int, int]:
+    rows = db.execute(
+        select(PlaybackEvent.kind, func.count(PlaybackEvent.id))
+        .where(
+            PlaybackEvent.episode_id.in_(ids),
+            PlaybackEvent.created_at >= start,
+            PlaybackEvent.kind.in_(["start", "complete"]),
+        )
+        .group_by(PlaybackEvent.kind)
+    ).all()
+    counts = dict(rows)
+    return counts.get("start", 0), counts.get("complete", 0)
+
+
+def _unlock_counts(db: Session, ids, start: datetime) -> tuple[int, int]:
+    row = db.execute(
+        select(func.count(CoinLedgerEntry.id), func.count(func.distinct(CoinLedgerEntry.user_id)))
+        .where(
+            CoinLedgerEntry.episode_id.in_(ids),
+            CoinLedgerEntry.amount < 0,
+            CoinLedgerEntry.biz_type == "unlock",
+            CoinLedgerEntry.created_at >= start,
+        )
+    ).one()
+    return int(row[0] or 0), int(row[1] or 0)
+
+
+@router.get("/stats/overview")
+def stats_overview(
+    days: int = Query(default=30, ge=1, le=90),
+    user: AdminUser = Depends(require_partner),
+    db: Session = Depends(get_db),
+):
+    start = datetime.now(timezone.utc) - timedelta(days=days)
+    supplier = db.get(Supplier, user.supplier_id)
+    ids = _supplier_episode_ids(user)
+    plays, completes = _play_counts(db, ids, start)
+    unlock_total, unlock_users = _unlock_counts(db, ids, start)
+    viewers = (
+        db.scalar(
+            select(func.count(func.distinct(PlaybackEvent.user_id))).where(
+                PlaybackEvent.episode_id.in_(ids),
+                PlaybackEvent.kind == "start",
+                PlaybackEvent.created_at >= start,
+                PlaybackEvent.user_id.is_not(None),
+            )
+        )
+        or 0
+    )
+    orders = settlement_service.first_orders_for_supplier(
+        db, supplier.id, start.date(), datetime.now(timezone.utc).date() + timedelta(days=1)
+    )
+    money = settlement_service.revenue_for_orders(db, supplier, orders)
+    return {
+        "days": days,
+        "plays": plays,
+        "completes": completes,
+        "completion_rate": round(completes / plays, 4) if plays else 0,
+        "viewers": int(viewers),
+        "unlocks": unlock_total,
+        "unlock_users": unlock_users,
+        "first_orders": money["order_count"],
+        "gross_cents": money["gross_cents"],
+        "revenue_cents": money["revenue_cents"],
+        "effective_share_bps": money["effective_share_bps"],
+        "currency": money["currency"],
+    }
+
+
+@router.get("/stats/dramas")
+def stats_dramas(
+    days: int = Query(default=30, ge=1, le=90),
+    user: AdminUser = Depends(require_partner),
+    db: Session = Depends(get_db),
+):
+    start = datetime.now(timezone.utc) - timedelta(days=days)
+    supplier = db.get(Supplier, user.supplier_id)
+    dramas = db.scalars(
+        select(Drama).where(Drama.supplier_id == user.supplier_id).order_by(Drama.id)
+    ).all()
+    ids = [row.id for row in dramas]
+    plays: dict[int, int] = {}
+    completes: dict[int, int] = {}
+    viewers: dict[int, int] = {}
+    unlocks: dict[int, int] = {}
+    if ids:
+        for drama_id, kind, count in db.execute(
+            select(Episode.drama_id, PlaybackEvent.kind, func.count(PlaybackEvent.id))
+            .join(Episode, Episode.id == PlaybackEvent.episode_id)
+            .where(
+                Episode.drama_id.in_(ids),
+                PlaybackEvent.created_at >= start,
+                PlaybackEvent.kind.in_(["start", "complete"]),
+            )
+            .group_by(Episode.drama_id, PlaybackEvent.kind)
+        ).all():
+            (plays if kind == "start" else completes)[drama_id] = count
+        for drama_id, count in db.execute(
+            select(Episode.drama_id, func.count(func.distinct(PlaybackEvent.user_id)))
+            .join(Episode, Episode.id == PlaybackEvent.episode_id)
+            .where(
+                Episode.drama_id.in_(ids),
+                PlaybackEvent.kind == "start",
+                PlaybackEvent.created_at >= start,
+                PlaybackEvent.user_id.is_not(None),
+            )
+            .group_by(Episode.drama_id)
+        ).all():
+            viewers[drama_id] = count
+        for drama_id, count in db.execute(
+            select(Episode.drama_id, func.count(CoinLedgerEntry.id))
+            .join(Episode, Episode.id == CoinLedgerEntry.episode_id)
+            .where(
+                Episode.drama_id.in_(ids),
+                CoinLedgerEntry.amount < 0,
+                CoinLedgerEntry.biz_type == "unlock",
+                CoinLedgerEntry.created_at >= start,
+            )
+            .group_by(Episode.drama_id)
+        ).all():
+            unlocks[drama_id] = count
+
+    orders = settlement_service.first_orders_for_supplier(
+        db, supplier.id, start.date(), datetime.now(timezone.utc).date() + timedelta(days=1)
+    )
+    history = list(
+        db.scalars(
+            select(SupplierShareHistory)
+            .where(SupplierShareHistory.supplier_id == supplier.id)
+            .order_by(SupplierShareHistory.effective_from)
+        )
+    )
+    order_stats: dict[int, dict] = {}
+    for order in orders:
+        if order.source_drama_id is None or order.source_drama_id not in ids:
+            continue
+        paid_at = order.paid_at
+        if paid_at.tzinfo is None:
+            paid_at = paid_at.replace(tzinfo=timezone.utc)
+        bps = settlement_service._share_at(history, paid_at, supplier.revenue_share_bps)
+        item = order_stats.setdefault(order.source_drama_id, {"orders": 0, "gross": 0, "revenue": 0})
+        item["orders"] += 1
+        item["gross"] += order.amount_cents
+        item["revenue"] += order.amount_cents * bps // 10000
+
+    items = []
+    for drama in dramas:
+        p = plays.get(drama.id, 0)
+        c = completes.get(drama.id, 0)
+        money = order_stats.get(drama.id, {"orders": 0, "gross": 0, "revenue": 0})
+        items.append(
+            {
+                "id": drama.id,
+                "title": drama.title,
+                "cover_url": drama.cover_url,
+                "status": drama.status,
+                "plays": p,
+                "completion_rate": round(c / p, 4) if p else 0,
+                "viewers": viewers.get(drama.id, 0),
+                "unlocks": unlocks.get(drama.id, 0),
+                "first_orders": money["orders"],
+                "gross_cents": money["gross"],
+                "revenue_cents": money["revenue"],
+            }
+        )
+    return {"days": days, "currency": "USD", "items": items}
+
+
+@router.get("/settlements")
+def my_settlements(
+    user: AdminUser = Depends(require_partner),
+    db: Session = Depends(get_db),
+):
+    rows = db.scalars(
+        select(SupplierSettlement)
+        .where(SupplierSettlement.supplier_id == user.supplier_id)
+        .order_by(SupplierSettlement.period_start.desc())
+        .limit(24)
+    ).all()
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "month": row.period_start.strftime("%Y-%m"),
+                "currency": row.currency,
+                "gross_cents": row.gross_cents,
+                "revenue_cents": row.revenue_cents,
+                "effective_share_bps": row.effective_share_bps,
+                "order_count": row.order_count,
+                "status": row.status,
+                "confirmed_at": _iso(row.confirmed_at),
+                "paid_at": _iso(row.paid_at),
+            }
+            for row in rows
+        ]
+    }
 
 
 # ---- api keys (session only) ----

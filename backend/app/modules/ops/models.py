@@ -15,12 +15,14 @@ import datetime
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     SmallInteger,
     String,
+    UniqueConstraint,
     func,
     text,
 )
@@ -133,6 +135,43 @@ class AdminUser(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class SupplierSettlement(Base):
+    """Monthly statement for one supplier.
+
+    Amounts are computed from the first paid order of each user in the month,
+    with the revenue share that was effective when that order was paid.
+    Confirmed/paid rows are immutable: regenerating the month skips them.
+    """
+
+    __tablename__ = "supplier_settlements"
+    __table_args__ = (
+        UniqueConstraint("supplier_id", "period_start", name="uq_settlement_period"),
+        CheckConstraint(
+            "status IN ('draft', 'confirmed', 'paid')", name="ck_settlements_status"
+        ),
+        Index("ix_settlements_period", "period_start", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("suppliers.id"), nullable=False)
+    period_start: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
+    gross_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    revenue_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    effective_share_bps: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    order_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    generated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    confirmed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    paid_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 API_KEY_STATUSES = (STATUS_ACTIVE, "revoked")
