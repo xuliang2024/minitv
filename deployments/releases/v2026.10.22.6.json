@@ -1,0 +1,22 @@
+{
+  "version": "v2026.10.22.6",
+  "target": "server",
+  "status": "published",
+  "sha": "1b6ac022ac1c247efbacb5c699faa74dd6f57191",
+  "short_sha": "1b6ac022",
+  "command": [
+    "./scripts/deploy_server.sh"
+  ],
+  "exit_code": 0,
+  "started_at": "2026-10-22T11:26:29+08:00",
+  "finished_at": "2026-10-22T11:26:44+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMacBook-Pro.local",
+    "pid": 81556,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "P4：数据中心/结算单，迁移 e5b2a9c741d3（建 supplier_settlements）",
+  "dirty": true
+}
