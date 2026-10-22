@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { message } from "antd";
-import { api, errorText } from "./api";
+import { api, errorText, isDeadCredential } from "./api";
 
 /**
  * Minimal "load one endpoint into state" hook.
@@ -26,6 +26,11 @@ export function useLoad<T>(
         setError(null);
       })
       .catch((e) => {
+        // 会话失效时 api() 已经在跳登录页，再弹一条红字只会盖在登录页上。
+        if (isDeadCredential(e?.status ?? 0, e?.detail)) {
+          setError("unauthorized");
+          return;
+        }
         const text = errorText(e);
         setError(text);
         message.error(text);

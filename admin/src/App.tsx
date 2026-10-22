@@ -1,6 +1,20 @@
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { Avatar, Button, Drawer, Dropdown, Grid, Layout, Menu, Space, Tag, Typography, message } from "antd";
+import {
+  Avatar,
+  Button,
+  Card,
+  Drawer,
+  Dropdown,
+  Grid,
+  Layout,
+  Menu,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+  message,
+} from "antd";
 import type { MenuProps } from "antd";
 import {
   DownOutlined,
@@ -10,7 +24,7 @@ import {
   MenuOutlined,
   MenuUnfoldOutlined,
 } from "@ant-design/icons";
-import { api, clearToken, getToken } from "./api";
+import { api, clearToken, forceReauth, getToken, isDeadCredential } from "./api";
 import { MeContext, ROLE_LABELS, type Me } from "./me";
 import Login from "./pages/Login";
 import Dramas from "./pages/Dramas";
@@ -82,6 +96,10 @@ export default function App() {
   const location = useLocation();
   const token = getToken();
   const [me, setMe] = useState<Me | null>(null);
+  // 页面必须等身份确认后再渲染：上剧方账号一旦先落到员工页（旧书签、直接
+  // 输 URL、登录后默认跳转），每个请求都会吃 403「接口仅对平台员工开放」，
+  // 用户看到的是「数据全空 + 一排红条」，却不会被送回登录页。
+  const [meState, setMeState] = useState<"loading" | "ready" | "failed">(token ? "loading" : "ready");
   const [navOpen, setNavOpen] = useState(false);
   // Desktop sidebar can be folded away so wide tables get the whole viewport.
   const [siderCollapsed, setSiderCollapsed] = useState(false);
@@ -97,15 +115,41 @@ export default function App() {
   const isNarrow = screens.md === false;
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setMe(null);
+      setMeState("ready");
+      return;
+    }
+    let alive = true;
+    setMeState("loading");
     api<Me>("/admin/v1/auth/me")
-      .then(setMe)
-      .catch(() => {
-        // Suppliers have no access to /admin/v1; ask their own surface.
+      .then((value) => {
+        if (!alive) return;
+        setMe(value);
+        setMeState("ready");
+      })
+      .catch((error) => {
+        if (!alive) return;
+        // 401 / 账号被禁用：api() 已经清掉 token 并跳登录页，别再打第二个请求。
+        if (isDeadCredential(error?.status ?? 0, error?.detail)) return;
+        // 403 staff_only 就是上剧方账号，改问合作方自己的身份接口。
         api<Me>("/partner/v1/me")
-          .then(setMe)
-          .catch(() => setMe(null));
+          .then((value) => {
+            if (!alive) return;
+            setMe(value);
+            setMeState("ready");
+          })
+          .catch((partnerError) => {
+            if (!alive) return;
+            if (isDeadCredential(partnerError?.status ?? 0, partnerError?.detail)) return;
+            // 会话服务 503 / 网络异常：不能留下一个没菜单、没数据的空壳。
+            setMe(null);
+            setMeState("failed");
+          });
       });
+    return () => {
+      alive = false;
+    };
   }, [token]);
 
   useEffect(() => {
@@ -168,9 +212,65 @@ export default function App() {
     );
   }
 
-  // A supplier must never land on a staff page (deep link, old bookmark).
-  if (me?.role === "partner" && !location.pathname.startsWith("/partner")) {
+  // 身份没确认前先不渲染业务页：否则 403 会先于角色跳转到达，页面闪一排红条。
+  if (meState === "loading") {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 12,
+          background: "#f5f6f8",
+        }}
+      >
+        <Spin />
+        <Typography.Text type="secondary">正在校验登录状态…</Typography.Text>
+      </div>
+    );
+  }
+
+  if (meState === "failed") {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+          background: "#f5f6f8",
+        }}
+      >
+        <Card style={{ maxWidth: 420, width: "100%" }}>
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              无法验证登录状态
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              会话服务暂时不可用（或网络中断），后台无法确认你的账号，因此不会展示任何数据。
+              可以直接重试；如果反复失败，请重新登录并联系管理员。
+            </Typography.Text>
+            <Space>
+              <Button type="primary" onClick={() => window.location.reload()}>
+                重试
+              </Button>
+              <Button onClick={() => forceReauth("manual")}>重新登录</Button>
+            </Space>
+          </Space>
+        </Card>
+      </div>
+    );
+  }
+
+  // 两个方向都要拦：上剧方不许进员工页，员工也不许进合作方面（那边只会 403）。
+  const onPartnerPath = location.pathname.startsWith("/partner");
+  if (me?.role === "partner" && !onPartnerPath) {
     return <Navigate to="/partner/dramas" replace />;
+  }
+  if (me !== null && me.role !== "partner" && onPartnerPath) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   const selectedItem = [...ITEMS]
