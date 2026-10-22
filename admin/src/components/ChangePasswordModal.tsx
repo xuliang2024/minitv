@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Form, Input, Modal, Typography, message } from "antd";
 import { api, clearToken, errorText } from "../api";
+import { useMe } from "../me";
 
 /**
  * Self-service password change for the signed-in staff account.
@@ -11,6 +12,7 @@ import { api, clearToken, errorText } from "../api";
  * `App` reads the token during render rather than from state.
  */
 export function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const me = useMe();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
@@ -18,7 +20,9 @@ export function ChangePasswordModal({ open, onClose }: { open: boolean; onClose:
     const values = await form.validateFields();
     setSaving(true);
     try {
-      await api("/admin/v1/auth/password", {
+      const path =
+        me?.role === "partner" ? "/partner/v1/auth/password" : "/admin/v1/auth/password";
+      await api(path, {
         method: "POST",
         body: JSON.stringify({
           old_password: values.old_password,

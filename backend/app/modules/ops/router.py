@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,11 +20,15 @@ from app.modules.ops.models import (
     CONTENT_WRITER_ROLES,
     ROLE_ADMIN,
     ROLE_OPS,
+    ROLE_PARTNER,
     ROLES,
+    STAFF_ROLES,
     STATUS_ACTIVE,
     STATUS_DISABLED,
     STATUSES,
     AdminUser,
+    Supplier,
+    SupplierShareHistory,
 )
 
 router = APIRouter(prefix="/admin/v1", tags=["admin"])
@@ -68,16 +73,23 @@ def require_admin(request: Request, db: Session = Depends(get_db)) -> AdminUser:
         request.state.api_key_id = key.id
         request.state.api_key_staff_id = user.id
         api_key_service.authorize(key, request.method, request.url.path)
-        return user
-    try:
-        user = ops_service.resolve_session_token(db, credential)
-    except ops_service.SessionStoreUnavailable as exc:
-        raise _session_store_503() from exc
-    if user is None:
+    else:
+        try:
+            user = ops_service.resolve_session_token(db, credential)
+        except ops_service.SessionStoreUnavailable as exc:
+            raise _session_store_503() from exc
+        if user is None:
+            raise HTTPException(
+                status_code=401,
+                detail={"code": "invalid_session", "message": "会话无效或已过期"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    # Suppliers live in the same table but are external tenants: they must never
+    # reach this surface, even if a future dependency forgets a role check.
+    if user.role not in STAFF_ROLES:
         raise HTTPException(
-            status_code=401,
-            detail={"code": "invalid_session", "message": "会话无效或已过期"},
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=403,
+            detail={"code": "staff_only", "message": "该接口仅对平台员工开放"},
         )
     return user
 
@@ -117,6 +129,8 @@ class StaffCreateIn(BaseModel):
     display_name: str = Field(default="", max_length=64)
     role: str = Field(default=ROLE_OPS)
     password: str = Field(min_length=8, max_length=128)
+    # Required when role=partner, forbidden otherwise (one account per supplier).
+    supplier_id: int | None = None
 
 
 class StaffUpdateIn(BaseModel):
@@ -136,6 +150,31 @@ class StaffPasswordIn(BaseModel):
 class PasswordChangeIn(BaseModel):
     old_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class SupplierCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    contact_name: str = Field(default="", max_length=64)
+    contact_email: str = Field(default="", max_length=320)
+    revenue_share_bps: int = Field(default=8000, ge=0, le=10000)
+    note: str = Field(default="", max_length=500)
+
+
+class SupplierUpdateIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    contact_name: str | None = Field(default=None, max_length=64)
+    contact_email: str | None = Field(default=None, max_length=320)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class SupplierStatusIn(BaseModel):
+    status: str
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class SupplierShareIn(BaseModel):
+    share_bps: int = Field(ge=0, le=10000)
+    note: str = Field(default="", max_length=200)
 
 
 class DramaCreateIn(BaseModel):
@@ -296,6 +335,7 @@ def _staff_out(row: AdminUser) -> dict:
         "role": row.role,
         "status": row.status,
         "disable_reason": row.disable_reason,
+        "supplier_id": row.supplier_id,
         "last_login_at": _iso(row.last_login_at),
         "created_at": _iso(row.created_at),
         "updated_at": _iso(row.updated_at),
@@ -397,6 +437,21 @@ def create_staff(
     username = _clean_username(body.username)
     _validate_role(body.role)
     _validate_password(body.password, username)
+    supplier = None
+    if body.role == ROLE_PARTNER:
+        if body.supplier_id is None:
+            raise HTTPException(status_code=422, detail="上剧方账号必须绑定供应商")
+        supplier = db.get(Supplier, body.supplier_id)
+        if supplier is None:
+            raise HTTPException(status_code=404, detail="supplier not found")
+        bound = db.scalar(
+            select(AdminUser.id).where(AdminUser.supplier_id == body.supplier_id)
+        )
+        if bound is not None:
+            raise HTTPException(status_code=409, detail="该供应商已有账号")
+    elif body.supplier_id is not None:
+        raise HTTPException(status_code=422, detail="只有上剧方账号可以绑定供应商")
+
     if db.scalar(select(AdminUser.id).where(AdminUser.username == username)) is not None:
         raise HTTPException(status_code=409, detail="账号已存在")
     row = AdminUser(
@@ -405,6 +460,7 @@ def create_staff(
         role=body.role,
         password_hash=ops_service.hash_password(body.password),
         status=STATUS_ACTIVE,
+        supplier_id=body.supplier_id,
     )
     db.add(row)
     try:
@@ -449,6 +505,12 @@ def update_staff(
         _validate_role(body.role)
         if row.id == actor.id:
             raise HTTPException(status_code=400, detail="不能修改自己的角色")
+        # Supplier accounts are created together with their tenant; moving a
+        # staff account into (or out of) a supplier would orphan its dramas.
+        if row.role == ROLE_PARTNER or body.role == ROLE_PARTNER:
+            raise HTTPException(
+                status_code=400, detail="上剧方账号的角色不可修改，请改绑供应商"
+            )
         if row.role == ROLE_ADMIN and row.status == STATUS_ACTIVE:
             _ensure_admin_remains(db, row)
         before["role"] = row.role
@@ -551,6 +613,259 @@ def reset_staff_password(
     )
     db.commit()
     return Response(status_code=204)
+
+
+# ---- suppliers (上剧方) ----
+
+
+def _supplier_out(db: Session, row: Supplier) -> dict:
+    drama_count = (
+        db.scalar(select(func.count(Drama.id)).where(Drama.supplier_id == row.id)) or 0
+    )
+    account = db.scalar(select(AdminUser).where(AdminUser.supplier_id == row.id))
+    return {
+        "id": row.id,
+        "name": row.name,
+        "contact_name": row.contact_name,
+        "contact_email": row.contact_email,
+        "status": row.status,
+        "revenue_share_bps": row.revenue_share_bps,
+        "note": row.note,
+        "drama_count": drama_count,
+        "account": (
+            {
+                "id": account.id,
+                "username": account.username,
+                "status": account.status,
+                "last_login_at": _iso(account.last_login_at),
+            }
+            if account is not None
+            else None
+        ),
+        "created_at": _iso(row.created_at),
+    }
+
+
+def _get_supplier_or_404(db: Session, supplier_id: int) -> Supplier:
+    row = db.get(Supplier, supplier_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="supplier not found")
+    return row
+
+
+def _record_share(
+    db: Session, supplier: Supplier, share_bps: int, *, actor_id: int, note: str
+) -> None:
+    """Close the open history row and open a new one (effective now)."""
+    now = datetime.now(timezone.utc)
+    for row in db.scalars(
+        select(SupplierShareHistory).where(
+            SupplierShareHistory.supplier_id == supplier.id,
+            SupplierShareHistory.effective_to.is_(None),
+        )
+    ).all():
+        row.effective_to = now
+    db.add(
+        SupplierShareHistory(
+            supplier_id=supplier.id,
+            share_bps=share_bps,
+            effective_from=now,
+            changed_by=actor_id,
+            note=note,
+        )
+    )
+    supplier.revenue_share_bps = share_bps
+
+
+@router.get("/suppliers")
+def list_suppliers(
+    q: str | None = None,
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_admin),
+):
+    """Readable by every staff role (ops needs it when reviewing)."""
+    stmt = select(Supplier)
+    needle = (q or "").strip()
+    if needle:
+        stmt = stmt.where(Supplier.name.ilike(f"%{needle}%"))
+    if status:
+        stmt = stmt.where(Supplier.status == status)
+    rows = db.scalars(stmt.order_by(Supplier.id).limit(200)).all()
+    return {"items": [_supplier_out(db, row) for row in rows]}
+
+
+@router.post("/suppliers", status_code=201)
+def create_supplier(
+    body: SupplierCreateIn,
+    db: Session = Depends(get_db),
+    actor: AdminUser = Depends(require_admin_role),
+):
+    if db.scalar(select(Supplier.id).where(Supplier.name == body.name.strip())) is not None:
+        raise HTTPException(status_code=409, detail="供应商名称已存在")
+    row = Supplier(
+        name=body.name.strip(),
+        contact_name=body.contact_name.strip(),
+        contact_email=body.contact_email.strip(),
+        revenue_share_bps=body.revenue_share_bps,
+        note=body.note.strip(),
+        status=STATUS_ACTIVE,
+    )
+    db.add(row)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="供应商名称已存在") from exc
+    _record_share(
+        db, row, body.revenue_share_bps, actor_id=actor.id, note="初始比例"
+    )
+    db.add(
+        AuditLog(
+            actor_type="admin",
+            actor_id=actor.id,
+            action="supplier_create",
+            target_type="supplier",
+            target_id=row.id,
+            payload={"name": row.name, "share_bps": row.revenue_share_bps},
+        )
+    )
+    db.commit()
+    db.refresh(row)
+    return _supplier_out(db, row)
+
+
+@router.patch("/suppliers/{supplier_id}")
+def update_supplier(
+    supplier_id: int,
+    body: SupplierUpdateIn,
+    db: Session = Depends(get_db),
+    actor: AdminUser = Depends(require_admin_role),
+):
+    row = _get_supplier_or_404(db, supplier_id)
+    data = body.model_dump(exclude_unset=True)
+    changed = []
+    for field in ("name", "contact_name", "contact_email", "note"):
+        if field in data and data[field] is not None:
+            value = data[field].strip() if isinstance(data[field], str) else data[field]
+            if value != getattr(row, field):
+                setattr(row, field, value)
+                changed.append(field)
+    if changed:
+        db.add(
+            AuditLog(
+                actor_type="admin",
+                actor_id=actor.id,
+                action="supplier_update",
+                target_type="supplier",
+                target_id=row.id,
+                payload={"changed": changed},
+            )
+        )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="供应商名称已存在") from exc
+    db.refresh(row)
+    return _supplier_out(db, row)
+
+
+@router.post("/suppliers/{supplier_id}/status")
+def set_supplier_status(
+    supplier_id: int,
+    body: SupplierStatusIn,
+    db: Session = Depends(get_db),
+    actor: AdminUser = Depends(require_admin_role),
+):
+    if body.status not in STATUSES:
+        raise HTTPException(status_code=422, detail=f"status must be one of {', '.join(STATUSES)}")
+    row = _get_supplier_or_404(db, supplier_id)
+    reason = (body.reason or "").strip() or None
+    account = db.scalar(select(AdminUser).where(AdminUser.supplier_id == row.id))
+    killed = 0
+    if body.status == STATUS_DISABLED and account is not None:
+        # Disabling the tenant must also cut off its login immediately.
+        account.status = STATUS_DISABLED
+        account.disable_reason = reason or "供应商停用"
+        killed = _revoke_or_503(account.id)
+    elif body.status == STATUS_ACTIVE and account is not None:
+        account.status = STATUS_ACTIVE
+        account.disable_reason = None
+    row.status = body.status
+    db.add(
+        AuditLog(
+            actor_type="admin",
+            actor_id=actor.id,
+            action="supplier_disable" if body.status == STATUS_DISABLED else "supplier_enable",
+            target_type="supplier",
+            target_id=row.id,
+            payload={"reason": reason, "revoked_sessions": killed},
+        )
+    )
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "status": row.status,
+        "account_status": account.status if account else None,
+        "revoked_sessions": killed,
+    }
+
+
+@router.post("/suppliers/{supplier_id}/share")
+def set_supplier_share(
+    supplier_id: int,
+    body: SupplierShareIn,
+    db: Session = Depends(get_db),
+    actor: AdminUser = Depends(require_admin_role),
+):
+    row = _get_supplier_or_404(db, supplier_id)
+    before = row.revenue_share_bps
+    if before != body.share_bps:
+        _record_share(db, row, body.share_bps, actor_id=actor.id, note=body.note.strip())
+        db.add(
+            AuditLog(
+                actor_type="admin",
+                actor_id=actor.id,
+                action="supplier_share_change",
+                target_type="supplier",
+                target_id=row.id,
+                payload={"from": before, "to": body.share_bps, "note": body.note},
+            )
+        )
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "revenue_share_bps": row.revenue_share_bps}
+
+
+@router.get("/suppliers/{supplier_id}/share")
+def get_supplier_share(
+    supplier_id: int,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(require_admin),
+):
+    row = _get_supplier_or_404(db, supplier_id)
+    history = db.scalars(
+        select(SupplierShareHistory)
+        .where(SupplierShareHistory.supplier_id == row.id)
+        .order_by(SupplierShareHistory.effective_from.desc())
+        .limit(50)
+    ).all()
+    return {
+        "supplier_id": row.id,
+        "current_bps": row.revenue_share_bps,
+        "history": [
+            {
+                "share_bps": item.share_bps,
+                "effective_from": _iso(item.effective_from),
+                "effective_to": _iso(item.effective_to),
+                "changed_by": item.changed_by,
+                "note": item.note,
+            }
+            for item in history
+        ],
+    }
 
 
 # ---- dramas ----

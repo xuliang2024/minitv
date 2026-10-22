@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.billing.models import BillingSettings, Order, Plan, PlanVersion, Subscription
 from app.modules.common.models import AuditLog
+from app.modules.content.models import Drama
 
 DEFAULT_PLANS = [
     ("weekly", "Weekly", "周卡", 999, False, ["Unlock all", "No ads", "1080p"]),
@@ -755,11 +756,17 @@ def create_checkout_session(
     plan_code: str,
     success_url: str | None = None,
     cancel_url: str | None = None,
+    source_drama_id: int | None = None,
 ) -> dict:
     plan = session.scalar(select(Plan).where(Plan.code == plan_code))
     if plan is None or plan.status != "active":
         raise BillingError(404, "plan not found")
     version = _latest_version(session, plan)
+
+    if source_drama_id is not None:
+        drama = session.get(Drama, source_drama_id)
+        if drama is None or drama.status != "published":
+            raise BillingError(404, "source drama not found")
 
     mode = billing_mode(session)
     ensure_chargeable(mode, version.price_cents, version.currency)
@@ -776,12 +783,20 @@ def create_checkout_session(
         "metadata[plan_code]": plan_code,
         "metadata[billing_mode]": mode,
     }
+    if source_drama_id is not None:
+        # Kept on the session and mirrored onto the payment/subscription so a
+        # late webhook can still recover it.
+        data["metadata[source_drama_id]"] = str(source_drama_id)
     if mode == "one_time":
         data["payment_intent_data[metadata][user_id]"] = str(user_id)
         data["payment_intent_data[metadata][plan_code]"] = plan_code
+        if source_drama_id is not None:
+            data["payment_intent_data[metadata][source_drama_id]"] = str(source_drama_id)
     else:
         data["subscription_data[metadata][user_id]"] = str(user_id)
         data["subscription_data[metadata][plan_code]"] = plan_code
+        if source_drama_id is not None:
+            data["subscription_data[metadata][source_drama_id]"] = str(source_drama_id)
 
     # Reuse the Stripe customer we already have (from a subscription) so passes
     # and subscriptions live under one customer; otherwise let Checkout create one.
@@ -810,6 +825,7 @@ def create_checkout_session(
         billing_mode=mode,
         status="created",
         external_txn_id=checkout["id"],
+        source_drama_id=source_drama_id,
     )
     session.add(order)
     session.commit()
@@ -852,6 +868,7 @@ def _upsert_subscription(
     status: str,
     period_start: datetime,
     period_end: datetime,
+    source_drama_id: int | None = None,
 ) -> Subscription | None:
     plan = session.scalar(select(Plan).where(Plan.code == plan_code)) if plan_code else None
     if plan is None:
@@ -891,6 +908,9 @@ def _upsert_subscription(
     current.stripe_price_id = stripe_price_id or current.stripe_price_id
     if status == "active":
         current.canceled_at = None
+    # First purchase wins; renewals never rewrite the origin drama.
+    if source_drama_id is not None and current.source_drama_id is None:
+        current.source_drama_id = source_drama_id
     return current
 
 
@@ -898,6 +918,15 @@ def _as_datetime(epoch: int | None, fallback: datetime | None = None) -> datetim
     if epoch:
         return datetime.fromtimestamp(int(epoch), tz=timezone.utc)
     return fallback or datetime.now(timezone.utc)
+
+
+def _source_drama_id(metadata: dict) -> int | None:
+    """Attribution can only come from our own metadata; ignore junk."""
+    raw = metadata.get("source_drama_id")
+    try:
+        return int(raw) if raw not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _period_bounds(remote: dict, plan_code: str | None = None) -> tuple[datetime, datetime]:
@@ -922,6 +951,7 @@ def _activate_from_checkout(session: Session, checkout: dict) -> dict:
     metadata = checkout.get("metadata") or {}
     user_id = int(metadata.get("user_id") or checkout.get("client_reference_id") or 0)
     plan_code = metadata.get("plan_code")
+    source_drama_id = _source_drama_id(metadata)
     if not user_id or not plan_code:
         raise BillingError(400, "checkout session is missing our metadata")
 
@@ -937,8 +967,11 @@ def _activate_from_checkout(session: Session, checkout: dict) -> dict:
             amount_cents=int(checkout.get("amount_total") or 0),
             currency=(checkout.get("currency") or "usd").upper(),
             external_txn_id=checkout.get("id"),
+            source_drama_id=source_drama_id,
         )
         session.add(order)
+    elif order.source_drama_id is None:
+        order.source_drama_id = source_drama_id
     order.status = "paid"
     order.paid_at = datetime.now(timezone.utc)
 
@@ -963,6 +996,7 @@ def _activate_from_checkout(session: Session, checkout: dict) -> dict:
         status="active",
         period_start=period_start,
         period_end=period_end,
+        source_drama_id=source_drama_id,
     )
     session.commit()
     return {"order_no": order.order_no, "status": order.status, "user_id": user_id}
@@ -976,6 +1010,7 @@ def _activate_pass(session: Session, checkout: dict) -> dict:
     metadata = checkout.get("metadata") or {}
     user_id = int(metadata.get("user_id") or checkout.get("client_reference_id") or 0)
     plan_code = metadata.get("plan_code")
+    source_drama_id = _source_drama_id(metadata)
     if not user_id or not plan_code:
         raise BillingError(400, "checkout session is missing our metadata")
     if checkout.get("payment_status") not in (None, "paid"):
@@ -999,8 +1034,11 @@ def _activate_pass(session: Session, checkout: dict) -> dict:
             currency=(checkout.get("currency") or version.currency or "usd").upper(),
             billing_mode="one_time",
             external_txn_id=checkout.get("id"),
+            source_drama_id=source_drama_id,
         )
         session.add(order)
+    elif order.source_drama_id is None:
+        order.source_drama_id = source_drama_id
     order.status = "paid"
     order.paid_at = datetime.now(timezone.utc)
     order.billing_mode = "one_time"
@@ -1031,6 +1069,8 @@ def _activate_pass(session: Session, checkout: dict) -> dict:
     row.billing_mode = "one_time"
     row.plan_id = plan.id
     row.plan_version_id = version.id
+    if source_drama_id is not None and row.source_drama_id is None:
+        row.source_drama_id = source_drama_id
     session.commit()
     return {
         "order_no": order.order_no,
@@ -1044,6 +1084,7 @@ def _activate_pass(session: Session, checkout: dict) -> dict:
 def _sync_from_subscription(session: Session, remote: dict) -> dict:
     metadata = remote.get("metadata") or {}
     user_id = int(metadata.get("user_id") or 0)
+    source_drama_id = _source_drama_id(metadata)
     price_id = ((remote.get("items") or {}).get("data") or [{}])[0].get("price", {}).get("id")
     plan_code = metadata.get("plan_code") or plan_code_for_price(price_id)
     existing = session.scalar(
@@ -1075,6 +1116,7 @@ def _sync_from_subscription(session: Session, remote: dict) -> dict:
         status=local_status,
         period_start=period_start,
         period_end=period_end,
+        source_drama_id=source_drama_id,
     )
     if row is not None:
         if local_status == "canceled":

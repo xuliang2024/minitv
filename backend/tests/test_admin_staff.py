@@ -65,6 +65,7 @@ def test_list_staff_omits_password_hash(make, session, client):
             "role",
             "status",
             "disable_reason",
+            "supplier_id",
             "last_login_at",
             "created_at",
             "updated_at",

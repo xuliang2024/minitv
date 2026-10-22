@@ -22,6 +22,8 @@ import Moderation from "./pages/Moderation";
 import Rewards from "./pages/Rewards";
 import Staff from "./pages/Staff";
 import ApiKeys from "./pages/ApiKeys";
+import Suppliers from "./pages/Suppliers";
+import PartnerDramas from "./pages/PartnerDramas";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
 import {
   CommentsPage,
@@ -41,24 +43,27 @@ const SIDER_WIDTH = 208;
 const DESKTOP_QUERY = "(min-width: 992px)";
 
 const ITEMS: { key: string; label: string; roles?: string[] }[] = [
-  { key: "/dashboard", label: "数据看板" },
-  { key: "/dramas", label: "剧集管理" },
-  { key: "/groups", label: "首页分组" },
-  { key: "/users", label: "用户管理" },
+  { key: "/dashboard", label: "数据看板", roles: ["ops", "finance", "admin"] },
+  { key: "/dramas", label: "剧集管理", roles: ["ops", "admin"] },
+  { key: "/groups", label: "首页分组", roles: ["ops", "admin"] },
+  { key: "/users", label: "用户管理", roles: ["finance", "admin"] },
   // 运营中心（推送记录）暂不开放：当前只是台账占位，没有真实推送通道，先隐藏入口。
   // 恢复时把下面一行和 /ops 路由一起放回来即可。
   // { key: "/ops", label: "运营中心" },
-  { key: "/home-ops", label: "首页运营" },
-  { key: "/rewards", label: "金币与任务" },
-  { key: "/comments", label: "评论审核" },
-  { key: "/moderation", label: "自动审核" },
-  { key: "/finance", label: "财务订单" },
-  { key: "/plans", label: "会员套餐" },
-  { key: "/tags", label: "标签库" },
+  { key: "/home-ops", label: "首页运营", roles: ["ops", "admin"] },
+  { key: "/rewards", label: "金币与任务", roles: ["ops", "admin"] },
+  { key: "/comments", label: "评论审核", roles: ["ops", "admin"] },
+  { key: "/moderation", label: "自动审核", roles: ["ops", "admin"] },
+  { key: "/finance", label: "财务订单", roles: ["finance", "admin"] },
+  { key: "/plans", label: "会员套餐", roles: ["finance", "admin"] },
+  { key: "/tags", label: "标签库", roles: ["ops", "admin"] },
   // 员工账号只对管理员开放：运营/财务看到入口也只会拿到 403。
   { key: "/staff", label: "账号管理", roles: ["admin"] },
   // 密钥签发是超管动作，与账号管理同级。
   { key: "/api-keys", label: "API 密钥", roles: ["admin"] },
+  { key: "/suppliers", label: "上剧方管理", roles: ["admin"] },
+  // 上剧方（partner）只看到自己的剧集；其它入口一律不渲染。
+  { key: "/partner/dramas", label: "我的剧集", roles: ["partner"] },
 ];
 
 export default function App() {
@@ -84,7 +89,12 @@ export default function App() {
     if (!token) return;
     api<Me>("/admin/v1/auth/me")
       .then(setMe)
-      .catch(() => setMe(null));
+      .catch(() => {
+        // Suppliers have no access to /admin/v1; ask their own surface.
+        api<Me>("/partner/v1/me")
+          .then(setMe)
+          .catch(() => setMe(null));
+      });
   }, [token]);
 
   useEffect(() => {
@@ -99,7 +109,8 @@ export default function App() {
   const onLogout = async () => {
     setLoggingOut(true);
     try {
-      await api("/admin/v1/auth/logout", { method: "POST" });
+      const path = me?.role === "partner" ? "/partner/v1/auth/logout" : "/admin/v1/auth/logout";
+      await api(path, { method: "POST" });
     } catch {
       /* 本地凭据仍然要清，退出不能被服务端错误阻塞 */
     } finally {
@@ -146,6 +157,11 @@ export default function App() {
     );
   }
 
+  // A supplier must never land on a staff page (deep link, old bookmark).
+  if (me?.role === "partner" && !location.pathname.startsWith("/partner")) {
+    return <Navigate to="/partner/dramas" replace />;
+  }
+
   const selectedItem = [...ITEMS]
     .sort((a, b) => b.key.length - a.key.length)
     .find((item) => location.pathname === item.key || location.pathname.startsWith(`${item.key}/`));
@@ -164,7 +180,7 @@ export default function App() {
         <div
           style={{ color: "#E53B3E", fontSize: 18, fontWeight: 700, padding: "20px 16px 8px" }}
         >
-          MiniTV 后台
+          {me?.role === "partner" ? "MiniTV 合作方" : "MiniTV 后台"}
         </div>
       )}
       <Menu
@@ -288,6 +304,8 @@ export default function App() {
               <Route path="/plans" element={<PlansPage />} />
               <Route path="/tags" element={<Tags />} />
               <Route path="/staff" element={<Staff />} />
+              <Route path="/suppliers" element={<Suppliers />} />
+              <Route path="/partner/dramas" element={<PartnerDramas />} />
               <Route path="/api-keys" element={<ApiKeys />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

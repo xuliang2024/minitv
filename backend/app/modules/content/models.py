@@ -22,6 +22,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,10 +55,41 @@ class Drama(Base):
     published_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scheduled_publish_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     play_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # NULL = platform-owned (self-operated). Partners (上剧方) only ever see
+    # rows where this equals their own supplier id.
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), nullable=True)
+    # Review progress is orthogonal to `status`: a draft stays a draft until an
+    # operator approves it, which is when status moves to in_review.
+    review_state: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
+    review_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    submitted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
 
     __table_args__ = (
         Index("ix_dramas_status", "status"),
-        UniqueConstraint("title", name="uq_dramas_title"),
+        Index("ix_dramas_supplier_status", "supplier_id", "status"),
+        Index(
+            "ix_dramas_review_state",
+            "review_state",
+            postgresql_where=text("review_state = 'pending'"),
+        ),
+        # Titles are unique per tenant, not globally: two suppliers may both
+        # carry a "替身新娘". Self-operated rows (supplier_id IS NULL) keep the
+        # old global uniqueness.
+        Index(
+            "uq_dramas_title_self",
+            "title",
+            unique=True,
+            postgresql_where=text("supplier_id IS NULL"),
+        ),
+        Index(
+            "uq_dramas_title_supplier",
+            "supplier_id",
+            "title",
+            unique=True,
+            postgresql_where=text("supplier_id IS NOT NULL"),
+        ),
     )
 
 

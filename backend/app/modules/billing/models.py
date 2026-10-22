@@ -84,6 +84,11 @@ class Subscription(Base):
     # End of one-time passes; independent from current_period_end so a renewal
     # never wipes access that was bought outright.
     pass_end: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Inherited by renewals for reporting; settlement still counts only the
+    # first paid order (see docs/supplier-role-plan.md §6).
+    source_drama_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dramas.id"), nullable=True
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -116,6 +121,14 @@ class Order(Base):
         String(128), unique=True, nullable=True
     )  # provider transaction id; unique => duplicate callbacks cannot double-book
     paid_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Membership attribution: the drama the buyer came from. NULL = organic.
+    source_drama_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dramas.id"), nullable=True
+    )
+    # Settlement needs the month a refund happened, not just the status.
+    refunded_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -123,7 +136,20 @@ class Order(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    __table_args__ = (Index("ix_orders_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_orders_user_created", "user_id", "created_at"),
+        Index(
+            "ix_orders_source_drama",
+            "source_drama_id",
+            "paid_at",
+            postgresql_where=text("source_drama_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_orders_refunded_at",
+            "refunded_at",
+            postgresql_where=text("refunded_at IS NOT NULL"),
+        ),
+    )
 
 
 class BillingSettings(Base):

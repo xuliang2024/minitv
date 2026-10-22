@@ -432,6 +432,9 @@ class CheckoutIn(BaseModel):
     plan_code: str
     success_url: str | None = None
     cancel_url: str | None = None
+    # Which drama the buyer came from. Optional: opening the paywall from the
+    # profile page has no attribution.
+    source_drama_id: int | None = None
 
 
 @router.post("/billing/checkout")
@@ -445,6 +448,7 @@ def checkout(body: CheckoutIn, user: User = Depends(_require_user), db: Session 
             plan_code=body.plan_code,
             success_url=body.success_url,
             cancel_url=body.cancel_url,
+            source_drama_id=body.source_drama_id,
         )
     except BillingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
