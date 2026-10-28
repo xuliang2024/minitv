@@ -7,6 +7,11 @@
 !web/.env.production
 !admin/.env.production
 
+# Agent session state / workspace memory.
+# These notes carry operational detail (server addresses, account ids, pricing,
+# supplier terms) and must never be published. Kept locally, never committed.
+.workbuddy/
+
 # local runtimes
 .venv/
 __pycache__/
