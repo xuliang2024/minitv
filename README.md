@@ -2,7 +2,7 @@
 
 <h1>MiniTV</h1>
 
-<p><strong>开源的竖屏短剧平台</strong> —— 营销官网、H5 Web App、Flutter 原生 App、管理后台，共享同一套后端。</p>
+<p><strong>开源的短剧分发平台</strong> —— 内容方入驻上传、平台审核分发、分集解锁与结算，一套后端撑起官网 / H5 / App / 后台。</p>
 
 <p>React 18 · TypeScript · FastAPI · PostgreSQL · Redis · Flutter · Bunny Stream · Stripe</p>
 
