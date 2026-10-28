@@ -8,6 +8,8 @@
 - 每次发布（R2 或服务器）分配一个独立版本号；由 `scripts/release.py` 在锁内自动分配，并打 annotated git tag。
 - 已分配的版本号永不复用：即使发布失败也保留记录（失败版本 tag 会被删除，但记录文件保留）。
 
+> **tag 只在本地记账，不推送到远端。** 日期构建号对使用者没有语义，公开仓库只发布语义化版本 tag（`v1.0.0` 起）。权威记录是 `deployments/releases/*.json`（含版本号与提交 SHA）：`next_version()` 会同时扫描记录，所以删掉本地 tag 不会导致版本号复用；`rollback` 也只读记录、不读 tag。**切勿执行 `git push --tags`。**
+
 ## 2. 并发控制（共享锁）
 
 - 锁文件：`<git 公共目录>/minitv-release.lock`（`git rev-parse --git-common-dir`），`flock` 独占。
