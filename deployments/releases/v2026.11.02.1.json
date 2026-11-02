@@ -1,0 +1,18 @@
+{
+  "version": "v2026.11.02.1",
+  "target": "r2",
+  "status": "failed",
+  "sha": "bf68a1af879376902d4a780e676c26e78b296207",
+  "short_sha": "bf68a1af",
+  "started_at": "2026-11-02T10:55:13+08:00",
+  "finished_at": "2026-11-02T11:01:19+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMBP",
+    "pid": 31789,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "Android APK 1.0.0 上架 download/ 供官网下载；web/scripts 是他人未提交文件，与本包无关",
+  "error": "1 个文件上传失败：\n    - minitv-1.0.0.apk: 上传 releases/v2026.11.02.1/minitv-1.0.0.apk 失败（重试 3 次）: 网络错误（PUT https://api.cloudflare.com/client/v4/accounts/11c47779f0d4c3d0e69ccc6c484dc589/r2/buckets/minitv-web/objects/releases%2Fv2026.11.02.1%2Fminitv-1.0.0.apk）: The write operation timed out"
+}
