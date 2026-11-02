@@ -1,0 +1,29 @@
+{
+  "version": "v2026.11.02.4",
+  "target": "r2",
+  "status": "published",
+  "sha": "3f7dd960ed0f564fc03c86b1c10788d95a1a7bf9",
+  "short_sha": "3f7dd960",
+  "bucket": "minitv-web",
+  "prefix": "releases/v2026.11.02.4/",
+  "promote_prefix": "download/",
+  "promoted_root": true,
+  "dist_digest": "d2fb6a1353eb4202e476a198c15d0cd3b100f69a80de40b9fef304dca45dd96d",
+  "files": [
+    {
+      "path": "minitv-1.0.0-arm64-v8a.apk",
+      "size": 19847338
+    }
+  ],
+  "started_at": "2026-11-02T11:34:20+08:00",
+  "finished_at": "2026-11-02T11:34:43+08:00",
+  "operator": {
+    "user": "m007",
+    "host": "m007deMBP",
+    "pid": 59550,
+    "agent_session": null,
+    "cwd": "/Users/m007/codes/lite_tv"
+  },
+  "note": "Android APK 1.0.0 arm64 上架 download/ 供官网下载；web/scripts 是他人未提交文件，与本包无关",
+  "dirty": true
+}
