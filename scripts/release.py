@@ -402,11 +402,14 @@ class R2:
 
     def put(self, key: str, data: bytes, content_type: str, cache_control: str) -> None:
         url = self._url(f"r2/buckets/{self.bucket}/objects", key)
+        # A fixed 120s socket timeout kills big objects (APK / video) on a slow
+        # uplink halfway through the body. Budget for at least 64 KB/s.
+        timeout = max(120, len(data) // (64 * 1024) + 120)
         last_error: Exception | None = None
         for attempt in range(1, 4):
             try:
                 self._request(
-                    "PUT", url, data=data,
+                    "PUT", url, data=data, timeout=timeout,
                     headers={"Content-Type": content_type, "Cache-Control": cache_control},
                 )
                 return

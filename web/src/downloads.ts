@@ -6,9 +6,9 @@
  * warm CDN edge; bump all three fields together when a new build ships.
  */
 export const ANDROID_APK = {
-  url: "https://minitv.us/download/minitv-1.0.0.apk",
+  url: "https://minitv.us/download/minitv-1.0.0-arm64-v8a.apk",
   version: "1.0.0",
-  size: "51 MB",
+  size: "20 MB",
 };
 
 /** Minimum Android the current Flutter toolchain targets (minSdk 24). */
