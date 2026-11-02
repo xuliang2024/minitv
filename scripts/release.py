@@ -345,6 +345,8 @@ CONTENT_TYPES = {
     ".webm": "video/webm",
     ".pdf": "application/pdf",
     ".wasm": "application/wasm",
+    # Android sideload build served from the site bucket (see web/src/downloads.ts).
+    ".apk": "application/vnd.android.package-archive",
 }
 
 

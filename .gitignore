@@ -29,6 +29,9 @@ web/dist/
 h5/node_modules/
 h5/dist/
 
+# mobile release artifacts (built locally, not committed)
+dist/
+
 # local media library (large, regenerable via scripts/)
 data/litetv-videos-local/
 data/litetv-videos-real/

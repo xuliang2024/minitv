@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { fetchMarketing, fetchPreviewCatalog, Marketing, Plan, PreviewDrama } from "./api";
+import { ANDROID_APK, ANDROID_MIN } from "./downloads";
 import { SiteFooter, SiteHeader, WEB_APP_URL } from "./layout";
 import PreviewPage from "./preview";
 import { parseRoute, Route, scrollToRoute } from "./routes";
@@ -68,7 +69,7 @@ const faqs = [
   },
   {
     q: "Where do I download the app?",
-    a: "The iOS and Android apps are coming soon. Until they launch, you can watch free episodes and the full web app right here in your browser.",
+    a: "The Android app is ready — tap Download APK in the Download section, then allow installs from your browser when Android asks. The iOS app is still coming soon; until then you can watch free episodes and the full web app right here in your browser.",
   },
   {
     q: "How do coins work?",
@@ -91,14 +92,14 @@ function HomePage() {
   const [error, setError] = useState("");
   const [teaser, setTeaser] = useState<PreviewDrama[]>([]);
   // The store listings are not live yet: the badges stay, the click explains
-  // why and points people at the browser build instead.
+  // why and points people at the APK / browser build instead.
   const [storeNotice, setStoreNotice] = useState("");
   const noticeTimer = useRef<number | null>(null);
 
-  const showStoreNotice = (platform: string) => {
-    setStoreNotice(`${platform} app is coming soon — watch online in your browser for now.`);
+  const showStoreNotice = (message: string) => {
+    setStoreNotice(message);
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => setStoreNotice(""), 5000);
+    noticeTimer.current = window.setTimeout(() => setStoreNotice(""), 6000);
   };
 
   useEffect(
@@ -419,36 +420,28 @@ function HomePage() {
               <h2>Get MiniTV on your phone</h2>
               <p>
                 Install the app to unlock every episode, download shows, and manage your
-                subscription. The app is coming soon — until then, free previews and the
-                full web app work right here in your browser.
+                subscription. The Android build is ready — install the APK below. iOS is
+                still on the way; until then, free previews and the full web app work
+                right here in your browser.
               </p>
               <div className="store-buttons">
-                <button
-                  type="button"
-                  className="store-btn"
-                  onClick={() => showStoreNotice("The iOS")}
+                <a
+                  className="store-btn store-btn-apk"
+                  href={ANDROID_APK.url}
+                  download={`MiniTV-${ANDROID_APK.version}.apk`}
                 >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+                  <svg className="icon-stroke" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3.6v10.4" />
+                    <path d="m7.4 9.9 4.6 4.6 4.6-4.6" />
+                    <path d="M4.6 17.3v1.3a1.8 1.8 0 0 0 1.8 1.8h11.2a1.8 1.8 0 0 0 1.8-1.8v-1.3" />
                   </svg>
                   <span>
-                    <small>Download on the</small>
-                    <strong>App Store</strong>
+                    <small>
+                      Android {ANDROID_MIN}+ · {ANDROID_APK.size}
+                    </small>
+                    <strong>Download APK</strong>
                   </span>
-                </button>
-                <button
-                  type="button"
-                  className="store-btn"
-                  onClick={() => showStoreNotice("The Android")}
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3.61 1.81 13.79 12 3.61 22.19a1 1 0 0 1-.61-.92V2.73a1 1 0 0 1 .61-.92zM14.5 12.7l2.3 2.3-10.94 6.34 8.64-8.64zm3.2-3.2 2.8 1.63a1 1 0 0 1 0 1.73l-2.8 1.63-2.5-2.49 2.5-2.5zM5.95 3.06l10.94 6.33-2.3 2.3-8.64-8.63z" />
-                  </svg>
-                  <span>
-                    <small>Get it on</small>
-                    <strong>Google Play</strong>
-                  </span>
-                </button>
+                </a>
                 <a
                   className="store-btn store-btn-web"
                   href={WEB_APP_URL}
@@ -465,6 +458,46 @@ function HomePage() {
                     <strong>Watch Online</strong>
                   </span>
                 </a>
+              </div>
+              <p className="apk-hint">
+                v{ANDROID_APK.version} · The first install asks you to allow installs from
+                this browser — tap Settings, allow, then Install.
+              </p>
+              <div className="store-buttons store-buttons-soon">
+                <button
+                  type="button"
+                  className="store-btn"
+                  onClick={() =>
+                    showStoreNotice(
+                      "The iOS app is coming soon — watch online in your browser for now.",
+                    )
+                  }
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.08zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" />
+                  </svg>
+                  <span>
+                    <small>Coming soon</small>
+                    <strong>App Store</strong>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="store-btn"
+                  onClick={() =>
+                    showStoreNotice(
+                      "Google Play is coming soon — download the APK above to install the Android app now.",
+                    )
+                  }
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3.61 1.81 13.79 12 3.61 22.19a1 1 0 0 1-.61-.92V2.73a1 1 0 0 1 .61-.92zM14.5 12.7l2.3 2.3-10.94 6.34 8.64-8.64zm3.2-3.2 2.8 1.63a1 1 0 0 1 0 1.73l-2.8 1.63-2.5-2.49 2.5-2.5zM5.95 3.06l10.94 6.33-2.3 2.3-8.64-8.63z" />
+                  </svg>
+                  <span>
+                    <small>Coming soon</small>
+                    <strong>Google Play</strong>
+                  </span>
+                </button>
               </div>
               {storeNotice && (
                 <p className="store-note" role="status" aria-live="polite">

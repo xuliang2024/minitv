@@ -824,6 +824,46 @@ summary:focus-visible {
   background: rgba(229, 59, 62, 0.2);
 }
 
+/* The sideloaded APK is the only install path that works today, so it gets the
+   primary treatment while the two store badges sit one rung lower. */
+.store-btn-apk {
+  border-color: transparent;
+  background: linear-gradient(100deg, #ff6b6e 4%, var(--accent) 92%);
+  box-shadow: 0 14px 34px rgba(229, 59, 62, 0.24);
+}
+
+.store-btn-apk:hover {
+  border-color: transparent;
+  background: linear-gradient(100deg, #ff7c7f 4%, var(--accent-bright) 92%);
+  box-shadow: 0 16px 40px rgba(229, 59, 62, 0.32);
+}
+
+.store-btn.store-btn-apk small {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.store-buttons-soon {
+  margin-top: 10px;
+}
+
+.store-buttons-soon .store-btn {
+  opacity: 0.72;
+}
+
+.store-buttons-soon .store-btn:hover {
+  opacity: 1;
+}
+
+/* Sideload caveat: Android shows the "allow installs from this browser" prompt
+   on the first download, so say it before the user hits it. */
+.download-copy .apk-hint {
+  max-width: 46ch;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
 /* Click feedback for the two store badges while the apps are not shipped. */
 .store-note {
   display: inline-flex;
