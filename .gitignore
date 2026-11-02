@@ -20,6 +20,11 @@ __pycache__/
 
 # local data cache (derived, regenerable)
 data/.cache/
+# scraper run logs (operational noise, regenerable)
+data/import-logs/
+
+# local tool session logs
+.slidep/
 
 # frontend build artifacts
 admin/node_modules/

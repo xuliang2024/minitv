@@ -1247,8 +1247,11 @@ MiniTV 的开发、联调和演示需要真实形态的剧集数据：竖版封�
 > 还必须作为同名请求头发送 `signature:` / `expires:`，缺这两个头才会一律 401。
 > 抓取脚本 `scripts/fetch_litetv_videos.py`，真片落在 [../litetv-videos-real](../litetv-videos-real)，
 > 完整说明见 `docs/litetv-video-download.md`。
-> `data/litetv-videos-local` 里由 `scripts/build_local_video_library.py` 合成的占位视频
-> 只用于兜底联调，不代表站点真实内容。
+> `data/litetv-videos-local` / `-synth` 里的占位合成片已于 2026-10-14 全部删除，
+> 现在只保留真片库，避免把占位素材误当成站点内容。
+>
+> 标题、封面、视频的对照关系和用法见 [docs/litetv-data-guide.md](../../docs/litetv-data-guide.md)，
+> 两张现成索引表：`index-title-cover-video.csv`（一行一部剧）、`index-episode-video.csv`（一行一集）。
 
 共 {manifest['counts']['dramas']} 部剧、{manifest['counts']['episodes']} 集分集记录，
 其中 {manifest['counts']['episodes_with_duration']} 集带时长，

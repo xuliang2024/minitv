@@ -45,8 +45,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from fetch_litetv_catalog import API_ROOT, SITE_ROOT, LiteTVClient, UA  # noqa: E402
 
 CATALOG = ROOT / "data" / "litetv-catalog-20261013"
-# 注意：data/litetv-videos-local 目前由并行的合成脚本（build_local_video_library.py）占用，
-# 真片固定写到这里，避免两个进程互相覆盖。
+# 真片固定写这里。占位合成目录（litetv-videos-local / -synth）已于 2026-10-14 清理，
+# 不要再建同名目录，也不要让第二个进程同时写这个目录。
 DEFAULT_OUT = ROOT / "data" / "litetv-videos-real"
 CACHE = ROOT / "data" / ".cache"
 QUALITY = {"p480": "video_url_hls_480", "p720": "video_url_hls_720"}

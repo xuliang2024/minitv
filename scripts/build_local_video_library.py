@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""用本地目录数据合成一套竖屏短剧视频库，给 MiniTV 的开发联调用。
+"""【已废弃 2026-10-14】合成竖屏占位视频库。
 
-为什么合成而不是直接下站点正片
-    lite.tv 的正片走 HLS，播放列表带签名，但该 CDN 会按客户端做授权校验：
-    同一目录下的单集封面图能 200 下载，播放列表带签名仍然 401，
-    用真实 Chrome 在站点源站发起也一样（见 scripts/fetch_litetv_videos.py probe）。
-    当前出口（香港数据中心 IP）拿不到流，所以先用本地合成片把开发链路打通。
+不要再运行这个脚本生成数据。
+    站点真片已经可以下载：播放列表与分片请求除了 query 里的 `signature` / `expires`，
+    还必须把同名的两个值放进**请求头**，否则一律 401。
+    真片库在 data/litetv-videos-real/（100 部 / 1197 集），由
+    scripts/fetch_litetv_videos.py 维护；合成占位片已于 2026-10-14 全部删除。
 
-合成片长什么样
+    直接运行本脚本会拒绝执行，只有显式加 --force-deprecated 才会真正合成。
+    保留代码只为在需要纯占位素材时（例如完全离线的播放器压测）还能复现。
+
+历史说明（保留作为排查教训）
+    早前判断「CDN 按客户端做授权校验、带签名也拿不到流」是误判，真正原因就是缺请求头。
+    当时退而求其次，用本地目录数据合成占位片顶替开发联调。
+
+合成片长什么样（--force-deprecated 时）
     每集一个 540×960（9:16）的 H.264 MP4，时长取站点真实时长（锁定集取该剧免费集的中位数）：
       · 背景是这部剧的真实竖版封面，压暗做底
       · 中间放封面主体，下方叠加剧名、集号、跑动的时间码、样例水印
       · 有真实英文字幕的集，把 SRT 作为软字幕轨封装进 MP4，同时复制一份 .srt
       · 音轨为静音 AAC（可用 --tone 换成低音量提示音），保证播放器链路完整
 
-产物
+产物（--force-deprecated 时，写新的占位目录，不碰真片库）
     data/litetv-videos-local/
         README.md
         manifest.json                每集时长/体积/字幕，以及失败清单
@@ -22,10 +29,8 @@
         <media_id>/<media_id>_ep000.srt   （该集有真实字幕时）
 
 用法
-    .venv/bin/python scripts/build_local_video_library.py preview --media-id 180
-    .venv/bin/python scripts/build_local_video_library.py build --scope free
-    .venv/bin/python scripts/build_local_video_library.py build --scope all --workers 8
-    .venv/bin/python scripts/build_local_video_library.py verify
+    .venv/bin/python scripts/fetch_litetv_videos.py download --from-scan   # 正解：下真片
+    .venv/bin/python scripts/build_local_video_library.py --force-deprecated build --scope free
 """
 
 from __future__ import annotations
@@ -518,9 +523,23 @@ def main() -> int:
     parser.add_argument("--sample", type=int, default=40, help="verify 抽检集数")
     parser.add_argument("--tone", action="store_true", help="用低音量提示音代替静音")
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--force-synth", action="store_true",
-                        help="真片已存在时仍强制合成占位片（仅兜底联调用）")
+    parser.add_argument("--force-synth", "--force-deprecated", dest="force_deprecated",
+                        action="store_true",
+                        help="确认要重建已废弃的占位片时才加；不加则直接拒跑")
     args = parser.parse_args()
+
+    if not args.force_deprecated:
+        print(
+            "本脚本已废弃（2026-10-14）。合成占位片已全部删除，真片库在 "
+            "data/litetv-videos-real/。\n"
+            "下真片请用：\n"
+            "  .venv/bin/python scripts/fetch_litetv_videos.py scan --episodes 0-79\n"
+            "  .venv/bin/python scripts/fetch_litetv_videos.py download --from-scan\n"
+            "确实需要纯占位素材时，显式加 --force-deprecated 再运行。",
+            file=sys.stderr,
+        )
+        return 2
+
     if args.command == "preview":
         return cmd_preview(args)
     if args.command == "build":
