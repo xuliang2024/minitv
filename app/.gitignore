@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Golden-test failure diffs (regenerated on every failing run)
+/test/failures/

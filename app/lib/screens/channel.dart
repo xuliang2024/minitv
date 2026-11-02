@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../copy.dart';
+import '../img.dart';
 import '../ui.dart';
 
 class ChannelScreen extends StatefulWidget {
@@ -51,7 +52,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
         return InkWell(
           onTap: () => widget.onOpen(item['id'] as int),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Poster(url: item['cover_url'] as String?),
+            Poster(url: item['cover_url'] as String?, imgWidth: Img.card),
             const SizedBox(height: 6),
             Text(item['title'] as String? ?? '', maxLines: 2, style: const TextStyle(color: Colors.white, fontSize: 12)),
           ]),

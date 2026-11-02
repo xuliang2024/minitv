@@ -35,6 +35,19 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   video_player: ^2.9.2
+  shared_preferences: ^2.5.6
+  share_plus: ^13.3.1
+  url_launcher: ^6.3.3
+  uuid: ^4.6.0
+  google_sign_in: ^7.2.0
+
+# `shared_preferences_android` 2.5.x switched to the JNI implementation and the
+# generated `SharedPreferencesApiRegistrar.getAll` signature does not match the
+# Kotlin side on this toolchain, so every prefs read throws NoSuchMethodError
+# (Android stuck on the splash / endless spinners). Pin the last Pigeon-only
+# release until the plugin or Flutter is upgraded.
+dependency_overrides:
+  shared_preferences_android: 2.4.28
 
 dev_dependencies:
   flutter_test:

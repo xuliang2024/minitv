@@ -383,6 +383,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				DEVELOPMENT_TEAM = 3DP337K4T3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.minitv.minitv;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -564,6 +565,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				DEVELOPMENT_TEAM = 3DP337K4T3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.minitv.minitv;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -586,6 +588,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				DEVELOPMENT_TEAM = 3DP337K4T3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.minitv.minitv;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
