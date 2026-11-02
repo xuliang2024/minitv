@@ -26,6 +26,10 @@ data/import-logs/
 # local tool session logs
 .slidep/
 
+# generated image drafts (logo exploration, page snapshots)
+litetv-logo_assets/
+outputs/
+
 # frontend build artifacts
 admin/node_modules/
 admin/dist/
