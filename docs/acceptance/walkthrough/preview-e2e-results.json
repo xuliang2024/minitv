@@ -1,0 +1,137 @@
+[
+  {
+    "name": "home: hero has the trial entry",
+    "ok": true,
+    "detail": "“Watch free episodes”"
+  },
+  {
+    "name": "home: nav has Free Preview",
+    "ok": true,
+    "detail": "Free Preview"
+  },
+  {
+    "name": "home: preview teaser section rendered",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "home: teaser section highlights the free preview",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "preview: multiple category rows",
+    "ok": true,
+    "detail": "12 rows"
+  },
+  {
+    "name": "preview: every category shows at most 7 shows",
+    "ok": true,
+    "detail": "7,2,2,2,4,3,2,2,2,2,5,3"
+  },
+  {
+    "name": "preview: every row links View all to the app",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "preview: All shows capped at 7 of 14",
+    "ok": true,
+    "detail": "row0 cards=7"
+  },
+  {
+    "name": "player: opened target drama",
+    "ok": true,
+    "detail": "I Killed My Stepfather with A Kiss"
+  },
+  {
+    "name": "player: episode grid lists published episodes",
+    "ok": true,
+    "detail": "13 buttons"
+  },
+  {
+    "name": "player: locked episodes rendered with lock state",
+    "ok": true,
+    "detail": "1 locked"
+  },
+  {
+    "name": "player: free episode is playing",
+    "ok": true,
+    "detail": "{\"currentTime\":0.614674,\"readyState\":4,\"paused\":false}"
+  },
+  {
+    "name": "player: free episode authorized exactly once so far",
+    "ok": true,
+    "detail": "[998]"
+  },
+  {
+    "name": "player: quality menu lists Auto plus the real manifest renditions",
+    "ok": true,
+    "detail": "Auto · 360p | 720p | 480p | 360p | 240p"
+  },
+  {
+    "name": "player: manual 720p pick bypasses the size cap",
+    "ok": true,
+    "detail": "video=720x1280 button=720p"
+  },
+  {
+    "name": "player: manual 240p pick switches down",
+    "ok": true,
+    "detail": "video=198x352 button=240p"
+  },
+  {
+    "name": "player: quality menu returns to adaptive Auto",
+    "ok": true,
+    "detail": "Auto · 480p"
+  },
+  {
+    "name": "player: locked episode opens the app overlay",
+    "ok": true,
+    "detail": "Episode 13 is lockedUnlock every episode and watch the full series in the MiniTV app.Download the appWatch free episodes"
+  },
+  {
+    "name": "player: locked episode never requested a playback URL",
+    "ok": true,
+    "detail": "[998]"
+  },
+  {
+    "name": "player: last free episode authorized",
+    "ok": true,
+    "detail": "[998,1009] vs ep#1009"
+  },
+  {
+    "name": "player: auto-advance stops at the locked episode",
+    "ok": true,
+    "detail": "Episode 13 is locked"
+  },
+  {
+    "name": "player: auto-advance never authorized the locked episode",
+    "ok": true,
+    "detail": "[998,1009]"
+  },
+  {
+    "name": "player: locked CTA lands on the app download section",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "preview: View all in the app lands on the download section",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "mobile: preview catalog has no horizontal overflow",
+    "ok": true,
+    "detail": "overflow=0px"
+  },
+  {
+    "name": "mobile: player page has no horizontal overflow",
+    "ok": true,
+    "detail": "overflow=0px"
+  },
+  {
+    "name": "api: locked episode is not authorized for guests",
+    "ok": true,
+    "detail": "{\"allowed\":false,\"reason\":\"locked\",\"unlock\":{\"coin_price\":69,\"membership_available\":true}}"
+  }
+]

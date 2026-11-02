@@ -92,8 +92,8 @@ node /tmp/cdp_headers.mjs "https://www.lite.tv/player?mid=180&eid=1" 40000
 分片请求与播放列表走同一组 header，所以两个头必须都给。
 已存在的文件默认跳过（所以先下的 720p 不会被 480p 覆盖）。
 
-> 性能提示：不要与该目录里并行的 x264 合成任务抢机器——编码占满 CPU 时下载会从 ~2 MB/s
-> 掉到 ~0.5 MB/s。`build_local_video_library.py` 现在默认拒跑（见 §5）。
+> 性能提示：下载期间不要同时跑 x264 编码任务——CPU 占满时下载会从 ~2 MB/s 掉到 ~0.5 MB/s。
+> `build_local_video_library.py` 已废弃并默认拒跑（见 §5）。
 
 ## 4.1 本仓库当前的全量抓取结果
 
@@ -118,19 +118,26 @@ node /tmp/cdp_headers.mjs "https://www.lite.tv/player?mid=180&eid=1" 40000
 所以**不能**按固定集数下（早前按"前 9 集"估的口径是错的）。
 
 
-## 5. 目录分工（重要：本仓库同时有另一个会话在跑）
+## 5. 目录现状（2026-10-14 09:20 清理后）
 
-| 目录 | 内容 | 由谁写 |
+本仓库只保留站点真片，合成占位视频已全部删除：
+
+| 目录 | 内容 | 状态 |
 |---|---|---|
-| `data/litetv-videos-real/` | **站点真片**（HLS 转封装 MP4，720×1280，带真实音轨/字幕） | `scripts/fetch_litetv_videos.py` |
-| `data/litetv-videos-synth/` | 合成占位视频存档（静态封面 + `EPISODE n` 烧字 + 静音，871 集） | 无人写；`build_local_video_library.py` 已默认拒跑 |
-| ~~`data/litetv-videos-local/`~~ | 已废弃：占位视频目录，2026-10-13 23:00 起不再使用 | — |
+| `data/litetv-videos-real/` | **站点真片**（HLS 转封装 MP4，带真实音轨/字幕）：1059 集 480×854 + 138 集 720×1280，1197 集 / 22.3 GB | 保留，唯一视频库 |
+| `data/litetv-catalog-20261013/` | 站点目录数据（剧名、简介、封面、分类、解锁规则、套餐） | 保留，种子数据 |
+| `data/litetv-official/` | 站点官方素材（海报、Banner、水印） | 保留 |
+| ~~`data/litetv-videos-synth/`~~ | 合成占位片 871 集 / 1.4 GB | **已删除**（2026-10-14） |
+| ~~`data/litetv-videos-local/`~~ | 占位视频目录 | **已删除**（2026-10-13 23:00 起废弃） |
 
-踩过的坑：两个进程同时写 `data/litetv-videos-local` 会互相覆盖——
-并行会话的 `find data/litetv-videos-local -name "*.part.mp4" -delete` 会删掉
-真片下载中的临时文件，ffmpeg 随即报
-`Unable to re-open ... output file for shifting data`。
-因此真片固定写 `data/litetv-videos-real/`，**不要再把两边指到同一目录**。
+`scripts/build_local_video_library.py` 是合成片的生成器，**已废弃**：
+直接运行会拒绝执行并提示改用 `scripts/fetch_litetv_videos.py`，
+只有显式加 `--force-deprecated` 才会重新生成占位片（不要再删真片库，两者目录已经分开）。
+
+踩过的坑（保留作为教训）：两个进程同时写同一个视频目录会互相覆盖——
+一方的 `find <dir> -name "*.part.mp4" -delete` 会删掉另一方下载中的临时文件，
+ffmpeg 随即报 `Unable to re-open ... output file for shifting data`。
+所以真片固定写 `data/litetv-videos-real/`，**任何新任务都不要再指到同一个目录**。
 
 ## 6. 验收方法
 
@@ -146,3 +153,27 @@ ffmpeg -ss 7 -i data/litetv-videos-real/180/180_ep001.mp4 -frames:v 1 /tmp/frame
 
 对照基准：`https://www.lite.tv/player?mid=180&eid=1` 播放页 00:07 的画面
 （红裙 + 珍珠项链女性）与抽帧一致；文件时长 73 s 与站点一致。
+
+## 7. 升级既有上传到 720P（2026-10-14）
+
+**Bunny 不会放大**：源片 480×854 → 转码档位最多 480p；播放器「清晰度」菜单按真实
+manifest 展示，所以只有换成 720p 源片才会出现 720p 档。
+
+**Bunny 也不允许覆盖同一个视频对象**（`PUT /videos/{id}` 会返回
+`The video has already been uploaded`），升级必须走「新建对象 → 上传 → 切换
+`episodes.bunny_video_id`」：`backend/app/import_local_videos.py --replace`
+（旧对象 id 记进 audit log 的 `previous_video_id`，确认无误后再删）。
+
+**本机上行是瓶颈时用服务器中转**（实测本机 8 并发也只有 ~230KB/s，直连/代理
+/SG 节点都一样；SG 服务器到 Bunny 2.7MB/s、到 lite.tv 0.8MB/s+）：
+
+1. 生成任务 JSON（含 episode_id、标题、p720 签名 URL/signature/expires、本地文件名）；
+2. 把 `remote_p720.py` + jobs.json（含 Bunny key 的 env 文件，600 权限）scp 到
+   `sgp1-worker`，`apt-get install -y ffmpeg`；
+3. `nohup python3 remote_p720.py --jobs jobs.json --workers 6` —— ffmpeg 拉 HLS
+   转封装 MP4 → 建 Bunny 对象 → PUT 上传 → 写 `results.jsonl`（可断点续跑）；
+4. 拉回 results.jsonl，用 `_record_upload(..., previous_video_id=旧guid)` 更新 DB；
+5. 轮询 Bunny `status==4` 且 `availableResolutions` 含 `720p`，验收通过后清理旧对象。
+
+2026-10-14 实测：120 集 2.3GB，SG 服务器 6 并发 **5 分 16 秒**完成（0 失败），
+旧 480p 对象 122 个已删除；明细 `data/litetv-videos-real/p720-upgrade-20261014.json`。
