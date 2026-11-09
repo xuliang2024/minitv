@@ -10,11 +10,11 @@
 
 ---
 
-> **本仓库已冻结（2026-11-05）**
+> **短剧出海，全链路交付**
 >
-> 这里保留 v1.0.0 的完整代码与提交历史，作为公开快照。后续迭代已转入私有仓库，本仓库不再更新，也不再合并 PR。
+> 收款通道 · 短剧制作 · 系统定制 · 广告投放 —— 需要哪一段就聊哪一段，[扫码加微信](#商务合作)。
 >
-> 线上服务仍在运行：[官网](https://minitv.us) · [H5](https://h5.minitv.us) · [API](https://api.minitv.us)
+> 线上在跑：[官网](https://minitv.us) · [H5](https://h5.minitv.us) · [API](https://api.minitv.us)
 
 ---
 
@@ -272,15 +272,24 @@ python3 scripts/release.py run  --target server -- ./scripts/deploy_server.sh
 | [`docs/supplier-role-plan.md`](docs/supplier-role-plan.md) | 上剧方角色的权限与结算设计 |
 | [`docs/cli-reference.md`](docs/cli-reference.md) | CLI 全部命令 |
 
-## 交流与反馈
+## 商务合作
 
-部署踩坑、功能建议、想聊聊短剧出海怎么做，都欢迎。
+**我们提供短剧出海的全链路解决方案** —— 从系统到变现一次打通，欢迎咨询。
 
-<p align="center"><img src="docs/assets/wechat.png" width="260" alt="扫码加微信，备注 MiniTV 进交流群"></p>
+| 服务 | 我们做什么 |
+| --- | --- |
+| 💳 **收款通道** | 海外收款落地：Stripe 订阅 + 金币解锁双模式，多币种定价、退款与对账已跑通 |
+| 🎬 **短剧制作** | 剧本、拍摄、剪辑、字幕与多语言本地化，直接交付可上线的竖屏片源 |
+| 🧩 **系统定制** | 本仓库源码私有化部署、品牌换皮、功能二开，含 iOS / Android App 打包上架 |
+| 📣 **广告投放** | TikTok / Meta 素材制作与投放代运营，按 ROI 逐步放量 |
 
-<p align="center"><strong>扫码加微信，备注「MiniTV」，拉你进交流群</strong></p>
+> 自建站、代制剧、代投放，哪一项都能单独合作；已有系统只缺支付或买量，也可以只补那一段。
 
-遇到 Bug 也可以直接开 [Issue](https://github.com/xuliang2024/minitv/issues)。
+<p align="center"><img src="docs/assets/wechat.png" width="260" alt="扫码加微信，咨询短剧出海全链路解决方案"></p>
+
+<p align="center"><strong>扫码加微信，备注「MiniTV」，聊聊你的出海项目</strong></p>
+
+遇到 Bug 或功能建议，也可以直接开 [Issue](https://github.com/xuliang2024/minitv/issues)。
 
 ## 许可证
 
