@@ -42,7 +42,13 @@ class BillingError(Exception):
 
 
 def pay_secret() -> bytes:
-    return os.environ.get("PAY_WEBHOOK_SECRET", "local-pay-webhook").encode()
+    secret = os.environ.get("PAY_WEBHOOK_SECRET", "").strip()
+    if not secret:
+        # No shipped default: an unconfigured secret must fail closed, not fall
+        # back to a value anyone can read in the source and use to forge a paid
+        # order for any account.
+        raise BillingError(503, "pay webhook is not configured")
+    return secret.encode()
 
 
 def sign_webhook(body: bytes) -> str:
