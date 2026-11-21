@@ -31,6 +31,8 @@ os.environ["RESEND_API_KEY"] = ""
 os.environ["RESEND_FROM"] = ""
 # The sweeper must not race the per-test TRUNCATE; tests drive the worker directly.
 os.environ["MODERATION_WORKER"] = "0"
+# The legacy pay webhook now requires an explicit secret (no shipped default).
+os.environ["PAY_WEBHOOK_SECRET"] = "test-pay-webhook"
 
 from app import modules  # noqa: E402,F401  registers every ORM model
 from app.db import Base, load_env  # noqa: E402
