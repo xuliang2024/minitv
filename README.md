@@ -14,7 +14,7 @@
 >
 > 收款通道 · 短剧制作 · 系统定制 · 广告投放 —— 需要哪一段就聊哪一段，[扫码加微信](#商务合作)。
 >
-> 线上在跑：[官网](https://minitv.us) · [H5](https://h5.minitv.us) · [API](https://api.minitv.us)
+> 线上在跑：[官网](https://minitv.us) · [H5](https://h5.minitv.us) · [API](https://api.minitv.us) · 📥 [短剧下载站](https://hongguoapi.com/)
 
 ---
 
@@ -28,6 +28,10 @@
 | ⚙️ API | <https://api.minitv.us> | 接口服务，文档见 `/docs` |
 
 > 演示站由维护者提供，仅用于体验产品；请勿用于压测或爬取。
+
+## 生态站点推荐
+
+- 📥 **[HG Cloud 短剧下载站](https://hongguoapi.com/)**（<https://hongguoapi.com/>）—— 一站式国内与海外热门短剧下载平台，聚合 **红果短剧（Hongguo）**、**PineDrama**、**ReelShort** 等主流片源（720P / 1080P 及多语字幕），支持按剧名/分享链接检索、全集打包或自选集数云端取件，并提供 CLI / API 接入。
 
 ## 产品演示
 
